@@ -72,6 +72,39 @@ HarmonyOS 7.0.0 (API 26) 模拟器（x86_64）实测——**T-MAC LUT 内核在�
 
 > 环境坑记录：DevEco 的网络请求会被用户级 `http_proxy` 环境变量劫持（代理一挂 IDE 网络全断），已清理并备份为 `http_proxy_bak`。
 
+## 🎉 鸿蒙模拟器完整 LLM 推理成功 · 2026-09-26
+
+llama.cpp（T-MAC fork `eb07ecf`）交叉编译到 **x86_64-ohos**，模拟器上跑通完整推理（Qwen2.5-0.5B-Instruct-Q4_K_M，463 MiB）：
+
+| 指标 | 实测 |
+|---|---|
+| 模型加载 | 5272 ms |
+| prompt 处理 | 17.15 tok/s（7 tokens） |
+| **文本生成** | **13.04 tok/s**（63 tokens，4 线程） |
+| 输出 | 中文流畅生成 ✅ |
+
+**移植补丁**（子模块内，重拉需重新应用）：`ohos/patches/llama_cpp_ohos_musl.patch`
+- `common/common.cpp` 两处 `#if` 增加 `!defined(__MUSL__)`（musl 无 `pthread_setaffinity_np`，属 glibc 扩展；**证实可行性文档待核实项①：OHOS musl 不放开该 API**）
+
+复现命令（模拟器在线）：
+
+- 编译：`cmake .. -DCMAKE_TOOLCHAIN_FILE=<sdk>/native/build/cmake/ohos.toolchain.cmake -DOHOS_ARCH=x86_64 -DOHOS_STL=c++_shared -DGGML_OPENMP=OFF`（在 `3rdparty/llama.cpp/build-ohos-x86`）
+- 推送：`hdc file send <llama-cli|libllama.so|libggml.so|model.gguf> /data/local/tmp/llm/`
+- 运行：`hdc shell "cd /data/local/tmp/llm && LD_LIBRARY_PATH=. ./llama-cli -m model.gguf -n 64 -t 4 -p '你好'"`
+- 注意：hdc 在 Git Bash 下需 `MSYS_NO_PATHCONV=1`，本地路径用反斜杠
+
+**SIMD 优化（同日）**：CPUID 探针（`ohos/selftest/cpuid_probe.c`）发现模拟器虚拟 CPU 为 **"AVX2 ✅ / FMA ❌ / F16C ✅"** 组合；补 `-mavx2 -mf16c` 并在 `ggml-cpu-impl.h` 加 FMA intrinsic 的 mul+add 兜底宏后重编：
+
+| 指标 | 标量版 | SIMD 版 | 提升 |
+|---|---|---|---|
+| 文本生成 | 13.04 tok/s | **55.80 tok/s** | **4.3×** |
+| prompt 处理 | 17.15 tok/s | 115.32 tok/s | 6.7× |
+| 模型加载 | 5272 ms | 2294 ms | 2.3× |
+
+编译配方：`cmake .. -DCMAKE_C_FLAGS="-mavx2 -mf16c" -DCMAKE_CXX_FLAGS="-mavx2 -mf16c"`（**勿加 `-mfma`**：虚拟 CPU 不支持会 SIGILL）。
+
+**T-MAC 集成待做**（GGML_TMAC=ON）需匹配的 x86 内核（TVM 生成）+ BitNet-3B 模型转换。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
