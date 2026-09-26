@@ -122,9 +122,20 @@ llama.cpp `GGML_TMAC=ON` 集成编译 → **全链路激活**（transform / 内�
 4. 生成阶段：`pthread_setaffinity_np`（musl 无此 glibc 扩展）、FMA 兜底宏、`half` typedef 条件错误
 5. 转换阶段：yaml/safetensors/torch 依赖链、权重分片完整性校验
 
-**遗留**：`qgemm_lut` 特化内核执行内部 SIGSEGV（两分支同点崩溃；输入指针/尺寸/对齐均已验算合法）。
-疑似 fork 的 x86 内核执行路径缺陷 → 建议反馈 T-MAC 上游，或在 ARM 环境复测（aarch64 为上游原生路径）。
-调试探针保留在 `3rdparty/llama.cpp` 工作区（`git diff` 即完整补丁）。
+**遗留**（已于当日深夜定位）：`qgemm_lut` 特化内核执行内部 SIGSEGV / 输出全 0。
+
+**根因（最终对照实验结论）**：`ohos/selftest/test_qgemm_x64.cpp` 独立冒烟测试 + **WSL 原生 x86_64 对照**证明：
+
+| 环境 | 同一份内核源码编译的执行结果 |
+|---|---|
+| WSL 原生 x86_64（真实 CPU） | **输出正常**（`C[0..7]` 非零、数值合理）✅ |
+| DevEco 模拟器（虚拟 CPU） | **输出全 0 / SIGSEGV** ❌ |
+
+→ **内核代码正确；华为模拟器虚拟 CPU 对 AVX2 指令的模拟存在缺陷**（无法承载 T-MAC 的复杂 SIMD）。
+
+**路线结论**：
+- 模拟器可用标量/常规 SIMD（普通 llama.cpp 推理 55.8 tok/s 已验证）；
+- **T-MAC 加速需真机（ARM 原生路径）复测**——设备到位后优先验证 `aarch64-hf-bitnet-3b` 内核。
 
 产物：`deploy/tuned/ohos-x64-bitnet-3b/`（ags=-1）、`deploy/tuned/ohos-x64-ags64/`（ags=64）。
 
