@@ -168,3 +168,14 @@ src.c
 src.ll
 install/
 logs/
+
+# HarmonyOS / DevEco Studio
+.hvigor/
+.idea/
+oh_modules/
+.cxx/
+*.har
+local.properties
+.clangd
+.clang-tidy
+.clang-format

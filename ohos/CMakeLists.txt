@@ -7,10 +7,13 @@ project(tmac_ohos LANGUAGES CXX)
 if(NOT DEFINED T_MAC_ROOT)
   get_filename_component(T_MAC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 endif()
+# Normalize Windows backslash paths passed via -DT_MAC_ROOT=... (e.g. "C:\Users" breaks CMake string parsing)
+file(TO_CMAKE_PATH "${T_MAC_ROOT}" T_MAC_ROOT)
 
 if(NOT DEFINED TMAC_KERNEL_DIR)
   set(TMAC_KERNEL_DIR "${T_MAC_ROOT}/deploy/tuned/aarch64-hf-bitnet-3b")
 endif()
+file(TO_CMAKE_PATH "${TMAC_KERNEL_DIR}" TMAC_KERNEL_DIR)
 
 set(TMAC_KERNELS_SOURCE "${TMAC_KERNEL_DIR}/kernels.cc")
 set(TMAC_KCFG_FILE_PATH "${TMAC_KERNEL_DIR}/kcfg.ini")

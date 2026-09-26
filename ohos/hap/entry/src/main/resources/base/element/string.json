@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "LUT-SA T-MAC demo module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "LUT-SA T-MAC demo ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "LUT-SA"
+    }
+  ]
+}

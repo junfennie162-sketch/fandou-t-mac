@@ -487,7 +487,9 @@ int32_t tbl_int8_reset(int32_t m, int8_t* c) {
 }
 
 int32_t tbl_float_reset(int32_t m, void* c) {
-    memset(c, 0, m * sizeof(float_type));
+    // x86 fix: float_type is float(4B) on non-NEON builds but the target buffers are _Float16(2B);
+    // the old sizeof(float_type) memset overflowed the stack and smashed the return address.
+    memset(c, 0, m * sizeof(_Float16));
     return 0;
 }
 
