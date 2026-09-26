@@ -105,6 +105,29 @@ llama.cpp（T-MAC fork `eb07ecf`）交叉编译到 **x86_64-ohos**，模拟器�
 
 **T-MAC 集成待做**（GGML_TMAC=ON）需匹配的 x86 内核（TVM 生成）+ BitNet-3B 模型转换。
 
+## T-MAC 加速集成攻坚 · 2026-09-26 夜
+
+**结论：技术链全通，卡在内核执行层最后一个 bug（下游均为上游未验证区）。**
+
+已打通：WSL 从零编译 TVM 0.17 + LLVM 17 → **x86_64-ohos BitNet LUT 内核生成**（两个分支：
+`-ags -1` int32 变体 / `-ags 64` float 变体，后者与队友 aarch64 内核符号完全一致）→
+BitNet-3B 转换（12.6GB HF → 966MB T-MAC GGUF，288 张量，2.44 BPW）→
+llama.cpp `GGML_TMAC=ON` 集成编译 → **全链路激活**（transform / 内核 dispatch 匹配 / 4 线程 / 数据流验证）。
+
+**修复的集成层 bug（5 处，完整补丁见 `ohos/patches/llama_cpp_ohos.patch`）**：
+
+1. `tmac_float_type` x86 定义错误（float → `_Float16`；与 fp16 内核匹配）
+2. `ggml_tmac_transform_tensor` 在 mul_mat 分支补调（幂等）
+3. mmap 只读区 inplace scales 转换写崩（运行加 `--no-mmap`）
+4. 生成阶段：`pthread_setaffinity_np`（musl 无此 glibc 扩展）、FMA 兜底宏、`half` typedef 条件错误
+5. 转换阶段：yaml/safetensors/torch 依赖链、权重分片完整性校验
+
+**遗留**：`qgemm_lut` 特化内核执行内部 SIGSEGV（两分支同点崩溃；输入指针/尺寸/对齐均已验算合法）。
+疑似 fork 的 x86 内核执行路径缺陷 → 建议反馈 T-MAC 上游，或在 ARM 环境复测（aarch64 为上游原生路径）。
+调试探针保留在 `3rdparty/llama.cpp` 工作区（`git diff` 即完整补丁）。
+
+产物：`deploy/tuned/ohos-x64-bitnet-3b/`（ags=-1）、`deploy/tuned/ohos-x64-ags64/`（ags=64）。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`

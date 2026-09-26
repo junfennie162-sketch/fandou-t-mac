@@ -220,13 +220,11 @@ extern "C"
         c_header = kernel_def
 
         # Add half vectorization related
+        # OE fix: alias half unconditionally — GCC/Clang x86 AVX2 builds do not provide a `half` type.
         half_typedef = """
 #ifndef TMAC_HALF_TYPEDEF_H
 #define TMAC_HALF_TYPEDEF_H
-
-#ifndef __AVX2__
 typedef _Float16 half;
-#endif
 #endif
 """
         c_code = half_typedef + c_code

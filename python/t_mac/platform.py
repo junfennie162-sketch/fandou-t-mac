@@ -175,6 +175,26 @@ _device_kwargs = {
         "out_dtype": "float16",
         "aggregation_dtype": "int32",
     },
+    # OpenHarmony x86_64 emulator (DevEco local emulator). AVX2/F16C, no FMA.
+    "ohos_x64": {
+        "target": "llvm -mtriple=x86_64-linux-ohos -mcpu=core-avx2",
+        "eval_kwargs": {
+            "number": 10,
+            "repeat": 10,
+        },
+        "remote_kwargs": None,
+        "cc": os.environ.get("OHOS_NDK_CC", os.environ.get("TVM_NDK_CC", "clang++")),
+        "cc_opts": [
+            "-O3",
+            "-mavx2",
+            "-mf16c",
+            "--target=x86_64-linux-ohos",
+            "-mllvm",
+            "-inline-threshold=10000",
+        ],
+        "out_dtype": "float16",
+        "aggregation_dtype": "int32",
+    },
 }
 
 
@@ -200,6 +220,8 @@ def get_default_device_kwargs(device: str = ""):
 def get_arch(device: str = ""):
     if not device:
         return get_system_info()[1]
+    elif device == "ohos_x64":
+        return "x86_64"
     elif device in ("android", "ohos"):
         return "aarch64"
     else:

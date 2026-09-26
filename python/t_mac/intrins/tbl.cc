@@ -5,6 +5,12 @@
 #include <arm_neon.h>
 #elif defined __AVX2__
 #include <immintrin.h>
+
+// OHOS emulator fix: the HarmonyOS virtual CPU reports AVX2 without FMA.
+// Route the FMA intrinsic through mul+add so the AVX2 paths compile and run.
+#if !defined(__FMA__)
+#define _mm256_fmadd_ps(a, b, c) _mm256_add_ps(_mm256_mul_ps((a), (b)), (c))
+#endif
 #endif
 
 #ifdef __ARM_NEON
