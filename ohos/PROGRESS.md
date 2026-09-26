@@ -124,18 +124,24 @@ llama.cpp `GGML_TMAC=ON` 集成编译 → **全链路激活**（transform / 内�
 
 **遗留**（已于当日深夜定位）：`qgemm_lut` 特化内核执行内部 SIGSEGV / 输出全 0。
 
-**根因（最终对照实验结论）**：`ohos/selftest/test_qgemm_x64.cpp` 独立冒烟测试 + **WSL 原生 x86_64 对照**证明：
+**根因（逐层对照实验，最终定位）**：
 
-| 环境 | 同一份内核源码编译的执行结果 |
-|---|---|
-| WSL 原生 x86_64（真实 CPU） | **输出正常**（`C[0..7]` 非零、数值合理）✅ |
-| DevEco 模拟器（虚拟 CPU） | **输出全 0 / SIGSEGV** ❌ |
+| 编译器 | 运行环境 | 结果 |
+|---|---|---|
+| GCC 12（conda） | WSL 真 CPU | ✅ **正常**（输出非零、数值合理） |
+| **OHOS clang 15.0.4** | WSL 真 CPU | ❌ 全 0 |
+| OHOS clang 15.0.4 | DevEco 模拟器 | ❌ 全 0 / SIGSEGV |
 
-→ **内核代码正确；华为模拟器虚拟 CPU 对 AVX2 指令的模拟存在缺陷**（无法承载 T-MAC 的复杂 SIMD）。
+→ **OHOS clang 15.0.4 对该内核的代码生成缺陷**：反汇编显示核心「查表累加」循环的
+**累加指令（`vpaddw`）全部缺失**（查表 `vpshufb` 正常生成）——编译器错误消除了累加逻辑，
+导致输出恒 0。`-O0` / `-fno-strict-aliasing` 均复现（**非优化级别问题**）。
 
-**路线结论**：
-- 模拟器可用标量/常规 SIMD（普通 llama.cpp 推理 55.8 tok/s 已验证）；
-- **T-MAC 加速需真机（ARM 原生路径）复测**——设备到位后优先验证 `aarch64-hf-bitnet-3b` 内核。
+**三层洗清**：非模拟器缺陷、非集成代码问题、非 T-MAC 内核源码问题——**是 OHOS x86 编译器工具链的缺陷**。
+
+**影响与结论**：
+- 模拟器路线（OHOS clang x86 工具链）**无法承载 T-MAC 的复杂内核**；
+- **真机 ARM 不受影响**（clang 的 aarch64 是 OHOS 主场，上游路径）；
+- 普通推理（非 LUT 内核）不受影响：**55.8 tok/s 已验证**。
 
 产物：`deploy/tuned/ohos-x64-bitnet-3b/`（ags=-1）、`deploy/tuned/ohos-x64-ags64/`（ags=64）。
 
