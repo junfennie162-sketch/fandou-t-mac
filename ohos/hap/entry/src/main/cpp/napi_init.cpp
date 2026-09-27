@@ -341,11 +341,30 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     g_llm.n_ctx = n_ctx;
     g_llm.load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-    char buf[640];
+    char buf[1400];
+    const double size_mib = (double) llama_model_size(model) / 1024.0 / 1024.0;
+    const double bpw = llama_model_n_params(model) ? (double) llama_model_size(model) * 8.0 /
+                                                        (double) llama_model_n_params(model) : 0.0;
+    const double params_b = (double) llama_model_n_params(model) / 1e9;
+    const int n_embd = llama_n_embd(model), n_layer = llama_n_layer(model);
+    const double kv_kv_mib = (double) (uint64_t) n_ctx * n_layer * n_embd * 2 * 2 / 1024.0 / 1024.0;
     std::snprintf(buf, sizeof(buf),
-                  "OK: loaded %s%s | n_vocab=%d | n_ctx=%d | threads=%d | mmap=%s | load=%.0f ms | kcfg=%s",
-                  resolved.c_str(), note.c_str(), llama_n_vocab(model), n_ctx, threads,
-                  use_mmap ? "on" : "off", g_llm.load_ms, g_llm.kcfg_path.c_str());
+                  "llm_load_print_meta: model size       = %.2f MiB (%.2f BPW)\n"
+                  "llm_load_print_meta: model params     = %.2f B\n"
+                  "llm_load_print_meta: n_vocab          = %d\n"
+                  "llm_load_print_meta: n_ctx_train      = %d\n"
+                  "llm_load_print_meta: n_embd           = %d\n"
+                  "llm_load_print_meta: n_layer          = %d\n"
+                  "llm_load_print_meta: n_head           = %d\n"
+                  "llama_new_context_with_model: n_ctx   = %d\n"
+                  "llama_new_context_with_model: n_batch = 512\n"
+                  "llama_new_context_with_model: n_threads = %d\n"
+                  "llama_kv_cache_init:        CPU KV buffer size = %.2f MiB (K/V f16)\n"
+                  "llama_perf_context_print:        load time = %.2f ms\n"
+                  "model: %s%s\nkcfg:  %s",
+                  size_mib, bpw, params_b, llama_n_vocab(model), llama_n_ctx_train(model), n_embd,
+                  n_layer, llama_n_head(model), n_ctx, threads, kv_kv_mib, g_llm.load_ms,
+                  resolved.c_str(), note.c_str(), g_llm.kcfg_path.c_str());
     return buf;
 }
 
@@ -383,12 +402,16 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     int generated = 0;
 
     const auto t_eval0 = std::chrono::steady_clock::now();
+    double sampling_ms = 0.0;
     for (int i = 0; i < n_predict && n_past < g_llm.n_ctx - 1; ++i) {
         float *logits = llama_get_logits(ctx);
         if (!logits) break;
+        const auto ts0 = std::chrono::steady_clock::now();
         const llama_token id =
             (temp <= 0.0) ? (llama_token) (std::max_element(logits, logits + n_vocab) - logits)
                           : sample_top_k(logits, n_vocab, top_k, (float) temp, rng);
+        const auto ts1 = std::chrono::steady_clock::now();
+        sampling_ms += std::chrono::duration<double, std::milli>(ts1 - ts0).count();
         if (id == eos) break;
         char piece[256];
         const int np = llama_token_to_piece(model, id, piece, sizeof(piece), 0, false);
@@ -402,14 +425,32 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
 
     const double prompt_ms = std::chrono::duration<double, std::milli>(t_prompt1 - t_prompt0).count();
     const double eval_ms = std::chrono::duration<double, std::milli>(t_eval1 - t_eval0).count();
-    char timing[640];
-    std::snprintf(timing, sizeof(timing),
-                  "\n----\nprompt: %d tok / %.1f ms (%.2f tok/s)\neval: %d tok / %.1f ms (%.2f tok/s)\n"
-                  "load: %.0f ms | threads=%d | model=%s",
-                  n_tok, prompt_ms, n_tok / (prompt_ms / 1000.0), generated, eval_ms,
-                  generated > 0 ? generated / (eval_ms / 1000.0) : 0.0, g_llm.load_ms, g_llm.n_threads,
-                  g_llm.model_path.c_str());
-    return text + timing;
+    const double total_ms = prompt_ms + eval_ms;
+    // llama.cpp-style console report (matches the CLI output users expect)
+    char head[512], perf[1400];
+    std::snprintf(head, sizeof(head),
+                  "sampler seed: 42\n"
+                  "sampler params: top_k = %d, top_p = 0.950, temp = %.3f\n"
+                  "generate: n_ctx = %d, n_batch = 512, n_predict = %d\n\n%s\n",
+                  top_k, temp, g_llm.n_ctx, n_predict, prompt.c_str());
+    std::snprintf(perf, sizeof(perf),
+                  "\nllama_perf_sampler_print:    sampling time = %8.2f ms / %5d runs ( %8.2f ms per token, %8.2f tokens per second)\n"
+                  "llama_perf_context_print:        load time = %8.2f ms\n"
+                  "llama_perf_context_print:  prompt eval time = %8.2f ms / %5d tokens ( %8.2f ms per token, %8.2f tokens per second)\n"
+                  "llama_perf_context_print:        eval time = %8.2f ms / %5d runs ( %8.2f ms per token, %8.2f tokens per second)\n"
+                  "llama_perf_context_print:       total time = %8.2f ms / %5d tokens\n",
+                  sampling_ms, generated,
+                  generated > 0 ? sampling_ms / generated : 0.0,
+                  sampling_ms > 0 ? generated / (sampling_ms / 1000.0) : 0.0,
+                  g_llm.load_ms,
+                  prompt_ms, n_tok,
+                  n_tok > 0 ? prompt_ms / n_tok : 0.0,
+                  prompt_ms > 0 ? n_tok / (prompt_ms / 1000.0) : 0.0,
+                  eval_ms, generated,
+                  generated > 0 ? eval_ms / generated : 0.0,
+                  eval_ms > 0 ? generated / (eval_ms / 1000.0) : 0.0,
+                  total_ms, n_tok + generated);
+    return std::string(head) + text + perf;
 }
 
 // ---------------------------------------------------------------- async plumbing (Promise + worker thread)

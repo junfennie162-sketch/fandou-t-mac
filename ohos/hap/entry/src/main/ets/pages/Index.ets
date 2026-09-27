@@ -195,7 +195,8 @@ struct Index {
     tmac.generateAsync(asked, this.num(this.nPredict, 16), 0.8, 40)
       .then((r: string) => {
         this.status = '✅ 生成完成';
-        this.output = `提示词: ${asked}\n────\n${r}`;
+        // native side already emits the full llama.cpp-style console report
+        this.output = r;
         hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
       })
       .catch((e: Object) => {
