@@ -36,3 +36,6 @@ export const release: () => string;
 
 /** chmod the sandbox (so `hdc file send` can push a model into it) and report the exact path. */
 export const prepareSandbox: (filesDir: string) => string;
+
+/** Copy between two open file descriptors on a worker thread (never blocks the UI). */
+export const copyFdAsync: (srcFd: number, dstFd: number) => Promise<string>;

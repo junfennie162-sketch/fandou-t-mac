@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import tmac from 'libtmac_hap.so';
 
@@ -84,12 +85,12 @@ struct Index {
         return;
       }
       this.busy = true;
-      this.status = '⏳ 正在把模型拷进应用沙箱…（966MB 约数秒）';
+      this.status = '⏳ 正在把模型拷进应用沙箱…（请保持应用在前台）';
       const dest = `${ctx.filesDir}/model.gguf`;
       const srcFile = fs.openSync(uris[0], fs.OpenMode.READ_ONLY);
       const dstFile = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       const sizeMb = Math.round(fs.statSync(srcFile.fd).size / 1024 / 1024);
-      fs.copyFileSync(srcFile.fd, dstFile.fd);
+      await this.copyWithGuard(srcFile.fd, dstFile.fd);
       fs.closeSync(srcFile);
       fs.closeSync(dstFile);
       this.modelPath = dest;
@@ -109,6 +110,74 @@ struct Index {
   private num(s: string, dflt: number): number {
     const v = Number.parseInt(s);
     return Number.isNaN(v) ? dflt : v;
+  }
+
+  // Big file copies must not run on the JS thread (a synchronous 1 GB copy freezes the UI and the
+  // system kills the app: appfreeze / THREAD_BLOCK_6S). Copy on a NAPI worker thread instead, and
+  // hold a transient task so the process survives going to the background.
+  private async copyWithGuard(srcFd: number, dstFd: number): Promise<string> {
+    let requestId = -1;
+    try {
+      const info = backgroundTaskManager.requestSuspendDelay('model-copy', () => {
+        hilog.warn(0x0000, 'LUTSA', 'suspend delay expired during copy');
+      });
+      requestId = info.requestId;
+    } catch (e) {
+      hilog.warn(0x0000, 'LUTSA', 'requestSuspendDelay failed: %{public}s', JSON.stringify(e));
+    }
+    try {
+      return await tmac.copyFdAsync(srcFd, dstFd);
+    } finally {
+      if (requestId >= 0) {
+        try {
+          backgroundTaskManager.cancelSuspendDelay(requestId);
+        } catch (e) {
+          hilog.warn(0x0000, 'LUTSA', 'cancelSuspendDelay failed');
+        }
+      }
+    }
+  }
+
+  // Export the sandbox model to phone storage via the system SAVE dialog.
+  // Real feature (share/backup the converted GGUF) and it also makes the picker-import flow
+  // testable on an emulator whose user storage cannot be written from outside.
+  private async exportModel(): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const src = `${ctx.filesDir}/model.gguf`;
+      const st = fs.statSync(src);
+      if (st.size <= 0) {
+        this.status = '⚠️ 沙箱里没有模型可导出';
+        return;
+      }
+      const doc = new picker.DocumentViewPicker(ctx);
+      // unique name: the system save dialog refuses to overwrite an existing file
+      const fileName = `bitnet-3b-tmac-${Date.now()}.gguf`;
+      const uris = await doc.save({ newFileNames: [fileName] } as picker.DocumentSaveOptions);
+      if (!uris || uris.length === 0) {
+        this.status = '已取消导出';
+        return;
+      }
+      this.busy = true;
+      this.status = `⏳ 正在导出模型（${Math.round(st.size / 1024 / 1024)} MB，请保持应用在前台）…`;
+      const srcFile = fs.openSync(src, fs.OpenMode.READ_ONLY);
+      const dstFile = fs.openSync(uris[0], fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      await this.copyWithGuard(srcFile.fd, dstFile.fd);
+      fs.closeSync(srcFile);
+      fs.closeSync(dstFile);
+      this.status = '✅ 模型已导出';
+      this.detail = `dest: ${uris[0]}\n现在可以用「📂 选择模型文件」把它选回来（验证导入链路）`;
+      hilog.info(0x0000, 'LUTSA', 'exported model to %{public}s', uris[0]);
+    } catch (e) {
+      this.status = '❌ 导出失败';
+      this.detail = `导出异常: ${e}`;
+      hilog.error(0x0000, 'LUTSA', 'export failed: %{public}s', JSON.stringify(e));
+    } finally {
+      this.busy = false;
+    }
   }
 
   private doGenerate(): void {
@@ -189,15 +258,18 @@ struct Index {
         Button('📂 选择模型文件')
           .height(42).layoutWeight(1).enabled(!this.busy)
           .onClick(() => { this.pickAndImportModel(); })
-        Button('加载模型')
+        Button('📤 导出到手机')
           .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => { this.doLoad(); })
+          .onClick(() => { this.exportModel(); })
       }
       .width('92%')
 
       Row({ space: 8 }) {
+        Button('加载模型')
+          .height(42).layoutWeight(1).enabled(!this.busy)
+          .onClick(() => { this.doLoad(); })
         Button('生成')
-          .height(46).layoutWeight(1).enabled(!this.busy)
+          .height(42).layoutWeight(1).enabled(!this.busy)
           .onClick(() => { this.doGenerate(); })
       }
       .width('92%')

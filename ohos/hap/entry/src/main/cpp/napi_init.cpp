@@ -413,11 +413,36 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
 }
 
 // ---------------------------------------------------------------- async plumbing (Promise + worker thread)
+// Copy between two already-open file descriptors on a worker thread. The 1 GB model move MUST NOT
+// run on the JS thread: a synchronous copy blocks the UI for >6 s and the system's watchdog kills
+// the app (appfreeze / THREAD_BLOCK_6S — observed).
+std::string do_copy_fds(int src_fd, int dst_fd) {
+    constexpr size_t kChunk = 4u << 20;
+    std::vector<char> buf(kChunk);
+    long long total = 0;
+    for (;;) {
+        const ssize_t n = read(src_fd, buf.data(), buf.size());
+        if (n == 0) break;
+        if (n < 0) return "FAIL: read error during copy";
+        ssize_t off = 0;
+        while (off < n) {
+            const ssize_t w = write(dst_fd, buf.data() + off, (size_t) (n - off));
+            if (w <= 0) return "FAIL: write error during copy";
+            off += w;
+        }
+        total += n;
+    }
+    char b[160];
+    std::snprintf(b, sizeof(b), "OK: copied %.1f MB", (double) total / 1e6);
+    return b;
+}
+
 struct AsyncJob {
     napi_async_work work = nullptr;
     napi_deferred deferred = nullptr;
-    int op = 0;             // 0 = load, 1 = generate
+    int op = 0;             // 0 = load, 1 = generate, 2 = copy fds
     std::string s1, s2;     // load: model_path/files_dir, generate: prompt
+    int fd_src = -1, fd_dst = -1;   // op 2
     int threads = 4, n_ctx = 512, n_predict = 32, top_k = 40;
     double temp = 0.8;
     bool use_mmap = false;
@@ -428,8 +453,10 @@ void execute_job(napi_env, void *data) {
     AsyncJob *j = static_cast<AsyncJob *>(data);
     if (j->op == 0) {
         j->result = do_load(j->s1, j->s2, j->threads, j->n_ctx, j->use_mmap);
-    } else {
+    } else if (j->op == 1) {
         j->result = do_generate(j->s2, j->n_predict, j->temp, j->top_k);
+    } else {
+        j->result = do_copy_fds(j->fd_src, j->fd_dst);
     }
 }
 
@@ -545,6 +572,20 @@ napi_value GenerateAsync(napi_env env, napi_callback_info info) {
     return queue_job(env, j, "tmac_generate");
 }
 
+napi_value CopyFdAsync(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value argv[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    AsyncJob *j = new AsyncJob();
+    j->op = 2;
+    int32_t src = -1, dst = -1;
+    if (argc >= 1) napi_get_value_int32(env, argv[0], &src);
+    if (argc >= 2) napi_get_value_int32(env, argv[1], &dst);
+    j->fd_src = src;
+    j->fd_dst = dst;
+    return queue_job(env, j, "tmac_copy");
+}
+
 napi_value Release(napi_env env, napi_callback_info) {
     release_llm();
     return make_string(env, "OK: model released");
@@ -604,6 +645,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"loadModelAsync", nullptr, LoadModelAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generate", nullptr, Generate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generateAsync", nullptr, GenerateAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"copyFdAsync", nullptr, CopyFdAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"prepareSandbox", nullptr, PrepareSandbox, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"release", nullptr, Release, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
