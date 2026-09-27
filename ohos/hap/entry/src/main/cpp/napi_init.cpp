@@ -356,6 +356,10 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     llama_context *ctx = g_llm.ctx;
     const int n_vocab = llama_n_vocab(model);
 
+    // Each generate() call is an independent completion: drop the previous prompt/answer from
+    // the KV cache, otherwise stale positions leak into the next run.
+    llama_kv_cache_clear(ctx);
+
     std::vector<llama_token> tokens(prompt.size() + 8);
     int n_tok = llama_tokenize(model, prompt.c_str(), (int32_t) prompt.size(), tokens.data(),
                                (int32_t) tokens.size(), true, false);

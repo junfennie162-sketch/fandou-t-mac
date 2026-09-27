@@ -53,6 +53,31 @@ struct Index {
     return Number.isNaN(v) ? dflt : v;
   }
 
+  private doGenerate(): void {
+    if (this.busy) {
+      return;
+    }
+    if (this.prompt.length === 0) {
+      this.status = '⚠️ 请先输入提示词';
+      return;
+    }
+    this.busy = true;
+    this.status = '⏳ 推理中…';
+    this.output = '';
+    const asked = this.prompt;
+    tmac.generateAsync(asked, this.num(this.nPredict, 16), 0.8, 40)
+      .then((r: string) => {
+        this.status = '✅ 生成完成';
+        this.output = `提示词: ${asked}\n────\n${r}`;
+        hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
+      })
+      .catch((e: Object) => {
+        this.status = '❌ 推理异常';
+        this.output = `generateAsync 异常: ${e}`;
+      })
+      .finally(() => { this.busy = false; });
+  }
+
   build() {
     Column({ space: 10 }) {
       Text('LUT-SA · T-MAC')
@@ -116,22 +141,7 @@ struct Index {
 
         Button('生成')
           .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            this.busy = true;
-            this.status = '⏳ 推理中…';
-            this.output = '';
-            tmac.generateAsync(this.prompt, this.num(this.nPredict, 16), 0.8, 40)
-              .then((r: string) => {
-                this.status = '✅ 生成完成';
-                this.output = r;
-                hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
-              })
-              .catch((e: Object) => {
-                this.status = '❌ 推理异常';
-                this.output = `generateAsync 异常: ${e}`;
-              })
-              .finally(() => { this.busy = false; });
-          })
+          .onClick(() => { this.doGenerate(); })
       }
       .width('92%')
 
@@ -159,9 +169,14 @@ struct Index {
       .width('92%')
 
       // ---- prompt ----
-      TextInput({ text: this.prompt, placeholder: '输入 prompt…' })
+      TextInput({ text: this.prompt, placeholder: '在这里输入提示词，回车或点「生成」' })
         .fontSize(13)
+        .enterKeyType(EnterKeyType.Go)
         .onChange((v: string) => { this.prompt = v; })
+        .onSubmit(() => { this.doGenerate(); })
+      Text('base 模型：按你的提示词续写（不是问答）；英文语料为主，中文续写质量一般')
+        .fontSize(10)
+        .fontColor('#5A6A80')
 
       Text(this.status)
         .fontSize(15)
