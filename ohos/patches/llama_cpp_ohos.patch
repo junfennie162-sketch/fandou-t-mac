@@ -34,6 +34,23 @@ index f79b6744..9af93ea6 100644
  typedef float tmac_float_type;
  #endif
  
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index e4236954..e263b0c2 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -867,9 +867,11 @@ if (GGML_TMAC)
+             add_compile_definitions(TMAC_USE_TVM_THREADPOOL)
+             set(GGML_EXTRA_LIBS_PRIVATE ${GGML_EXTRA_LIBS_PRIVATE} t_mac)
+         else()
++            # OHOS targets are built with clang; other compilers are allowed for plain host
++            # (benchmark) builds — the generated LUT kernels are plain C++ + intrinsics.
+             if ((NOT ${CMAKE_C_COMPILER_ID} MATCHES "Clang") OR
+                 (NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
+-                message(FATAL_ERROR "Clang is required for T-MAC compilation")
++                message(WARNING "T-MAC: compiler is ${CMAKE_CXX_COMPILER_ID} (not clang) — fine for host benchmarks, use clang for OHOS releases")
+             endif()
+ 
+             set(GGML_EXTRA_LIBS_PRIVATE ${GGML_EXTRA_LIBS_PRIVATE} t_mac_no_tvm)
 diff --git a/ggml/src/ggml-cpu-impl.h b/ggml/src/ggml-cpu-impl.h
 index 5b45155b..0fff364f 100644
 --- a/ggml/src/ggml-cpu-impl.h
