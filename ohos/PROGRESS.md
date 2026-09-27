@@ -205,6 +205,25 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 
 **模型转换链（新增产物）**：HF safetensors → `convert_hf_to_gguf.py --outtype f16`（6.65GB，288 张量，arch=bitnet，保留 sub_norm）→ `llama-quantize Q4_0`（1.83GB）。产物在 `D:\ohos-models\`。
 
+## aarch64（真鸿蒙架构）功能验证 · 2026-09-27
+
+完整报告：**`ohos/ARM64-VALIDATION.md`**（三层证据 + 移植要点 + 复现命令）
+
+**不碰真机，在 PC 上用 qemu-user 把 aarch64 全链路跑通：**
+1. **内核级**：aarch64 NEON 内核 vs 官方 numpy 参考 **NMSE 8.4e-05**（corr 0.99996；与 x86 输出 corr 0.99999）
+2. **构建级**：aarch64-ohos 静态 llama-cli（7.9MB），`llvm-objdump` 确认 **1085 条 NEON/fp16 指令**（`fmla v3.4s,...`）
+3. **端到端**：qemu 里输出 `The capital of France is the city of Paris…` ✅，system_info 确认 **NEON=1/ARM_FMA=1/FP16_VA=1/MATMUL_INT8=1**（TCG 0.43 tok/s，性能无意义）
+
+**关键发现（真机移植必看）**：
+- ARM 的 preprocessor 读激活为 **fp16**（x86 为 fp32，我们改的）→ 首次测试 NaN 的根因
+- ARM 内核输出 C 为 **fp16**（集成层的 `fp16_to_fp32_row` 转换已接住）
+- **kcfg 布局按架构不同**（m6400_* 的 bm：ARM 128/320 vs x86 256）→ 模型已按 arm64 重转：`bitnet-3b-tmac-arm64.gguf`
+- fork CMake 对 aarch64+T-MAC **总会选 armv8.7**（check 假阳性）→ armv8.2 真机需强制 `-march=armv8.2a+fp16`，否则 SIGILL
+- 静态构建配方：`BUILD_SHARED_LIBS=OFF + OHOS_STL=c++_static + -static`
+- **aarch64 路径零源码修改**（对比 x86 修了 9 处）——NEON 是官方主干，x86 是支线
+
+产物：`ohos/staging-arm64/t-mac/`（已归档）· `D:\ohos-models\bitnet-3b-tmac-arm64.gguf` · `D:\ohos-models\qemu\qemu-aarch64-static`
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
