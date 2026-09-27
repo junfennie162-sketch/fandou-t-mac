@@ -97,20 +97,28 @@ struct Index {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       // ---- model path ----
+      Text('📁 模型路径')
+        .fontSize(11).fontColor('#7A8AA0').width('92%').textAlign(TextAlign.Start)
       TextInput({ text: this.modelPath })
-        .fontSize(12)
-        .fontFamily('monospace')
+        .width('92%').height(44).fontSize(12).fontFamily('monospace')
+        .fontColor('#CFE0F5').backgroundColor('#1E2738')
+        .borderRadius(8).border({ width: 1, color: '#33405A' })
+        .padding({ left: 12, right: 12 })
         .onChange((v: string) => { this.modelPath = v; })
 
       // ---- params ----
       Row({ space: 10 }) {
         Text('线程').fontSize(12).fontColor('#9AA4B5')
         TextInput({ text: this.threads })
-          .width(48).fontSize(12)
+          .width(52).height(40).fontSize(12).textAlign(TextAlign.Center)
+          .fontColor('#E8EEF7').backgroundColor('#1E2738').borderRadius(8)
+          .border({ width: 1, color: '#33405A' })
           .onChange((v: string) => { this.threads = v; })
         Text('生成长度').fontSize(12).fontColor('#9AA4B5')
         TextInput({ text: this.nPredict })
-          .width(56).fontSize(12)
+          .width(60).height(40).fontSize(12).textAlign(TextAlign.Center)
+          .fontColor('#E8EEF7').backgroundColor('#1E2738').borderRadius(8)
+          .border({ width: 1, color: '#33405A' })
           .onChange((v: string) => { this.nPredict = v; })
         Text('mmap').fontSize(12).fontColor('#9AA4B5')
         Toggle({ type: ToggleType.Switch, isOn: this.useMmap })
@@ -168,9 +176,15 @@ struct Index {
       }
       .width('92%')
 
-      // ---- prompt ----
-      TextInput({ text: this.prompt, placeholder: '在这里输入提示词，回车或点「生成」' })
-        .fontSize(13)
+      // ---- prompt (the main interactive box) ----
+      Text('✍️ 提示词（输入后回车，或点「生成」）')
+        .fontSize(11).fontColor('#7A8AA0').width('92%').textAlign(TextAlign.Start)
+      TextInput({ text: this.prompt, placeholder: '在这里输入提示词…' })
+        .width('92%').height(50).fontSize(15)
+        .fontColor('#FFFFFF').placeholderColor('#5A6A80')
+        .backgroundColor('#243044').borderRadius(8)
+        .border({ width: 1.5, color: '#4FA8E8' })
+        .padding({ left: 12, right: 12 })
         .enterKeyType(EnterKeyType.Go)
         .onChange((v: string) => { this.prompt = v; })
         .onSubmit(() => { this.doGenerate(); })
