@@ -8,6 +8,7 @@ struct Index {
   @State status: string = '就绪';
   @State detail: string = '先「加载模型」，再「生成」。模型需预先推到设备（见 README）。';
   @State modelPath: string = '/data/local/tmp/llm-tmac/model.gguf';
+  @State sandboxInfo: string = '';
   @State prompt: string = 'The capital of France is';
   @State nPredict: string = '16';
   @State threads: string = '4';
@@ -22,6 +23,19 @@ struct Index {
       hilog.info(0x0000, 'LUTSA', 'nativeVersion: %{public}s', this.loadInfo);
     } catch (e) {
       this.loadInfo = `native 模块加载失败: ${e}`;
+    }
+    // The app sandbox is the only place this process may read the model from on HarmonyOS 7
+    // (/data/local/tmp is blocked by SELinux). chmod it so `hdc file send` can push the file in,
+    // and default the model path to it.
+    const fd = this.filesDir();
+    if (fd.length > 0) {
+      this.modelPath = `${fd}/model.gguf`;
+      try {
+        this.sandboxInfo = tmac.prepareSandbox(fd);
+        hilog.info(0x0000, 'LUTSA', 'sandbox: %{public}s', this.sandboxInfo);
+      } catch (e) {
+        this.sandboxInfo = `prepareSandbox 异常: ${e}`;
+      }
     }
   }
 
@@ -51,6 +65,11 @@ struct Index {
       Text(this.loadInfo)
         .fontSize(11)
         .fontColor('#6B7A90')
+      Text(this.sandboxInfo)
+        .fontSize(10)
+        .fontColor('#5A6A80')
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       // ---- model path ----
       TextInput({ text: this.modelPath })

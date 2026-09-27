@@ -27,11 +27,30 @@
    ```
    （模拟器上一般已有这份；没有就用上面命令推。真机请用 `bitnet-3b-tmac-arm64.gguf`）
 7. **运行**：目标选模拟器 → 点 **▶ Run 'entry'**。
-8. **预期结果**：
+8. **推模型**（见下一节，966 MB **必须走沙箱覆盖法**，`/data/local/tmp` 读不了）。
+9. **预期结果**（2026-09-27 实测通过）：
    - 「内核自测」→ `✅ 内核自测通过 · PASS: LUT kernel ran, zero-in => zero-out`
    - 「内核基准」→ 200 次内核调用总耗时 / 平均耗时
-   - 「加载模型」→ `OK: loaded … n_vocab=32002 … load=… ms`
-   - 「生成」→ 输出文本 + `prompt/eval tok/s`（模拟器慢属正常，见"注意"）
+   - 「加载模型」→ `✅ 模型已加载`，`load = 4956 ms`（含 288 张量内核变换）
+   - 「生成」→ `the city of Paris. The city is located in France. Paris was a Roman`
+     + `prompt 24.14 tok/s / eval 21.79 tok/s`（截图：`ohos/hap-demo-screenshot.png`）
+
+## 模型怎么进 App 沙箱（HarmonyOS 7 实测有效 ⚠️ 关键）
+
+**限制**：App 读不了 `/data/local/tmp`（SELinux 拦截，即使文件存在）；shell 用户也不能在 App 沙箱里**新建**文件。
+**可行通道**（本工程已内置）：App 启动时 `chmod(沙箱,0777)` 并创建一个 **0666 的 `model.gguf` 占位**，
+shell 就能**覆盖**这个文件：
+
+```bash
+# App 内看到的路径：/data/storage/el2/base/haps/entry/files/…
+# shell 侧真实路径： /data/app/el2/100/base/com.fandou.lutsa/haps/entry/files/…
+hdc file send bitnet-3b-tmac-ags64.gguf \
+  /data/app/el2/100/base/com.fandou.lutsa/haps/entry/files/model.gguf
+```
+界面上「加载模型」的路径已自动指向沙箱（回退逻辑：指定路径不可读时自动试 `<沙箱>/model.gguf`）。
+
+> 备选（若某设备连覆盖也禁止）：App 通过 HTTP 从主机下载模型到沙箱（模拟器网关 `10.0.2.2` 实测可达），
+> 需要给 App 加 `ohos.permission.INTERNET`。
 
 ## 命令行构建（可选，只产未签名 HAP）
 

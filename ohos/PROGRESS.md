@@ -243,8 +243,22 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 - **命令行构建验证**：`hvigorw assembleHap` → `BUILD SUCCESSFUL`，产物含**双 ABI 的 `libtmac_hap.so`**（已确认库内含 T-MAC/llama 代码串）
 - 文档：`ohos/hap/README.md`（DevEco 上手 + CLI 构建 + 模型准备 + 排障表）
 
-**待设备验证**：模拟器当前关机 → 启动后点 Run（IDE 自动签名）即可；模型模拟器上已有（`/data/local/tmp/llm-tmac/model.gguf`）。
-注意模型与 ABI 必须匹配（x86 用 `bitnet-3b-tmac-ags64.gguf`，arm64 用 `bitnet-3b-tmac-arm64.gguf`）。
+**✅ 已在模拟器（Mate X7 / HarmonyOS 7.0 / x86_64）实测通过**：
+- 「内核自测」→ **✅ 通过**；「加载模型」→ **✅ load=4956 ms**（含 288 张量内核变换）
+- 「生成」（`The capital of France is`，16 token，4 线程）→ **`the city of Paris. The city is located in France. Paris was a Roman`**，
+  **prompt 24.14 tok/s / eval 21.79 tok/s**；截图 `ohos/hap-demo-screenshot.png`
+- 验证方式：DevEco 点 Run（自动签名）安装 → 用 `Emulator.exe -instance "Mate X7" -click/-uiLayout/-screenshot` 驱动与读结果
+
+**踩通的关键坑（HarmonyOS 7 沙箱）**：App **读不了 `/data/local/tmp`**（SELinux，非文件问题）；shell 也**不能在 App 沙箱新建文件**。
+可行通道：App 启动时 chmod 沙箱到 0777 并创建 **0666 的 `model.gguf` 占位** → shell **覆盖**它：
+```
+hdc file send bitnet-3b-tmac-ags64.gguf \
+  /data/app/el2/100/base/com.fandou.lutsa/haps/entry/files/model.gguf
+```
+（App 内路径视图是 `/data/storage/el2/base/haps/entry/files/…`，shell 侧要用 `/data/app/...` 真实路径）
+
+**另注**：同一模型同一模拟器——CLI 形态刚启动时 3.84 tok/s vs App 形态空闲时 21.79 tok/s（差 5.7×），
+模拟器数字波动极大，**性能结论只能来自真机**。
 
 ## 提交包
 

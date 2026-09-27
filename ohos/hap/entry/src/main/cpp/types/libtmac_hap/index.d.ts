@@ -33,3 +33,6 @@ export const generateAsync: (
 ) => Promise<string>;
 
 export const release: () => string;
+
+/** chmod the sandbox (so `hdc file send` can push a model into it) and report the exact path. */
+export const prepareSandbox: (filesDir: string) => string;

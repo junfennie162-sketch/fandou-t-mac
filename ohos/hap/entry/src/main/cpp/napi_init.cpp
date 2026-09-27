@@ -23,8 +23,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <random>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 #include "napi/native_api.h"
@@ -280,17 +283,41 @@ std::string get_string_arg(napi_env env, napi_value v) {
 std::string do_load(const std::string &model_path, const std::string &files_dir, int threads,
                     int n_ctx, bool use_mmap) {
     release_llm();
+
+    // Make the sandbox reachable for `hdc file send` (the app's own uid owns it, so chmod is
+    // allowed; without this, /data/app/.../files stays 0770 and the shell user cannot push the
+    // model in). Best effort — harmless if it fails.
+    if (!files_dir.empty()) {
+        chmod(files_dir.c_str(), 0777);
+    }
+
     if (!ensure_kcfg(files_dir)) {
         return "FAIL: cannot write kcfg.ini into " + files_dir;
+    }
+
+    // Resolve the model: use the requested path, else fall back to <filesDir>/model.gguf.
+    std::string resolved = model_path;
+    std::string note;
+    if (access(resolved.c_str(), R_OK) != 0) {
+        const std::string alt = files_dir + "/model.gguf";
+        if (access(alt.c_str(), R_OK) == 0) {
+            resolved = alt;
+            note = " [fell back to sandbox path]";
+        }
+    }
+    if (access(resolved.c_str(), R_OK) != 0) {
+        return "FAIL: model not readable: " + model_path + " (and " + files_dir +
+               "/model.gguf). Push it with: hdc file send <local.gguf> " + files_dir +
+               "/model.gguf";
     }
 
     const auto t0 = std::chrono::steady_clock::now();
     llama_model_params mparams = llama_model_default_params();
     mparams.use_mmap = use_mmap;
     mparams.n_gpu_layers = 0;
-    llama_model *model = llama_load_model_from_file(model_path.c_str(), mparams);
+    llama_model *model = llama_load_model_from_file(resolved.c_str(), mparams);
     if (!model) {
-        return "FAIL: llama_load_model_from_file(" + model_path + ")";
+        return "FAIL: llama_load_model_from_file(" + resolved + ")";
     }
 
     llama_context_params cparams = llama_context_default_params();
@@ -309,16 +336,16 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
 
     g_llm.model = model;
     g_llm.ctx = ctx;
-    g_llm.model_path = model_path;
+    g_llm.model_path = resolved;
     g_llm.n_threads = threads;
     g_llm.n_ctx = n_ctx;
     g_llm.load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-    char buf[512];
+    char buf[640];
     std::snprintf(buf, sizeof(buf),
-                  "OK: loaded %s | n_vocab=%d | n_ctx=%d | threads=%d | mmap=%s | load=%.0f ms | kcfg=%s",
-                  model_path.c_str(), llama_n_vocab(model), n_ctx, threads, use_mmap ? "on" : "off",
-                  g_llm.load_ms, g_llm.kcfg_path.c_str());
+                  "OK: loaded %s%s | n_vocab=%d | n_ctx=%d | threads=%d | mmap=%s | load=%.0f ms | kcfg=%s",
+                  resolved.c_str(), note.c_str(), llama_n_vocab(model), n_ctx, threads,
+                  use_mmap ? "on" : "off", g_llm.load_ms, g_llm.kcfg_path.c_str());
     return buf;
 }
 
@@ -519,6 +546,45 @@ napi_value Release(napi_env env, napi_callback_info) {
     return make_string(env, "OK: model released");
 }
 
+// chmod the sandbox so the host can `hdc file send` a model into it, and report the exact
+// path the UI should use. Call this right after app start.
+//
+// Why this is needed on HarmonyOS 7: an app may only read files inside its own sandbox
+// (/data/local/tmp is blocked by SELinux), but `hdc file send` as the shell user cannot create
+// files in the sandbox either. What DOES work: the app creates a 0666 placeholder file, and the
+// shell user can then overwrite it. So we chmod the dir AND create model.gguf as 0666.
+napi_value PrepareSandbox(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc < 1) return make_string(env, "FAIL: prepareSandbox(filesDir)");
+    const std::string files_dir = get_string_arg(env, argv[0]);
+    if (files_dir.empty()) return make_string(env, "FAIL: empty filesDir");
+
+    const int rc = chmod(files_dir.c_str(), 0777);
+
+    const std::string model_path = files_dir + "/model.gguf";
+    struct stat st;
+    bool created = false;
+    if (stat(model_path.c_str(), &st) != 0) {
+        const int fd = open(model_path.c_str(), O_CREAT | O_RDWR, 0666);
+        if (fd >= 0) {
+            close(fd);
+            created = true;
+        }
+    }
+    const bool model_present = (stat(model_path.c_str(), &st) == 0) && st.st_size > 0;
+
+    char buf[640];
+    std::snprintf(buf, sizeof(buf),
+                  "sandbox=%s | chmod=%s | placeholder=%s | model.gguf %s (%lld B)\n"
+                  "push: hdc file send <local>.gguf %s/model.gguf",
+                  files_dir.c_str(), rc == 0 ? "0777 ok" : "failed", created ? "created 0666" : "exists",
+                  model_present ? "present" : "empty",
+                  (long long) (model_present ? st.st_size : 0), files_dir.c_str());
+    return make_string(env, buf);
+}
+
 }  // namespace
 
 EXTERN_C_START
@@ -531,6 +597,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"loadModelAsync", nullptr, LoadModelAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generate", nullptr, Generate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generateAsync", nullptr, GenerateAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"prepareSandbox", nullptr, PrepareSandbox, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"release", nullptr, Release, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
