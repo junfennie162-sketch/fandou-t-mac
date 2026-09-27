@@ -230,6 +230,22 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 - 新增一键真机部署 `ohos/scripts/deploy_arm64_device.ps1`（探针门禁 → 推二进制/模型 → 推理，`-WithSimdBaseline` 出同模型 A/B）；`env.ps1` 补本机 SDK 路径
 - 结论：指令集/ABI/数值/布局已验证；**唯一未验证项 = 真机 shell 是否允许执行 /data/local/tmp 二进制**（开发板通常可以，HarmonyOS NEXT 较严）→ 插上设备跑脚本 30 秒即知
 
+## HAP 应用形态：T-MAC LLM 推理 App · 2026-09-27
+
+**目标**：把 T-MAC 从"命令行二进制"升级成正经鸿蒙应用（ArkTS + NAPI），让 DevEco 的 Run 能一键部署。
+
+**已完成**：
+- **NAPI 桥重写**（`ohos/hap/entry/src/main/cpp/napi_init.cpp`）：同步 + **异步（Promise，跑在 NAPI 工作线程，避免卡死 UI）** 两套入口
+  —— `loadModelAsync / generateAsync`（真 LLM 推理：加载 T-MAC GGUF、tokenize、decode、top-k+温度采样、tok/s 计时）、`selfTest / bench`（LUT 内核冒烟与基准）、`nativeVersion / release`
+- **kcfg 自包含**：按 ABI 把 `kcfg.ini` 字符串编进 `.so`，首次加载写入应用沙箱并 `setenv("TMAC_KCFG_FILE", …)` → 不依赖主机构建路径
+- **双 ABI 静态库**（`ohos/hap/prebuilt/{x86_64,arm64-v8a}/lib{llama,ggml}.a`）：静态 llama.cpp（T-MAC 开）+ 对应架构 LUT 内核；x86 特意**不带 `-mfma`**（模拟器无 FMA）
+- **ArkTS UI**（`Index.ets`）：模型路径 / prompt / 线程 / 生成长度 / mmap 开关 + 5 个按钮；输出区显示文本与 tok/s
+- **命令行构建验证**：`hvigorw assembleHap` → `BUILD SUCCESSFUL`，产物含**双 ABI 的 `libtmac_hap.so`**（已确认库内含 T-MAC/llama 代码串）
+- 文档：`ohos/hap/README.md`（DevEco 上手 + CLI 构建 + 模型准备 + 排障表）
+
+**待设备验证**：模拟器当前关机 → 启动后点 Run（IDE 自动签名）即可；模型模拟器上已有（`/data/local/tmp/llm-tmac/model.gguf`）。
+注意模型与 ABI 必须匹配（x86 用 `bitnet-3b-tmac-ags64.gguf`，arm64 用 `bitnet-3b-tmac-arm64.gguf`）。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`

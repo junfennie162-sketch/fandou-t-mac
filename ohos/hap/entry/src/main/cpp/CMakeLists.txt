@@ -1,51 +1,55 @@
-# LUT-SA HAP native library.
-# Builds the T-MAC LUT kernel into the HAP for both targets:
-#   x86_64  -> deploy/tuned              (AVX2 kernels)   <- DevEco emulator on Windows
-#   arm64   -> deploy/tuned/aarch64-hf-bitnet-3b (NEON)  <- real HarmonyOS device
+# LUT-SA HAP native library — T-MAC LLM inference inside a HarmonyOS app.
+#
+# Links prebuilt static llama.cpp + T-MAC LUT kernels (per ABI):
+#   x86_64    -> prebuilt/x86_64/lib{llama,ggml}.a     (AVX2 kernels, staging-x64 package)
+#   arm64-v8a -> prebuilt/arm64-v8a/lib{llama,ggml}.a  (NEON kernels, staging-arm64 package)
+#
+# The kernels live INSIDE libggml.a (GGML_TMAC=ON build) — do not compile kernels.cc here again.
 cmake_minimum_required(VERSION 3.16)
 project(tmac_hap LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Repo root: ohos/hap/entry/src/main/cpp -> up 6 levels to fandou-t-mac-main
+# ohos/hap/entry/src/main/cpp -> up 6 levels to the repo root
 get_filename_component(T_MAC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../" ABSOLUTE)
-if(NOT EXISTS "${T_MAC_ROOT}/deploy/tuned/kernels.cc")
-  message(FATAL_ERROR "T-MAC repo root not found (looked at ${T_MAC_ROOT}). Adjust T_MAC_ROOT above.")
-endif()
+set(LLAMA_SRC "${T_MAC_ROOT}/3rdparty/llama.cpp")
+set(PREBUILT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../prebuilt")
 
 if(OHOS_ARCH STREQUAL "x86_64")
-  set(TMAC_KERNEL_DIR "${T_MAC_ROOT}/deploy/tuned")
-  set(TMAC_ARCH_FLAGS -mavx2 -mf16c -mfma)
-  message(STATUS "T-MAC HAP: x86_64 (AVX2) kernels <- deploy/tuned")
+  set(ARCH_DIR "x86_64")
+  # NOTE: no -mfma — the DevEco emulator's virtual CPU has AVX2 but NOT FMA (cpuid probe).
+  set(TMAC_ARCH_FLAGS -mavx2 -mf16c)
+  set(TMAC_INC "${T_MAC_ROOT}/ohos/staging-x64/t-mac/include")
 else()
-  set(TMAC_KERNEL_DIR "${T_MAC_ROOT}/deploy/tuned/aarch64-hf-bitnet-3b")
-  set(TMAC_ARCH_FLAGS -march=armv8.2a+dotprod+fp16)
-  message(STATUS "T-MAC HAP: ${OHOS_ARCH} (NEON) kernels <- aarch64-hf-bitnet-3b")
+  set(ARCH_DIR "arm64-v8a")
+  set(TMAC_ARCH_FLAGS -march=armv8.2a+fp16)
+  set(TMAC_INC "${T_MAC_ROOT}/ohos/staging-arm64/t-mac/include")
 endif()
 
-# kernels.cc includes "t-mac/kernels.h" — stage the arch-specific header the same way
-# the top-level ohos/CMakeLists.txt does.
-set(TMAC_GEN_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
-file(MAKE_DIRECTORY "${TMAC_GEN_INCLUDE}/t-mac")
-configure_file(
-  "${TMAC_KERNEL_DIR}/kernels.h"
-  "${TMAC_GEN_INCLUDE}/t-mac/kernels.h"
-  COPYONLY
-)
+message(STATUS "tmac_hap: ${OHOS_ARCH} (${ARCH_DIR}), kernels from ${TMAC_INC}")
 
-add_library(tmac_hap SHARED
-  napi_init.cpp
-  "${TMAC_KERNEL_DIR}/kernels.cc"
-)
+if(NOT EXISTS "${PREBUILT}/${ARCH_DIR}/libllama.a")
+  message(FATAL_ERROR "prebuilt static libs missing: ${PREBUILT}/${ARCH_DIR}/libllama.a — see ohos/hap/README.md")
+endif()
+
+add_library(tmac_hap SHARED napi_init.cpp)
 
 target_include_directories(tmac_hap PRIVATE
-  "${T_MAC_ROOT}/ohos/shim"   # dmlc/logging.h shim wins over any TVM header
-  "${TMAC_GEN_INCLUDE}"       # t-mac/kernels.h (arch-specific)
-  "${T_MAC_ROOT}/include"
+  "${LLAMA_SRC}/include"        # llama.h
+  "${LLAMA_SRC}/ggml/include"   # ggml.h
+  "${TMAC_INC}"                 # t-mac/kernels.h (arch-specific dispatchers)
+  "${T_MAC_ROOT}/ohos/shim"     # dmlc/logging.h shim
 )
 
 target_compile_options(tmac_hap PRIVATE ${TMAC_ARCH_FLAGS} -O2)
 target_compile_definitions(tmac_hap PRIVATE NDEBUG)
 
-target_link_libraries(tmac_hap PRIVATE libace_napi.z.so)
+target_link_libraries(tmac_hap PRIVATE
+  "${PREBUILT}/${ARCH_DIR}/libllama.a"
+  "${PREBUILT}/${ARCH_DIR}/libggml.a"
+  libace_napi.z.so
+  pthread
+  m
+  ${CMAKE_DL_LIBS}
+)
