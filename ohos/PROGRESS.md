@@ -189,6 +189,22 @@ The sun rises in the     → east and sets in the west.
 
 **archived**：`ohos/patches/llama_cpp_ohos.patch`（llama.cpp 子模块提交 `181ad23a`）
 
+## 对比实测：llama.cpp SIMD vs T-MAC（2026-09-27）
+
+完整报告：**`ohos/BENCH-tmac-vs-simd.md`**（同模型 A/B + 同形状内核对照 + 复现命令 + 原始输出）
+
+**🏆 同模型正面对决（BitNet-b1.58-3B，同一模拟器，同参数，两轮换序复测）**：
+T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63 BPW，1.83GB）**5.4~5.6 tok/s** → **T-MAC 快 2.1×**，输出均连贯（`…the city of Paris…`）。
+有效带宽两者相近（T-MAC 12.0 vs SIMD 10.8 GB/s，都逼近模拟器冷流式上限 13.7~15.7 GB/s）→ 差距来自**位宽/字节数 1.9×** 与 ~13% 带宽利用率优势；两者各达自身内核带宽的 85% / 79%，集成效率相当。
+
+**内核级**（同形状 N=8640×K=3200、M=1、交错 5 轮取 MIN）：T-MAC 快 **2.19×**（热，4t；1t 3.15×）/ **2.33×**（冷）——与端到端 2.1× 吻合，内核优势完整传导。**模拟器对同内核的惩罚 ≈2.2×**（WSL 原生 4t 冷 0.219ms vs 模拟器 0.486ms）。
+
+**方法学修正**（重要）：设备上 `run_test_ffn` 是 WSL 路径版（`ERR open A` 空跑 7ms 假数据），真测试程序是 `run_test_dev`；SIMD 侧必须用持久线程池（`ggml_graph_compute_with_ctx` 每调用重建线程池会污染 4 线程数据）；模拟器噪声大 → 同会话交错取 MIN、A/B 换序各跑一遍。
+
+**附带发现（fork 缺陷）**：T-MAC 补丁的 `is_type_supported()` 含 `GGML_TYPE_Q4_0`（bits=4），而加载器对每个张量无条件 `transform_tensor` → 缺 `bits=4` kcfg 时 `LOG(FATAL)` 中止：**T-MAC 版 llama-cli 无法加载任何标准 Q4_0 模型**。SIMD 基线因此改用未编 T-MAC 的纯 SIMD 构建。
+
+**模型转换链（新增产物）**：HF safetensors → `convert_hf_to_gguf.py --outtype f16`（6.65GB，288 张量，arch=bitnet，保留 sub_norm）→ `llama-quantize Q4_0`（1.83GB）。产物在 `D:\ohos-models\`。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
