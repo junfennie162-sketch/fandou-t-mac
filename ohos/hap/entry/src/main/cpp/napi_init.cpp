@@ -317,7 +317,18 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     mparams.n_gpu_layers = 0;
     llama_model *model = llama_load_model_from_file(resolved.c_str(), mparams);
     if (!model) {
-        return "FAIL: llama_load_model_from_file(" + resolved + ")";
+        struct stat st;
+        const long long sz = (stat(resolved.c_str(), &st) == 0) ? (long long) st.st_size : -1;
+        char msg[512];
+        std::snprintf(msg, sizeof(msg),
+                      "FAIL: llama_load_model_from_file(%s)\n[file size: %lld bytes]%s",
+                      resolved.c_str(), sz,
+                      sz < 16 * 1024 * 1024
+                          ? " — file is far too small for a model: the copy was incomplete "
+                            "(out of storage space?) or the wrong file was picked"
+                          : " — file size looks plausible; it may be a truncated/corrupt GGUF "
+                            "or the wrong quantisation for this build");
+        return msg;
     }
 
     llama_context_params cparams = llama_context_default_params();

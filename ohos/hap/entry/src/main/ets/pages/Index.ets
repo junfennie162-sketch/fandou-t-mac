@@ -89,14 +89,23 @@ struct Index {
       const dest = `${ctx.filesDir}/model.gguf`;
       const srcFile = fs.openSync(uris[0], fs.OpenMode.READ_ONLY);
       const dstFile = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      const sizeMb = Math.round(fs.statSync(srcFile.fd).size / 1024 / 1024);
-      await this.copyWithGuard(srcFile.fd, dstFile.fd);
+      const srcSize = fs.statSync(srcFile.fd).size;
+      const copied = await this.copyWithGuard(srcFile.fd, dstFile.fd);
+      const dstSize = fs.statSync(dstFile.fd).size;
       fs.closeSync(srcFile);
       fs.closeSync(dstFile);
+      if (dstSize !== srcSize) {
+        // truncated copy (usually out of disk space) — do NOT load a broken model
+        this.status = `⚠️ 导入不完整：${Math.round(dstSize / 1048576)} / ${Math.round(srcSize / 1048576)} MB`;
+        this.detail = `${copied}\n文件没拷全（多半是设备存储空间不足，请清理后重试）。已保留原模型未变。`;
+        hilog.error(0x0000, 'LUTSA', 'import truncated: %{public}d of %{public}d', dstSize, srcSize);
+        return;
+      }
       this.modelPath = dest;
-      this.status = `✅ 模型已导入（${sizeMb} MB）`;
-      this.detail = `source: ${uris[0]}\ndest:   ${dest}`;
-      hilog.info(0x0000, 'LUTSA', 'imported model, %{public}d MB -> %{public}s', sizeMb, dest);
+      this.status = `✅ 模型已导入（${Math.round(dstSize / 1048576)} MB）`;
+      this.detail = `source: ${uris[0]}\ndest:   ${dest}\n${copied}`;
+      hilog.info(0x0000, 'LUTSA', 'imported model, %{public}d MB -> %{public}s',
+                 Math.round(dstSize / 1048576), dest);
       this.busy = false;
       this.doLoad();   // chain straight into loading
     } catch (e) {
@@ -165,12 +174,20 @@ struct Index {
       this.status = `⏳ 正在导出模型（${Math.round(st.size / 1024 / 1024)} MB，请保持应用在前台）…`;
       const srcFile = fs.openSync(src, fs.OpenMode.READ_ONLY);
       const dstFile = fs.openSync(uris[0], fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      await this.copyWithGuard(srcFile.fd, dstFile.fd);
+      const srcSize = fs.statSync(srcFile.fd).size;
+      const copied = await this.copyWithGuard(srcFile.fd, dstFile.fd);
+      const dstSize = fs.statSync(dstFile.fd).size;
       fs.closeSync(srcFile);
       fs.closeSync(dstFile);
-      this.status = '✅ 模型已导出';
-      this.detail = `dest: ${uris[0]}\n现在可以用「📂 选择模型文件」把它选回来（验证导入链路）`;
-      hilog.info(0x0000, 'LUTSA', 'exported model to %{public}s', uris[0]);
+      if (dstSize !== srcSize) {
+        this.status = `⚠️ 导出不完整：${Math.round(dstSize / 1048576)} / ${Math.round(srcSize / 1048576)} MB`;
+        this.detail = `${copied}\n多半是目标存储空间不足。`;
+        return;
+      }
+      this.status = `✅ 模型已导出（${Math.round(dstSize / 1048576)} MB）`;
+      this.detail = `dest: ${uris[0]}\n${copied}\n现在可以用「📂 选择模型文件」把它选回来（验证导入链路）`;
+      hilog.info(0x0000, 'LUTSA', 'exported model to %{public}s (%{public}d MB)',
+                 uris[0], Math.round(dstSize / 1048576));
     } catch (e) {
       this.status = '❌ 导出失败';
       this.detail = `导出异常: ${e}`;
