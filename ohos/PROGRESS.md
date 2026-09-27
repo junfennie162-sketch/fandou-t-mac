@@ -257,8 +257,15 @@ hdc file send bitnet-3b-tmac-ags64.gguf \
 ```
 （App 内路径视图是 `/data/storage/el2/base/haps/entry/files/…`，shell 侧要用 `/data/app/...` 真实路径）
 
-**另注**：同一模型同一模拟器——CLI 形态刚启动时 3.84 tok/s vs App 形态空闲时 21.79 tok/s（差 5.7×），
+**另注**：同一模型同一模拟器——CLI 形态刚启动时 3.84 tok/s、App 形态空闲时 21.79 tok/s、再次回归 10.52 tok/s（波动 ~3×），
 模拟器数字波动极大，**性能结论只能来自真机**。
+
+**追加（真机就绪化）**：
+- **模型导入改为产品级**：App 内「📂 选择模型文件」→ 系统文件选择器（`.gguf` 过滤）→ App 自己拷进沙箱并自动加载
+  （不依赖 shell 权限，真机通用；选择器已实测可拉起，取消分支正确；hdc 覆盖法保留为开发捷径）
+- **arm64 指令集体检**：HAP 内 `libtmac_hap.so`(arm64) 用 `-march=armv8.2a+fp16` 编译，
+  **SVE/i8mm/v8.7 指令 0 条**、NEON fmla 966 条 → 不会被 fork 的 armv8.7 误选坑到，主流手机都能跑
+- 部署能力：模拟器允许 `bm install` 装**未签名** HAP → 我已能自行部署验证（真机仍需 IDE 自动签名）
 
 ## 提交包
 

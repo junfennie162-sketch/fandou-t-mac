@@ -576,6 +576,9 @@ napi_value PrepareSandbox(napi_env env, napi_callback_info info) {
             close(fd);
             created = true;
         }
+    } else {
+        // keep an imported model host-writable for `hdc file send` (0666)
+        chmod(model_path.c_str(), 0666);
     }
     const bool model_present = (stat(model_path.c_str(), &st) == 0) && st.st_size > 0;
 

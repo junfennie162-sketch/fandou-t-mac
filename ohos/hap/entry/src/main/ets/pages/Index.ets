@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import tmac from 'libtmac_hap.so';
 
 @Entry
@@ -45,6 +46,63 @@ struct Index {
       return ctx.filesDir;
     } catch (e) {
       return '';
+    }
+  }
+
+  private doLoad(): void {
+    if (this.busy) {
+      return;
+    }
+    this.busy = true;
+    this.status = '⏳ 加载中（首次含内核变换，可能几十秒）…';
+    this.detail = '';
+    tmac.loadModelAsync(this.modelPath, this.filesDir(), this.num(this.threads, 4), 512, this.useMmap)
+      .then((r: string) => {
+        this.status = r.startsWith('OK') ? '✅ 模型已加载' : '❌ 加载失败';
+        this.detail = r;
+        hilog.info(0x0000, 'LUTSA', 'loadModel: %{public}s', r);
+      })
+      .catch((e: Object) => {
+        this.status = '❌ 加载异常';
+        this.detail = `loadModelAsync 异常: ${e}`;
+      })
+      .finally(() => { this.busy = false; });
+  }
+
+  // Product-grade model import: system file picker -> copy into the app sandbox -> load.
+  // No shell/hdc needed, works on any device regardless of sandbox policy.
+  private async pickAndImportModel(): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const doc = new picker.DocumentViewPicker(ctx);
+      const uris = await doc.select({ maxSelectNumber: 1, fileSuffixFilters: ['.gguf'] } as picker.DocumentSelectOptions);
+      if (!uris || uris.length === 0) {
+        this.status = '已取消选择';
+        return;
+      }
+      this.busy = true;
+      this.status = '⏳ 正在把模型拷进应用沙箱…（966MB 约数秒）';
+      const dest = `${ctx.filesDir}/model.gguf`;
+      const srcFile = fs.openSync(uris[0], fs.OpenMode.READ_ONLY);
+      const dstFile = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      const sizeMb = Math.round(fs.statSync(srcFile.fd).size / 1024 / 1024);
+      fs.copyFileSync(srcFile.fd, dstFile.fd);
+      fs.closeSync(srcFile);
+      fs.closeSync(dstFile);
+      this.modelPath = dest;
+      this.status = `✅ 模型已导入（${sizeMb} MB）`;
+      this.detail = `source: ${uris[0]}\ndest:   ${dest}`;
+      hilog.info(0x0000, 'LUTSA', 'imported model, %{public}d MB -> %{public}s', sizeMb, dest);
+      this.busy = false;
+      this.doLoad();   // chain straight into loading
+    } catch (e) {
+      this.busy = false;
+      this.status = '❌ 导入失败';
+      this.detail = `文件选择/拷贝异常: ${e}`;
+      hilog.error(0x0000, 'LUTSA', 'import failed: %{public}s', JSON.stringify(e));
     }
   }
 
@@ -128,27 +186,18 @@ struct Index {
 
       // ---- buttons ----
       Row({ space: 8 }) {
+        Button('📂 选择模型文件')
+          .height(42).layoutWeight(1).enabled(!this.busy)
+          .onClick(() => { this.pickAndImportModel(); })
         Button('加载模型')
           .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            this.busy = true;
-            this.status = '⏳ 加载中（首次含内核变换，可能几十秒）…';
-            this.detail = '';
-            tmac.loadModelAsync(this.modelPath, this.filesDir(), this.num(this.threads, 4), 512, this.useMmap)
-              .then((r: string) => {
-                this.status = r.startsWith('OK') ? '✅ 模型已加载' : '❌ 加载失败';
-                this.detail = r;
-                hilog.info(0x0000, 'LUTSA', 'loadModel: %{public}s', r);
-              })
-              .catch((e: Object) => {
-                this.status = '❌ 加载异常';
-                this.detail = `loadModelAsync 异常: ${e}`;
-              })
-              .finally(() => { this.busy = false; });
-          })
+          .onClick(() => { this.doLoad(); })
+      }
+      .width('92%')
 
+      Row({ space: 8 }) {
         Button('生成')
-          .height(42).layoutWeight(1).enabled(!this.busy)
+          .height(46).layoutWeight(1).enabled(!this.busy)
           .onClick(() => { this.doGenerate(); })
       }
       .width('92%')

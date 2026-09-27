@@ -35,11 +35,18 @@
    - 「生成」→ `the city of Paris. The city is located in France. Paris was a Roman`
      + `prompt 24.14 tok/s / eval 21.79 tok/s`（截图：`ohos/hap-demo-screenshot.png`）
 
-## 模型怎么进 App 沙箱（HarmonyOS 7 实测有效 ⚠️ 关键）
+## 模型怎么进 App（两种方式）
 
-**限制**：App 读不了 `/data/local/tmp`（SELinux 拦截，即使文件存在）；shell 用户也不能在 App 沙箱里**新建**文件。
-**可行通道**（本工程已内置）：App 启动时 `chmod(沙箱,0777)` 并创建一个 **0666 的 `model.gguf` 占位**，
-shell 就能**覆盖**这个文件：
+### 方式 1（产品级，任何设备都能用 ✅ 推荐）：App 内「📂 选择模型文件」
+
+点「📂 选择模型文件」→ 系统文件选择器（可按 `.gguf` 过滤）→ 选中后 App **自己把模型拷进沙箱**并自动加载。
+不需要 hdc/shell 权限，不受设备沙箱策略影响——真机同样可用。
+（实测：选择器可正常拉起并带隐私提示；取消分支正确。模拟器用户存储里没有文件所以选不了实际文件。）
+
+### 方式 2（开发捷径，仅当设备允许 shell 覆盖 App 文件）：hdc 覆盖沙箱占位
+
+**HarmonyOS 7 实测的限制**：App 读不了 `/data/local/tmp`（SELinux 拦截）；shell 也不能在 App 沙箱**新建**文件。
+可行通道：App 启动时 `chmod(沙箱,0777)` 并创建一个 **0666 的 `model.gguf` 占位**，shell 就能**覆盖**它：
 
 ```bash
 # App 内看到的路径：/data/storage/el2/base/haps/entry/files/…
@@ -47,10 +54,9 @@ shell 就能**覆盖**这个文件：
 hdc file send bitnet-3b-tmac-ags64.gguf \
   /data/app/el2/100/base/com.fandou.lutsa/haps/entry/files/model.gguf
 ```
-界面上「加载模型」的路径已自动指向沙箱（回退逻辑：指定路径不可读时自动试 `<沙箱>/model.gguf`）。
+（App 每次启动会把已存在的 `model.gguf` 重新 chmod 到 0666，保证这条通道长期可用。）
 
-> 备选（若某设备连覆盖也禁止）：App 通过 HTTP 从主机下载模型到沙箱（模拟器网关 `10.0.2.2` 实测可达），
-> 需要给 App 加 `ohos.permission.INTERNET`。
+> 备选：App 通过 HTTP 从主机下载模型到沙箱（模拟器网关 `10.0.2.2` 实测可达），需加 `ohos.permission.INTERNET`。
 
 ## 命令行构建（可选，只产未签名 HAP）
 
