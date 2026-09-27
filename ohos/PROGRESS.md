@@ -224,6 +224,12 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 
 产物：`ohos/staging-arm64/t-mac/`（已归档）· `D:\ohos-models\bitnet-3b-tmac-arm64.gguf` · `D:\ohos-models\qemu\qemu-aarch64-static`
 
+**真机可用性加固（同日追加）**：
+- 修掉会让真机 SIGILL 的雷：fork CMake 恒选 `-march=armv8.7-a` → 用 `-DGGML_COMPILER_SUPPORT_MATMUL_INT8=OFF` 强制走 **armv8.2a+fp16**；重编后指令集安检 **SVE/i8mm/v8.7 全 0**，NEON fmla 807 条，端到端复跑通过
+- 新增设备探针 `ohos/selftest/arm64_cpu_probe.c`（HWCAP 解码 + fork 隔离的 fp16 冒烟测试 + 判定）
+- 新增一键真机部署 `ohos/scripts/deploy_arm64_device.ps1`（探针门禁 → 推二进制/模型 → 推理，`-WithSimdBaseline` 出同模型 A/B）；`env.ps1` 补本机 SDK 路径
+- 结论：指令集/ABI/数值/布局已验证；**唯一未验证项 = 真机 shell 是否允许执行 /data/local/tmp 二进制**（开发板通常可以，HarmonyOS NEXT 较严）→ 插上设备跑脚本 30 秒即知
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`

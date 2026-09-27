@@ -111,7 +111,34 @@ qemu-aarch64-static -cpu max build-ohos-arm64/bin/llama-cli \
 
 ---
 
-## 5. 下一步
+## 5. 真机可用性加固（2026-09-27 追加，"推上真机能不能跑"）
+
+**先修了一个会让真机直接崩的雷**：fork 的 CMake 对 aarch64+T-MAC 恒选 `-march=armv8.7-a+fp16`（`check_cxx_source_compiles` 假阳性）——armv8.2 的主流手机执行 v8.6+/v8.7 指令会 **SIGILL**。
+
+修法与验证（不改进 CMake，靠预置缓存变量走正确分支）：
+```bash
+cmake ... -DGGML_COMPILER_SUPPORT_MATMUL_INT8=OFF     # → 走 armv8.2a+fp16 分支
+```
+重编后二进制指令集安全检查：**SVE 0 条、i8mm 0 条、ld64b/st64b 0 条，NEON `fmla` 807 条** → 只依赖 armv8-a + fp16（几乎所有 ARM64 手机都满足）。再用 qemu 重跑端到端：`The capital of France is the city of Paris. It is the…` ✅
+
+**新增两个交付件**：
+1. `ohos/selftest/arm64_cpu_probe.c` — 设备探针（静态、任意 arm64 可跑）：打印 uname / cpuinfo / HWCAP+HWCAP2 解码（NEON、FP16-SIMD、dotprod、i8mm、SVE…），并**在 fork 出的子进程里**做 fp16 NEON 冒烟测试（设备不支持时只报 SIGILL，不会把探针本身打死），最后给出判定：`this device can run the armv8.2a+fp16 build` ✓/✗。已用 qemu 验证（-cpu max 下全 YES + PASS）。
+2. `ohos/scripts/deploy_arm64_device.ps1` — 一键真机部署：设备检查 → **编译并运行探针（不通过就中止）** → 推 T-MAC 二进制+模型（模型存在则跳过） → 跑推理；`-WithSimdBaseline` 再跑一遍纯 SIMD（Q4_0）做同模型 A/B。二进制默认从 WSL 构建目录自动拷贝（`\\wsl.localhost\...`）。无设备时会明确报错而不是静默失败（已测）。
+
+**"推上真机能跑吗？"——诚实回答**：
+
+| 层面 | 状态 |
+|---|---|
+| 指令集/ABI（aarch64、musl 静态、无动态依赖） | ✅ 已验证（反汇编 + qemu 端到端） |
+| 数值正确性（内核 NMSE 8.4e-05） | ✅ 已验证 |
+| 模型布局（arm64 kcfg 重转） | ✅ 已验证 |
+| 真机 OS 用户态（鸿蒙内核/沙箱） | ⚠️ **未验证**：qemu-user 跑的是 WSL 的 Linux 内核；且 HarmonyOS NEXT 对 `hdc shell` 执行 `/data/local/tmp` 下二进制可能有限制（开发板/OpenHarmony 通常放开） |
+| 设备算力/内存（966MB 模型 + 1GB 级 RSS） | ⚠️ 预计可行（8GB+ 手机/2GB+ 板子），但 shell 域的资源上限未知 |
+| **性能数字** | ❌ 必须真机（TCG 0.43 tok/s 无意义） |
+
+结论：**"能跑"的概率很高，但第一件事是插上设备跑 `deploy_arm64_device.ps1`——探针 30 秒就能给出"能不能跑"的确定答案**；若卡在"shell 不允许执行二进制"，则改走 HAP+NAPI 形态（arm64 静态库已就绪）。
+
+## 6. 下一步
 
 | 目标 | 途径 |
 |---|---|

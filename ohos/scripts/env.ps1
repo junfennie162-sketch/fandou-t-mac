@@ -8,6 +8,7 @@ function Find-OhosSdkNative {
     if ($env:OHOS_SDK_NATIVE) { $candidates += $env:OHOS_SDK_NATIVE }
     $candidates += @(
         "D:\ohos-sdk\ohos-sdk\windows\native",                            # standalone 6.1-LTS SDK
+        "D:\DevEco Studio\sdk\default\openharmony\native",                # DevEco bundled (this machine)
         "D:\dev_software\DevEco Studio\sdk\default\openharmony\native",   # DevEco bundled (teammate machine)
         (Join-Path $env:LOCALAPPDATA "OpenHarmony\Sdk\20\native")         # DevEco bundled default
     )
