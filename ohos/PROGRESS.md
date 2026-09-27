@@ -246,7 +246,7 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 **✅ 已在模拟器（Mate X7 / HarmonyOS 7.0 / x86_64）实测通过**：
 - 「内核自测」→ **✅ 通过**；「加载模型」→ **✅ load=4956 ms**（含 288 张量内核变换）
 - 「生成」（`The capital of France is`，16 token，4 线程）→ **`the city of Paris. The city is located in France. Paris was a Roman`**，
-  **prompt 24.14 tok/s / eval 21.79 tok/s**；截图 `ohos/hap-demo-screenshot.png`
+  **eval ~10.5 tok/s**（见下方交叉验证）；截图 `ohos/hap-demo-screenshot.png`
 - 验证方式：DevEco 点 Run（自动签名）安装 → 用 `Emulator.exe -instance "Mate X7" -click/-uiLayout/-screenshot` 驱动与读结果
 
 **踩通的关键坑（HarmonyOS 7 沙箱）**：App **读不了 `/data/local/tmp`**（SELinux，非文件问题）；shell 也**不能在 App 沙箱新建文件**。
@@ -257,8 +257,13 @@ hdc file send bitnet-3b-tmac-ags64.gguf \
 ```
 （App 内路径视图是 `/data/storage/el2/base/haps/entry/files/…`，shell 侧要用 `/data/app/...` 真实路径）
 
-**另注**：同一模型同一模拟器——CLI 形态刚启动时 3.84 tok/s、App 形态空闲时 21.79 tok/s、再次回归 10.52 tok/s（波动 ~3×），
-模拟器数字波动极大，**性能结论只能来自真机**。
+**性能数字交叉验证（重要，2026-09-27 晚）**：同一模型每 token 固定读 **1012 MB**（807MB 2-bit 层权重 + 205MB F16 嵌入，gguf 工具实测）。
+五次测量：CLI 3.84（刚开机，系统忙）/ **App 21.79（异常值，偏高 2×）** / CLI 10.38 / App 10.52 / App 10.51 →
+**可信值 ≈10.5 tok/s（96 ms/token → 10.5 GB/s 有效带宽，与实测内存带宽区间自洽）**，三次独立测量误差 <1.5%。
+2× 波动来源：模拟器 4 个 vCPU 是宿主线程，i7-14650HX 的 P 核/E 核性能差 ~2×，调度位置每次不同。
+**结论：模拟器数字波动可达 ±2×，比赛/论文数字必须真机。**
+
+**"是否真跑"的证伪实验**：把沙箱模型覆盖成 1KB 随机文件 → App **立刻 `❌ 加载失败`**；恢复真模型 → ✅ 加载 + 出文本。
 
 **追加（真机就绪化）**：
 - **模型导入改为产品级**：App 内「📂 选择模型文件」→ 系统文件选择器（`.gguf` 过滤）→ App 自己拷进沙箱并自动加载

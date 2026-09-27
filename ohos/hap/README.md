@@ -33,7 +33,7 @@
    - 「内核基准」→ 200 次内核调用总耗时 / 平均耗时
    - 「加载模型」→ `✅ 模型已加载`，`load = 4956 ms`（含 288 张量内核变换）
    - 「生成」→ `the city of Paris. The city is located in France. Paris was a Roman`
-     + `prompt 24.14 tok/s / eval 21.79 tok/s`（截图：`ohos/hap-demo-screenshot.png`）
+     + `eval ≈10.5 tok/s`（同一设备三次独立测量 10.38 / 10.51 / 10.52，误差 <1.5%；截图：`ohos/hap-demo-screenshot.png`）
 
 ## 模型怎么进 App（两种方式）
 
