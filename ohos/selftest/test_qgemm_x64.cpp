@@ -53,6 +53,8 @@ int main(int argc, char** argv) {
     const int ret = qgemm_lut_int8(m_bits, K, 1, bits, A, qlut, (void*)(A + a_bytes), lut_scales, lut_biases, C);
 
     printf("ret=%d\n", ret);
+    printf("IN: A[0..3]=%02x %02x %02x %02x | qlut[0..3]=%d %d %d %d | ls[0]=%04x\n",
+           A[0], A[1], A[2], A[3], qlut[0], qlut[1], qlut[2], qlut[3], lut_scales[0]);
     printf("C[0..7] = ");
     for (int i = 0; i < 8; i++) printf("0x%04x ", C[i]);
     printf("\n");

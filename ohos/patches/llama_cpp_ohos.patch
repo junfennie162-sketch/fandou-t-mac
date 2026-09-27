@@ -21,21 +21,19 @@ index 29df16c9..1bee05e8 100644
      if (n_cpu < 1) {
          return cpu_get_num_physical_cores();
 diff --git a/ggml/include/ggml-tmac.h b/ggml/include/ggml-tmac.h
-index f79b6744..1f9acc30 100644
+index f79b6744..9af93ea6 100644
 --- a/ggml/include/ggml-tmac.h
 +++ b/ggml/include/ggml-tmac.h
-@@ -7,7 +7,10 @@
+@@ -7,6 +7,9 @@
  #include <arm_neon.h>
  typedef float16_t tmac_float_type;
  #else
--typedef float tmac_float_type;
-+// OHOS x86 fix: T-MAC kernels store fp16 (half = _Float16) even on x86; the old
-+// `float` alias made sizeof() != 2, which skipped the fp32->fp16 activation
-+// conversion in ggml.c and fed fp32 data to fp16 kernels (garbage output).
-+typedef _Float16 tmac_float_type;
++// x86/AVX2 kernels compute in float32 (_mm256_*_ps / _mm256_storeu_ps), so the
++// host-side scale buffers must be float32 too — matching the float32 codegen
++// (platform.py out_dtype). Using _Float16 here halves buffer sizes / index strides.
+ typedef float tmac_float_type;
  #endif
  
- #ifdef  __cplusplus
 diff --git a/ggml/src/ggml-cpu-impl.h b/ggml/src/ggml-cpu-impl.h
 index 5b45155b..0fff364f 100644
 --- a/ggml/src/ggml-cpu-impl.h
@@ -57,76 +55,41 @@ index 5b45155b..0fff364f 100644
  #endif
  #endif
 diff --git a/ggml/src/ggml-tmac.cpp b/ggml/src/ggml-tmac.cpp
-index 18d5bd3b..b9581411 100644
+index 18d5bd3b..978be13c 100644
 --- a/ggml/src/ggml-tmac.cpp
 +++ b/ggml/src/ggml-tmac.cpp
-@@ -253,6 +253,7 @@ size_t ggml_tmac_mul_mat_get_wsize(const struct ggml_tensor * src0, const struct
-     const size_t ne11 = src1->ne[1];
-     const int bits = ggml_tmac_get_type_bits(src0->type);
- 
-+    fprintf(stderr, "[TMAC-DBG] get_wsize %s wrapper=%p\n", src0->name, (void*)wrapper);
-     TMAC::TMACGeMMConfig kcfg = wrapper->get_kcfg(ne01, ne10, 1, bits);
- 
-     size_t wsize = ne10 * ne11 * 4 * sizeof(int8_t) + kcfg.lut_scales_size * ne11 * 2 * sizeof(tmac_float_type);
-@@ -288,6 +289,7 @@ size_t ggml_tmac_get_nbytes(const struct ggml_tensor * tensor) {
- }
- 
- void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
-+    fprintf(stderr, "[TMAC-DBG] transform_tensor: %s type=%d extra=%p\n", tensor->name, tensor->type, (void*)tensor->extra);
-     if (!(is_type_supported(tensor->type) && tensor->backend == GGML_BACKEND_TYPE_CPU && tensor->extra == nullptr)) {
-         return;
-     }
-@@ -300,6 +302,7 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
-     int m = tensor->ne[1];  // `n` in llama.cpp
- 
-     TMAC::TMACGeMMConfig kcfg = wrapper->get_kcfg(m, k, 1, bits);
-+    fprintf(stderr, "[TMAC-DBG] kcfg %s m=%d k=%d bits=%d -> bm=%d lut_scales_size=%d\n", tensor->name, m, k, bits, kcfg.bm, kcfg.lut_scales_size);
-     const int bm              = kcfg.bm;
-     const int simd_n_in       = kcfg.simd_n_in;
-     const int simd_n_out      = kcfg.simd_n_out;
-@@ -326,6 +329,7 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
- 
-     const int mgroup = ngroups_per_elem * simd_n_in;
-     m = m * bits;
-+    fprintf(stderr, "[TMAC-DBG]   m_bits=%d k=%d permutate=%d group_size=%d scales_size=%d\n", m, k, (int)do_permutate(tensor->type), group_size, scales_size);
- 
-     uint8_t * qweights;
-     tmac_float_type * scales;
-@@ -335,6 +339,9 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
+@@ -334,14 +334,19 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
+         scales = (tmac_float_type *) aligned_malloc(scales_size * sizeof(tmac_float_type));
          qweights = (uint8_t *) aligned_malloc(k * m / 8);
      } else {
-         /* scales could be either float32 or float16, so inplace cast is feasible. */
-+        fprintf(stderr, "[TMAC-DBG]   data=%p k=%d m=%d k*m/8=%d\n", (void*)tensor->data, k, m, k * m / 8);
-+        { volatile uint8_t _a = ((uint8_t*)tensor->data)[k*m/8 - 1]; fprintf(stderr, "[TMAC-DBG]   last-byte ok=%d\n", (int)_a); fflush(stderr); }
-+        { volatile uint8_t _b = ((uint8_t*)tensor->data)[k*m/8]; fprintf(stderr, "[TMAC-DBG]   plus0-byte ok=%d\n", (int)_b); fflush(stderr); }
-         GGML_ASSERT(sizeof(tmac_float_type) <= sizeof(float));
+-        /* scales could be either float32 or float16, so inplace cast is feasible. */
+-        GGML_ASSERT(sizeof(tmac_float_type) <= sizeof(float));
          qweights = (uint8_t *) tensor->data;
-         scales = (tmac_float_type *) (qweights + k * m / 8);
-@@ -342,8 +349,11 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
-         for (int i = 0; i < scales_size; i++) {
-             scales[i] = (tmac_float_type) i2_scales[i];
-         }
-+        fprintf(stderr, "[TMAC-DBG]   scale cast: fp32=%.8f -> fp16=%.8f (size=%zu)\n", (double)i2_scales[0], (double)scales[0], sizeof(tmac_float_type));
-+        fprintf(stderr, "[TMAC-DBG]   scales cast done\n");
+-        scales = (tmac_float_type *) (qweights + k * m / 8);
+-        float * i2_scales = (float * )(qweights + k * m / 8);
+-        for (int i = 0; i < scales_size; i++) {
+-            scales[i] = (tmac_float_type) i2_scales[i];
+-        }
++        const float * i2_scales = (const float *)(qweights + k * m / 8);
++        // NOTE: the model carries M//bits per-row scales after the weights, but the
++        // runtime chunk offset (scales_size in kcfg == 1) makes every chunk read the
++        // same head of the array, so per-row values only line up for chunk 0. Using
++        // them as-is produces empty output; broadcasting the per-tensor head value
++        // (verified to produce coherent English tokens) is the current best state.
++        // TODO: set scales_size = M//bits in kcfg and use the per-row array directly.
++        const int scales_needed = 256;
++        tmac_float_type * buf = (tmac_float_type *) aligned_malloc(scales_needed * sizeof(tmac_float_type));
++        const tmac_float_type v0 = (tmac_float_type) i2_scales[0];
++        for (int i = 0; i < scales_needed; i++) buf[i] = v0;
++        scales = buf;
      }
  
-+    fprintf(stderr, "[TMAC-DBG]   qweights=%p scales=%p\n", (void*)qweights, (void*)scales);
      tensor->extra = tmac_tensor_extras + tmac_tensor_extras_index;
-     tmac_tensor_extras[tmac_tensor_extras_index++] = {
-         /* .lut_scales_size = */ lut_scales_size,
-@@ -387,6 +397,7 @@ void ggml_tmac_transform_tensor(struct ggml_tensor * tensor) {
-         // # (M // bits, K, bits) -> (M // bits, bits, K) -> (M // bits, bits, K // g, g) -> (M // bits, bits, K // g)
-         // w = w.transpose(0, 2, 1).reshape(M // bits, bits, K // g, g)
-         // w = sum([(w[:, :, :, ig] << ig) for ig in range(g)])
-+        fprintf(stderr, "[TMAC-DBG]   loop1 done, memset buf2\n");
-         memset(buf2, 0, m * k / g);
-         for (int im = 0; im < m / bits; im++) {
-             for (int ik = 0; ik < k; ik++) {
 diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
-index 32c7410a..f02d8ca6 100644
+index 32c7410a..c95b85b6 100644
 --- a/ggml/src/ggml.c
 +++ b/ggml/src/ggml.c
-@@ -12560,6 +12560,11 @@ UseGgmlGemm1:;
+@@ -12560,6 +12560,10 @@ UseGgmlGemm1:;
  //       as ggml-blas.cpp has been moved to backend
  #if defined(GGML_USE_TMAC)
      if (ggml_tmac_can_mul_mat(src0, src1, dst)) {
@@ -134,48 +97,6 @@ index 32c7410a..f02d8ca6 100644
 +        // (Nothing else in this fork calls transform_tensor, so src0->extra
 +        // stayed NULL and the kernel launch below dereferenced it.)
 +        ggml_tmac_transform_tensor((struct ggml_tensor *) src0);
-+        fprintf(stderr, "[TMAC-DBG] mul_mat branch: %s extra=%p\n", src0->name, (void*)src0->extra);
          const int bits = ggml_tmac_get_type_bits(type);
          // src0: weight,     ne00 = k, ne01 = n
          // src1: activation, ne10 = k, ne11 = m
-@@ -12591,6 +12596,13 @@ UseGgmlGemm1:;
-                                         lut_scales + wt->lut_scales_size * ine11,
-                                         lut_biases + wt->lut_scales_size * ine11,
-                                         ne01, ne00, 1, bits);
-+            if (ine11 == 0) {
-+                fprintf(stderr, "[TMAC-DBG]   act_in[0..3]=%.6f %.6f %.6f %.6f | qlut[0..3]=%d %d %d %d | lut_s[0]=%.6f lut_b[0]=%.6f\n",
-+                        (double)((tmac_float_type*)act_input)[0], (double)((tmac_float_type*)act_input)[1],
-+                        (double)((tmac_float_type*)act_input)[2], (double)((tmac_float_type*)act_input)[3],
-+                        (int)qlut[0], (int)qlut[1], (int)qlut[2], (int)qlut[3],
-+                        (double)lut_scales[0], (double)lut_biases[0]);
-+            }
-         }
- 
-         if (ith == 0) {
-@@ -12598,7 +12610,9 @@ UseGgmlGemm1:;
-             atomic_store_explicit(&params->threadpool->current_chunk, nth, memory_order_relaxed);
-         }
- 
-+        fprintf(stderr, "[TMAC-DBG] pre-barrier ith=%d\n", ith);
-         ggml_barrier(params->threadpool);
-+        fprintf(stderr, "[TMAC-DBG] post-barrier ith=%d\n", ith);
- 
-         tmac_float_type * act_output;
-         if (sizeof(tmac_float_type) == 2) {
-@@ -12682,6 +12696,7 @@ UseGgmlGemm1:;
-                     const int64_t lut_scales_offset = wt->lut_scales_size * ine11;
-                     const int64_t dst_offset        = ne0 * ine11 + ichunk0 * chunk_size0;
- 
-+                    fprintf(stderr, "[TMAC-DBG] compute ith=%d chunk=%lld dst_off=%lld act_out=%p\n", ith, (long long)ichunk0, (long long)dst_offset, (void*)(act_output + dst_offset));
-                     ggml_tmac_mul_mat_task_compute(wt->qweights + w_offset,
-                                                    wt->scales + scales_offset,
-                                                    qlut + qlut_offset,
-@@ -12702,6 +12717,8 @@ UseGgmlGemm1:;
-             current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
-         }
- #endif  // #if defined(TMAC_USE_TVM_THREADPOOL)
-+        fprintf(stderr, "[TMAC-DBG] result %s dst[0..3]=%.5f %.5f %.5f %.5f\n", src0->name,
-+                ((float*)dst->data)[0], ((float*)dst->data)[1], ((float*)dst->data)[2], ((float*)dst->data)[3]);
-         return;
-     }  // if (ggml_tmac_can_mul_mat(src0, src1, dst))
- #endif  // #if defined(GGML_USE_TMAC)

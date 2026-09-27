@@ -124,26 +124,70 @@ llama.cpp `GGML_TMAC=ON` 集成编译 → **全链路激活**（transform / 内�
 
 **遗留**（已于当日深夜定位）：`qgemm_lut` 特化内核执行内部 SIGSEGV / 输出全 0。
 
-**根因（逐层对照实验，最终定位）**：
+**根因（第二轮调试最终定位 + 修复）**：
 
-| 编译器 | 运行环境 | 结果 |
-|---|---|---|
-| GCC 12（conda） | WSL 真 CPU | ✅ **正常**（输出非零、数值合理） |
-| **OHOS clang 15.0.4** | WSL 真 CPU | ❌ 全 0 |
-| OHOS clang 15.0.4 | DevEco 模拟器 | ❌ 全 0 / SIGSEGV |
+⚠️ 早前"OHOS clang 代码生成缺陷（vpaddw 缺失）"的结论**已推翻**——那是 objdump 工具名写错
+（`llvm-objdump.exe` 不存在，错误被 `2>/dev/null` 吞掉）导致指令统计为 0 的**假数据**。
+真实的 impl 机器码在 OHOS 与 GCC 两个版本中逐条相同。
 
-→ **OHOS clang 15.0.4 对该内核的代码生成缺陷**：反汇编显示核心「查表累加」循环的
-**累加指令（`vpaddw`）全部缺失**（查表 `vpshufb` 正常生成）——编译器错误消除了累加逻辑，
-导致输出恒 0。`-O0` / `-fno-strict-aliasing` 均复现（**非优化级别问题**）。
+**真正的根因：生成器的输出缓冲类型不匹配（栈越界）**
+- x86/AVX2 的 `tbl_g4_int8_float_update_impl` 输出 **float32**（`_mm256_storeu_ps`，4 字节/元素）
+- 但 ags64 生成器把 qgemm 的中间缓冲声明为 `half CBits[N]`（**fp16，2 字节**）
+- → 内核写入量 = 缓冲的 2 倍 → **栈越界** → 覆盖返回地址（SIGSEGV）/ 读到零页（全 0）
+- 对照：bitnet-3b 分支用 `uint64_t temp_CBits[N]`（8 字节/元素）→ 长度足够 → 不崩
 
-**三层洗清**：非模拟器缺陷、非集成代码问题、非 T-MAC 内核源码问题——**是 OHOS x86 编译器工具链的缺陷**。
+**修复（已落地）**：
+1. `deploy/tuned/ohos-x64-ags64/kernels.cc` 3 处 `half CBits[N]` → `float CBits[N]`
+2. 同步 `ohos/staging-x64/t-mac/lib/kernels.cc`（llama.cpp 集成用）
+3. 重编内核 + 重编 llama.cpp（GGML_TMAC）→ 推送模拟器
 
-**影响与结论**：
-- 模拟器路线（OHOS clang x86 工具链）**无法承载 T-MAC 的复杂内核**；
-- **真机 ARM 不受影响**（clang 的 aarch64 是 OHOS 主场，上游路径）；
-- 普通推理（非 LUT 内核）不受影响：**55.8 tok/s 已验证**。
+**验证**：
+- musl（OHOS clang 链接）与 glibc 输出**完全一致**、无崩溃 → 工具链无罪
+- **T-MAC 端到端在模拟器执行成功**：`transform_tensor`（288 张量）→ kcfg 查表（bm=256）
+  → scales 转换（fp32→fp16 正确）→ qgemm 分块 compute → 输出
+- 性能（含调试探针）：prompt 0.49 tok/s / eval 0.15 tok/s（探针去除后待重测）
 
-产物：`deploy/tuned/ohos-x64-bitnet-3b/`（ags=-1）、`deploy/tuned/ohos-x64-ags64/`（ags=64）。
+**遗留（下一步）**：数值 NaN/-inf（第 0 层起 `dst[0]=-inf`）——内核数值层面问题，
+候选：非 permute 分支的数据布局、激活 scale 处理、chunk 偏移。
+
+**运行方式**（模拟器）**：
+```
+TMAC_KCFG_FILE=/data/local/tmp/llm-tmac/kcfg.ini LD_LIBRARY_PATH=. ./llama-cli \
+  -m model.gguf --no-mmap -p '...' -n 20 -t 4
+```
+
+产物：`deploy/tuned/ohos-x64-bitnet-3b/`（ags=-1）、`deploy/tuned/ohos-x64-ags64/`（ags=64，已修复）。
+
+## 🏆 最终成功：T-MAC 在鸿蒙上完整跑通（2026-09-27）
+
+**结果**：BitNet-3B（966MB，2.44 BPW）在 HarmonyOS 模拟器上输出**完全正确**的文本：
+
+```
+The capital of France is → Paris. It is the largest city in France and the second
+                            largest city in Europe. It is the capital of the country...
+Once upon a time         → , there was a little girl who was very sad...
+The sun rises in the     → east and sets in the west.
+```
+
+**验证证据（铁证级）**：
+- attn_q 输出 vs 官方数学参考（T-MAC tests/test_e2e 的公式）：**NMSE 0.0027%**
+- 设备 dump 真实激活 vs numpy RMSNorm：差 1e-7；模型数据 vs 重新转换：**逐字节零差异**
+- 调用参数实录（m_bits/K/A_off/C_off stride）全部对齐
+- 输出质量**超越**手工参考：连补了 sub_norm 的 HF transformers 实现都只能输出乱码（HF 并非 BitNet 的正确实现），本实现输出通顺百科文本
+
+**性能**（模拟器 x86_64，4 线程）：eval **11.24 tok/s**、load 11.3s（冷）、prompt 1.93 tok/s（6 token 短 prompt）
+
+**完整修复清单（9 项）**：
+1. float32 类型统一（平台 out_dtype=float32 + tmac_float_type=float）—— 上游 x86 半成品路径
+2. scales 广播（模型 per-tensor 单值 → 内核读取所需的 120 个）—— 上游 BitNet 路径
+3. `tbl_float_reset` 尺寸（`m * sizeof(float_type)`，修复栈垃圾入 FMA）
+4. memset 越界（上游）+ ⑤ half typedef（上游）
+6. `transform_tensor` 漏调（fork 集成）
+7. mmap 只读页写崩（条件化 cast 跳过）
+8. kcfg 路径（TMAC_KCFG_FILE 环境变量）
+9. **调试探针清理** —— 探针的文件 IO/打印在 4 线程推理中干扰时序；清理后输出立即正确（最后的关键一步）
+
+**archived**：`ohos/patches/llama_cpp_ohos.patch`（llama.cpp 子模块提交 `181ad23a`）
 
 ## 提交包
 

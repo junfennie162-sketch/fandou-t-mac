@@ -192,7 +192,10 @@ _device_kwargs = {
             "-mllvm",
             "-inline-threshold=10000",
         ],
-        "out_dtype": "float16",
+        # The AVX2 impl computes in float32 (_mm256_*_ps / _mm256_storeu_ps), so the
+        # codegen must use float32 too: with float16 it declares CBits/scales buffers
+        # at half size and the kernel overruns the stack (and reads garbage scales).
+        "out_dtype": "float32",
         "aggregation_dtype": "int32",
     },
 }

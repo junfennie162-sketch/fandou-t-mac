@@ -1061,7 +1061,7 @@ extern "C"
   }
   if (!(qgemm_lut_t1_int8_m256_k8640_n1_b2_C_strides == NULL)) {
   }
-  alignas(32) float CBits[256];
+  alignas(32) half CBits[256];
   alignas(32) half C_global[128];
   tbl_float_reset(256, (&(CBits[0])));
   for (int32_t k_outer = 0; k_outer < 135; ++k_outer) {
@@ -1297,7 +1297,7 @@ extern "C"
   }
   if (!(qgemm_lut_t1_int8_m128_k3200_n1_b2_C_strides == NULL)) {
   }
-  alignas(32) float CBits[128];
+  alignas(32) half CBits[128];
   alignas(32) half C_global[64];
   tbl_float_reset(128, (&(CBits[0])));
   for (int32_t k_outer = 0; k_outer < 50; ++k_outer) {
@@ -1533,7 +1533,7 @@ extern "C"
   }
   if (!(qgemm_lut_t1_int8_m256_k3200_n1_b2_C_strides == NULL)) {
   }
-  alignas(32) float CBits[256];
+  alignas(32) half CBits[256];
   alignas(32) half C_global[128];
   tbl_float_reset(256, (&(CBits[0])));
   for (int32_t k_outer = 0; k_outer < 50; ++k_outer) {
