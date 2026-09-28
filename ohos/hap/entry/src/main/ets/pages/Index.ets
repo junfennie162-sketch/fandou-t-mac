@@ -383,10 +383,10 @@ struct Index {
     Column({ space: 0 }) {
       // ---- header ----
       Row({ space: 8 }) {
-        Text('LUT-SA')
-          .fontSize(22).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
-        Text('T-MAC 低比特 LLM · 鸿蒙原生')
-          .fontSize(11).fontColor(C_SUB).layoutWeight(1).maxLines(1)
+        Text('鸿蒙玲珑核')
+          .fontSize(21).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
+        Text('LUT-SA · T-MAC 低比特 LLM · 鸿蒙原生')
+          .fontSize(10).fontColor(C_SUB).layoutWeight(1).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Column()
           .width(9).height(9).borderRadius(5).backgroundColor(this.dotColor())
