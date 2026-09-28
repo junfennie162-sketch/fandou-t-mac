@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <mutex>
 #include <random>
 #include <string>
 #include <sys/stat.h>
@@ -103,6 +104,40 @@ n_tile_num = 20
 #endif
 
 namespace {
+
+// ---------------------------------------------------------------- llama.cpp log capture
+// llama.cpp/ggml print the full model description (hparams, special tokens, tensor buffers,
+// graph splits, …) to stderr, which is invisible inside an ArkTS app. Take over the log
+// callbacks so the app can show byte-for-byte the same output as the CLI.
+std::mutex  g_log_mutex;
+std::string g_log_buf;
+constexpr size_t kLogCap = 256 * 1024;
+
+void tmac_log_capture(enum ggml_log_level /*level*/, const char * text, void * /*user_data*/) {
+    if (!text) return;
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    if (g_log_buf.size() < kLogCap) {
+        g_log_buf.append(text);
+    }
+}
+
+void tmac_log_clear() {
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    g_log_buf.clear();
+}
+
+std::string tmac_log_take() {
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    return g_log_buf;
+}
+
+void tmac_log_init() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    llama_log_set(tmac_log_capture, nullptr);
+    ggml_log_set(tmac_log_capture, nullptr);
+}
 
 // ---------------------------------------------------------------- kernel self-test / bench
 // Shape shared by both arch kernel sets: m_bits=128, k=3200, n=1, bits=2 -> 64 output rows.
@@ -282,6 +317,8 @@ std::string get_string_arg(napi_env env, napi_value v) {
 // sync entry points, on a NAPI worker thread for the Async ones)
 std::string do_load(const std::string &model_path, const std::string &files_dir, int threads,
                     int n_ctx, bool use_mmap) {
+    tmac_log_init();
+    tmac_log_clear();   // capture this load's llama.cpp output verbatim
     release_llm();
 
     // Make the sandbox reachable for `hdc file send` (the app's own uid owns it, so chmod is
@@ -352,33 +389,17 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     g_llm.n_ctx = n_ctx;
     g_llm.load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-    char buf[1400];
-    const double size_mib = (double) llama_model_size(model) / 1024.0 / 1024.0;
-    const double bpw = llama_model_n_params(model) ? (double) llama_model_size(model) * 8.0 /
-                                                        (double) llama_model_n_params(model) : 0.0;
-    const double params_b = (double) llama_model_n_params(model) / 1e9;
-    const int n_embd = llama_n_embd(model), n_layer = llama_n_layer(model);
-    const double kv_kv_mib = (double) (uint64_t) n_ctx * n_layer * n_embd * 2 * 2 / 1024.0 / 1024.0;
-    std::snprintf(buf, sizeof(buf),
-                  "llm_load_print_meta: model size       = %.2f MiB (%.2f BPW)\n"
-                  "llm_load_print_meta: model params     = %.2f B\n"
-                  "llm_load_print_meta: n_vocab          = %d\n"
-                  "llm_load_print_meta: n_ctx_train      = %d\n"
-                  "llm_load_print_meta: n_embd           = %d\n"
-                  "llm_load_print_meta: n_layer          = %d\n"
-                  "llm_load_print_meta: n_head           = %d\n"
-                  "llama_new_context_with_model: n_ctx   = %d\n"
-                  "llama_new_context_with_model: n_batch = 512\n"
-                  "llama_new_context_with_model: n_threads = %d\n"
-                  "llama_kv_cache_init:        CPU KV buffer size = %.2f MiB (K/V f16)\n"
-                  "llama_perf_context_print:        load time = %.2f ms\n"
-                  "model: %s%s\nkcfg:  %s",
-                  size_mib, bpw, params_b, llama_n_vocab(model), llama_n_ctx_train(model), n_embd,
-                  n_layer, llama_n_head(model), n_ctx, threads, kv_kv_mib, g_llm.load_ms,
+    // The complete llama.cpp verbose output (hparams, special tokens, tensor buffers, graph
+    // splits, …) captured through the log callback — byte-for-byte the same as the CLI prints.
+    const std::string log = tmac_log_take();
+    char footer[640];
+    std::snprintf(footer, sizeof(footer),
+                  "\n--------\nload time = %.2f ms | threads = %d | ctx = %d | mmap = %s\n"
+                  "model file: %s%s\nkcfg:       %s\n",
+                  g_llm.load_ms, threads, n_ctx, use_mmap ? "on" : "off",
                   resolved.c_str(), note.c_str(), g_llm.kcfg_path.c_str());
-    return buf;
+    return log + footer;
 }
-
 std::string do_generate(const std::string &prompt, int n_predict, double temp, int top_k) {
     if (!g_llm.model || !g_llm.ctx) return "FAIL: call loadModel() first";
 

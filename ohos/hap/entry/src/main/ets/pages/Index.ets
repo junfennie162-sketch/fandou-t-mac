@@ -59,8 +59,13 @@ struct Index {
     this.detail = '';
     tmac.loadModelAsync(this.modelPath, this.filesDir(), this.num(this.threads, 4), 512, this.useMmap)
       .then((r: string) => {
-        this.status = r.startsWith('OK') ? '✅ 模型已加载' : '❌ 加载失败';
+        this.status = r.startsWith('OK') || r.includes('llm_load_print_meta')
+                        ? '✅ 模型已加载' : '❌ 加载失败';
         this.detail = r;
+        // the full llama.cpp verbose log goes into the scrollable console panel
+        if (r.includes('llm_load_print_meta')) {
+          this.output = r;
+        }
         hilog.info(0x0000, 'LUTSA', 'loadModel: %{public}s', r);
       })
       .catch((e: Object) => {
