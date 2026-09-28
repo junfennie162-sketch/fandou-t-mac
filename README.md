@@ -147,6 +147,7 @@
 
 | 维度 | 入口 |
 |---|---|
+| **本分支（pc）：桌面构建与三方基准** | [`docs/PC-BUILD.md`](docs/PC-BUILD.md)（f16/Q4_0/T-MAC 基线 4.41/15.94/25.10 + 复现命令） |
 | **全程技术总结（先读这个）** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
 | 实测截图证据（真机/模拟器） | [`ohos/screenshots/`](ohos/screenshots/) |
 | HAP 应用工程 | [`ohos/hap/README.md`](ohos/hap/README.md) |
