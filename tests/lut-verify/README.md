@@ -3,6 +3,8 @@
 诊断 T-MAC 经典静默失败（内核返回 0、无报错、输出全 0/乱码）的 A/B 工具：
 真实 HF 权重 → 已知良好输入 + NumPy 参考答案 → 设备上跑内核 → NMSE 对比。
 
+**端到端也已在安卓真机验证**（完整 LLM 推理，11.55 tok/s）：`android-e2e-run.txt`。
+
 - `gen_testdata_ffn.py` — 生成 A.bin（量化权重）/ B.bin（激活）/ S.bin（scale）/ Cref.bin（参考答案）
 - `run_test_dev.cpp` — 跑 preprocessor + 分块 qgemm，打印逐层诊断 + NMSE，可带参考对比
 

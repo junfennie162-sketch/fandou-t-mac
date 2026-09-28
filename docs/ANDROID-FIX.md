@@ -2,6 +2,11 @@
 
 > 适用分支：`android-pc`（通用 Linux / Android / 桌面路径）· 鸿蒙路径见 `main` 分支 [`ohos/FULL-REPORT.md`](../ohos/FULL-REPORT.md)
 >
+> **✅ 端到端已真机验证（2026-09-28）**：vivo V2323A（SD 8 Gen 2 · Android 16）跑通完整 LLM 推理，
+> 输出正确连贯文本，峰值 **11.55 tok/s**（t4 冷机）/ 持续 ~10.6，load 1.46 s——
+> 原始记录 [`tests/lut-verify/android-e2e-run.txt`](../tests/lut-verify/android-e2e-run.txt)。
+> 同一静态二进制横跨 鸿蒙/安卓/qemu 三环境可运行。
+>
 > **症状**：编译通过、程序不崩溃、`qgemm_lut_int8` 返回 0（成功）、无任何报错——但输出全 0 / 全 NaN / 乱码。
 > 我们在 x86-ohos 上复现并逐一修复了这套静默失败；aarch64（安卓手机）同理中招。**官方内核的数学是对的，
 > 问题全部在数据契约层与集成层，且全部无错误提示。**
