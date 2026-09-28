@@ -14,7 +14,7 @@
 //       deploy/tuned/<artifact>/kernels.cc -o run_test_dev
 // Build (Android arm64, run via adb -- /data/local/tmp exec IS allowed on Android,
 // unlike retail HarmonyOS):
-//   $NDK_HOME/toolchains/llvm/prebuilt/<host>/bin/aarch64-linux-android24-clang++ \
+//   $NDK_HOME/toolchains/llvm/prebuilt/<host>/bin/aarch64-linux-android28-clang++ \
 //       -O2 -march=armv8.2a+fp16 -I deploy/tuned/aarch64-hf-bitnet-3b \
 //       run_test_dev.cpp deploy/tuned/aarch64-hf-bitnet-3b/kernels.cc \
 //       -static-libstdc++ -o run_test_dev_android
