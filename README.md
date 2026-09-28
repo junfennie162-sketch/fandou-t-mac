@@ -7,6 +7,27 @@
   <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
 </p>
 
+## 🏆 本队实测结果（2026-09-27 · 真机落地）
+
+**BitNet-b1.58-3B（2.44 BPW，966 MB）已跑通华为零售真机（arm64 · HarmonyOS 6.1.1）**，同一模型、同一参数的三方对比：
+
+| 环境 | 引擎/量化 | 生成速度 |
+|---|---|---|
+| **华为真机 HBN-AL00（arm64）** | **T-MAC LUT · 2.44 BPW** | **18.62 tok/s**（load 1.96 s） |
+| 桌面 i7-14650HX（4 线程） | T-MAC LUT · 2.44 BPW | 25.10 tok/s |
+| 桌面 i7-14650HX（4 线程） | llama.cpp Q4_0 | 15.94 tok/s |
+| 桌面 i7-14650HX（4 线程） | llama.cpp f16 | 4.41 tok/s |
+| 鸿蒙模拟器（同模型 A/B） | T-MAC vs Q4_0 | 11.7 vs 5.5 → **2.1×** |
+
+- **手机上的 T-MAC（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
+- 内核级同形状对照：LUT 2 线程即超过 Q4_0 满 4 线程；冷数据下双方每字节带宽持平 → 优势来自 1.9× 位宽差
+- 完整证据链 + 复现命令：[`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) · 截图：[`ohos/screenshots/`](ohos/screenshots/)
+
+<p align="center">
+  <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="真机桌面：LUT-SA 已安装" />
+  <img src="ohos/screenshots/device/device-console-02.png" width="260" alt="App 屏幕控制台（真机实测会话）" />
+</p>
+
 ## 一句话创意
 
 把比特级查找表（LUT）驱动的低比特 LLM 推理范式封装为 OpenHarmony / HarmonyOS 用户态系统能力，用轻量行为感知做动态资源调度，把首字延迟和能耗在端侧压下去。
@@ -31,9 +52,9 @@
 
 > 源文件：`assets/images/readme/sequence-phase1.drawio` · 设计说明：`assets/images/readme/sequence-phase1.md`
 
-## 公开性能基线
+## 上游公开性能基线（参考）
 
-数据出处：上游 T-MAC `docs/profiling_data.md`。单位 tokens / sec。
+> 本队已在鸿蒙模拟器 / qemu-arm64 / 零售真机完成自有实测（见上表），以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
 
 | 模型 | 设备 | 线程 | llama.cpp | T-MAC | 约倍速 |
 |---|---|---|---|---|---|
@@ -46,15 +67,17 @@
 
 > 上游公开数据，非本队板测。复赛阶段在 OpenHarmony 模拟器或 ARM 设备完成复现与补充实测。
 
-## 移植到 OpenHarmony / HarmonyOS 的路线
+## 移植到 OpenHarmony / HarmonyOS 的路线（已全部落地 ✅）
 
-| 步骤 | 内容 | 阶段 |
+| 步骤 | 内容 | 状态 |
 |---|---|---|
-| 1 | 抽取 LUT Kernel 为 Native 静态 / 动态库，参考 Android 交叉编译经验 | 复赛前期 |
-| 2 | DevEco 创建 Native 模块，打通最小推理调用 | 复赛前期 |
-| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | 复赛中期 |
-| 4 | 叠加轻量感知调度；与 llama.cpp 或官方量化路径对照 | 复赛中后期 |
-| 5 | 固化本平台 TTFT、tokens / s、（可选）功耗数据 | 复赛提交前 |
+| 1 | 抽取 LUT Kernel 为 Native 静态/动态库 | ✅ 双 ABI 静态库（x86_64 / arm64-v8a），`ohos/staging-{x64,arm64}/` |
+| 2 | DevEco Native 模块，打通最小推理调用 | ✅ HAP App（ArkTS + NAPI），模拟器与真机均跑通 |
+| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ `libtmac_sa.so` + sa_smoke（qemu 全链路）；最终交付以 HAP 应用形态——零售真机 SELinux 限制 CLI/SA 通道（见 FULL-REPORT §6.1） |
+| 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比（f16/Q4_0/T-MAC）+ 内核级微基准 |
+| 5 | 固化本平台 tokens/s 等数据 | ✅ 真机 18.62 tok/s 实测归档（截图 + 原始输出） |
+
+移植全程（13 处上游/集成 bug 修复、五阶段验证方法学、诚实性声明）：**[`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)**
 
 ## 作品介绍
 
@@ -64,7 +87,7 @@
 
 工程实现分三层：计算层适配 T-MAC LUT Kernel 至 ARM 架构，处理访存模式与 LUT 表布局；服务层按 SAMgr 注册 LUT SystemAbility，对外暴露统一加速接口，应用按需获取 proxy；策略层将行为信号映射为优先级、预取与节流策略，可在演示场景中直观呈现。
 
-公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。BitNet-3B 在 M2-Ultra 单核 22.08 对 6.49 tokens/s，树莓派 5 单核 8.03 对 1.37 tokens/s。本作品以此为性能基线，并规划在 OpenHarmony 模拟器或 ARM 设备上完成复现与实测补充。复赛阶段可进一步叠加官方 NPU / CANN 量化路径作对照，强化「异构调度」的论证链。
+公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。**本队已完成自主复现与实测**：鸿蒙模拟器同模型 A/B（T-MAC 2.1× 于 Q4_0）、qemu-arm64 功能验证（内核 NMSE 8.4e-05）、华为零售真机端到端 18.62 tok/s——详见 [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)。
 
 作品意义在于将 LUT 计算范式产品化为系统级服务，降低端侧大模型部署门槛，为隐私本地推理、低功耗生成等场景提供基础支撑。
 
@@ -83,6 +106,16 @@
 
 **复现步骤**：
 
+| 数据集 | 复现入口 |
+|---|---|
+| 桌面三方对比（f16 / Q4_0 / T-MAC） | [`ohos/BENCH-native-3way.md`](ohos/BENCH-native-3way.md) |
+| 鸿蒙模拟器同模型 A/B + 内核级微基准 | [`ohos/BENCH-tmac-vs-simd.md`](ohos/BENCH-tmac-vs-simd.md) |
+| aarch64 三层验证（内核/构建/端到端） | [`ohos/ARM64-VALIDATION.md`](ohos/ARM64-VALIDATION.md) |
+| HAP 应用（DevEco 打开即跑） | [`ohos/hap/README.md`](ohos/hap/README.md) |
+| 全程总结（真机数据 + 13 处修复清单） | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+
+上游路径（克隆上游仓库按官方流程）：
+
 1. 克隆本仓或上游 T-MAC，按 README 与 `docs/e2e.md` 准备依赖。
 2. 按文档转换或获取对应低比特模型。
 3. 运行官方或本仓 benchmark，记录 tokens / s 与线程配置。
@@ -92,8 +125,9 @@
 
 | 风险 | 说明 |
 |---|---|
-| 初赛数据非本队设备实测 | 已明确标注来源，不将公开数据表述为「本队板测」 |
-| ISA / 内存布局差异 | ARM 鸿蒙设备需适配；优先用户态库，避免未公开内核 API |
+| 上游数据与自有实测已分列 | 初赛曾引用上游公开数据；现自有实测（模拟器/qemu/真机）已归档并标注测量方法 |
+| ISA / 内存布局差异 | 已处理：arm64 按 fp16 契约 + kcfg 重转模型 + 强制 armv8.2a+fp16（防真机 SIGILL） |
+| 零售真机环境限制 | SELinux 禁 CLI 执行与 hilog，已以 HAP 应用 + 屏幕控制台方案落地（FULL-REPORT §6） |
 | 权限边界 | SystemAbility 能力级别以可申请 / 可演示为准 |
 
 > 全文：[`docs/output/report/phase1-test-report.md`](docs/output/report/phase1-test-report.md)
@@ -113,6 +147,10 @@
 
 | 维度 | 入口 |
 |---|---|
+| **全程技术总结（先读这个）** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+| 实测截图证据（真机/模拟器） | [`ohos/screenshots/`](ohos/screenshots/) |
+| HAP 应用工程 | [`ohos/hap/README.md`](ohos/hap/README.md) |
+| 性能对比三份报告 | [`ohos/BENCH-native-3way.md`](ohos/BENCH-native-3way.md) · [`ohos/BENCH-tmac-vs-simd.md`](ohos/BENCH-tmac-vs-simd.md) · [`ohos/ARM64-VALIDATION.md`](ohos/ARM64-VALIDATION.md) |
 | 项目一句话 / 边界 | [`AGENTS.md`](AGENTS.md) · [`CONTEXT.md`](CONTEXT.md) |
 | 赛题与方案 | [`docs/knowledge.md`](docs/knowledge.md) |
 | 决策记录 | [`docs/adr/0001-lut-systemability-path.md`](docs/adr/0001-lut-systemability-path.md) |
