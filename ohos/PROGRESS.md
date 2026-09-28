@@ -302,6 +302,18 @@ eval time   =   859.51 ms / 16 runs   ( 53.72 ms/token,  18.62 tokens per second
 
 > 注：`ohos/hap/build-profile.json5` 的本机签名材料（绝对路径 + DPAPI 密码串）**只留在本地**，不入公开仓库。
 
+## 🤖 安卓真机端到端（跨平台可移植性实证）· 2026-09-28
+
+同一套 aarch64 产物（静态 llama-cli + bitnet-3b-tmac-arm64.gguf + staging-arm64 内核，**零改动**）推上
+vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
+
+- 内核级 NMSE **8.397e-05**，与 qemu **逐位一致**（qlut 41/127/27/113 三环境一致）
+- 端到端输出正确文本（`…Paris…`），**峰值 11.55 tok/s / 持续 ~10.6（t4 最优）**，load 1.46 s
+- 线程扫描：t2/t3/t4≈10.5~11.5，t6=9.35，t8=7.37 → >4 线程被 A510 小核锁 barrier
+- 跨平台对照：麒麟 18.62 vs SD8G2 11.55（同二进制同模型，+61%）→ 麒麟内存子系统/调度占优
+- 证据：`tests/lut-verify/android-{device,e2e}-run.txt`（android-pc 分支）；排坑指南 `docs/ANDROID-FIX.md`
+- 当年"安卓能跑不输出"的病根（数据契约层）按本仓修复集使用后根治 ✅
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
