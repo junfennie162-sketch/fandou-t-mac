@@ -277,6 +277,31 @@ hdc file send bitnet-3b-tmac-ags64.gguf \
   **SVE/i8mm/v8.7 指令 0 条**、NEON fmla 966 条 → 不会被 fork 的 armv8.7 误选坑到，主流手机都能跑
 - 部署能力：模拟器允许 `bm install` 装**未签名** HAP → 我已能自行部署验证（真机仍需 IDE 自动签名）
 
+## 🏆 真机落地：HUAWEI HBN-AL00 实测 18.62 tok/s · 2026-09-27
+
+**真机（HarmonyOS 6.1.1 零售版，arm64）完整跑通**，全程总结见 **`ohos/FULL-REPORT.md`**。
+
+| 步骤 | 结果 |
+|---|---|
+| CLI 直跑二进制 | ❌ 零售版 SELinux：`sh` 域禁 exec `/data/local/tmp` → 唯一形态 = HAP 应用 |
+| 签名链修复 | ① products 补 `signingConfig: default`；② 删空 `targetSdkVersion`；③ 错误码 9568423 → 真机 UDID 未入 profile，连机重新生成自动签名 |
+| 模型注入沙箱 | App 建 0666 占位 → `hdc file send` 覆盖（966MB arm64 布局模型） |
+| 数据提取 | 零售机 hilog 被禁 → App 屏幕滚动控制台（`appendLog`）显示 + 截屏取数 |
+
+**真机成绩**（屏幕 `llama_perf_context_print` 原始输出，截图 `ohos/screenshots/device/`）：
+
+```
+load time   =  1955.44 ms
+prompt eval =   239.87 ms /  7 tokens ( 34.27 ms/token,  29.18 tokens per second)
+eval time   =   859.51 ms / 16 runs   ( 53.72 ms/token,  18.62 tokens per second)
+```
+
+- 真机 T-MAC（18.62）**超过**桌面 i7 的 llama.cpp Q4_0（15.94）
+- 比模拟器快 1.7~1.8×（与预测的模拟器惩罚 ≈2× 一致）；加载仅 1.96 s
+- 有效带宽 18.8 GB/s（1012 MB/token ÷ 53.72 ms），落在模拟器（10~12）与桌面（25~31）之间，自洽 ✓
+
+> 注：`ohos/hap/build-profile.json5` 的本机签名材料（绝对路径 + DPAPI 密码串）**只留在本地**，不入公开仓库。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
