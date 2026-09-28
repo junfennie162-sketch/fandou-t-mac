@@ -1,42 +1,75 @@
 # LUT-SA · 鸿蒙高校创新赛
 
-> **竞赛 fork（fandou-t-mac）**：本仓库基于 [microsoft/T-MAC](https://github.com/microsoft/T-MAC)（EuroSys 2025）二开，把比特级查找表（LUT）驱动的低比特 LLM 推理封装为 **OpenHarmony / HarmonyOS 用户态 SystemAbility** 加速服务，参赛「鸿蒙高校创新赛 · 方向四 · 操作系统智能创新」。  
+> **竞赛 fork（fandou-t-mac）**：本仓库基于 [microsoft/T-MAC](https://github.com/microsoft/T-MAC)（EuroSys 2025）二开，把比特级查找表（LUT）驱动的低比特 LLM 推理移植到 **HarmonyOS / 安卓 / 桌面 Linux** 三平台端侧运行，参赛「鸿蒙高校创新赛 · 方向四 · 操作系统智能创新」。
 > 作品技术名 **LUT-SA**，队伍 **翻斗花园（中北大学）**。
-
-## 分支布局（按平台三分支）
-
-| 分支 | 平台 | 招牌产出 |
-|---|---|---|
-| **`main`**（本分支，默认） | **鸿蒙** | HAP 应用 + 真机 18.62 tok/s + [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) 全程总结 |
-| **`android`** | 安卓 | [`docs/ANDROID-FIX.md`](../android/docs/ANDROID-FIX.md)·"能跑不输出"排坑 + 真机端到端 11.55 tok/s（vivo V2323A） |
-| **`pc`** | 桌面 x86 | [`docs/PC-BUILD.md`](../pc/docs/PC-BUILD.md)·三方基准 4.41/15.94/25.10 tok/s + 全套构建配方 |
-
-> 同一套 T-MAC 内核与模型横跨三平台（2026-09-28 实证：同一静态二进制跑通鸿蒙/安卓/qemu）。
 
 <p align="center">
   <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
 </p>
 
-## 🏆 本队实测结果（2026-09-27 · 真机落地）
+---
 
-**BitNet-b1.58-3B（2.44 BPW，966 MB）已跑通华为零售真机（arm64 · HarmonyOS 6.1.1）**，同一模型、同一参数的三方对比：
+## 🏆 成绩总览（全平台实测 · 同一 BitNet-b1.58-3B · 2.44 BPW · 966 MB）
 
-| 环境 | 引擎/量化 | 生成速度 |
-|---|---|---|
-| **华为真机 HBN-AL00（arm64）** | **T-MAC LUT · 2.44 BPW** | **18.62 tok/s**（load 1.96 s） |
-| 桌面 i7-14650HX（4 线程） | T-MAC LUT · 2.44 BPW | 25.10 tok/s |
-| 桌面 i7-14650HX（4 线程） | llama.cpp Q4_0 | 15.94 tok/s |
-| 桌面 i7-14650HX（4 线程） | llama.cpp f16 | 4.41 tok/s |
-| 鸿蒙模拟器（同模型 A/B） | T-MAC vs Q4_0 | 11.7 vs 5.5 → **2.1×** |
+| 平台 | 设备/芯片 | 生成速度 | 加载 | 内核数值 |
+|---|---|---|---|---|
+| **鸿蒙真机** 🏆 | HUAWEI HBN-AL00 · 麒麟 · HarmonyOS 6.1.1 | **18.62 tok/s** | 1.96 s | ✅ isa 安检 |
+| 安卓真机 | vivo V2323A · SD 8 Gen 2 · Android 16 | 11.55 tok/s（持续 ~10.6） | 1.46 s | **NMSE 8.397e-05** |
+| 桌面 | i7-14650HX · WSL · 4 线程 | 25.10 tok/s | 8.2 s | NMSE 8.765e-05 |
+| 桌面对手盘 | 同机 llama.cpp Q4_0（4.63 BPW / 1.79 GiB） | 15.94 tok/s | 18.7 s | — |
+| 桌面对手盘 | 同机 llama.cpp f16（16 BPW / 6.19 GiB） | 4.41 tok/s | 67.9 s | — |
+| 鸿蒙模拟器 | x86_64 · 同模型 A/B | T-MAC 11.7 vs Q4_0 5.5 → **2.1×** | 1.4~3.7 s | — |
 
-- **手机上的 T-MAC（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
-- 内核级同形状对照：LUT 2 线程即超过 Q4_0 满 4 线程；冷数据下双方每字节带宽持平 → 优势来自 1.9× 位宽差
-- 完整证据链 + 复现命令：[`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) · 截图：[`ohos/screenshots/`](ohos/screenshots/)
+**三个杀手级结论**：
+
+1. **手机上的 T-MAC（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
+2. 同一静态二进制 + 同一模型**横跨 鸿蒙 / 安卓 / qemu 三环境零改动运行**（2026-09-28 实证）
+3. 冷数据下 T-MAC 与 Q4_0/Q8_0 每字节带宽持平 → 加速全部来自 **2.44 BPW 位宽优势**（无争议机理解释）
 
 <p align="center">
-  <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="真机桌面：LUT-SA 已安装" />
+  <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="鸿蒙真机桌面：LUT-SA 已安装" />
   <img src="ohos/screenshots/device/device-console-02.png" width="260" alt="App 屏幕控制台（真机实测会话）" />
 </p>
+
+---
+
+## 🚀 按平台开始（单仓 · 专区制）
+
+| 平台 | 入口 | 内容 |
+|---|---|---|
+| 🐾 **鸿蒙** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) | 全程总结（五阶段/13+8 问题清单/数据）· HAP 应用：[`ohos/hap/README.md`](ohos/hap/README.md) |
+| 🤖 **安卓** | [`docs/ANDROID-FIX.md`](docs/ANDROID-FIX.md) | 「能跑不输出」五大坑排坑 + NDK/adb 全配方 + 真机验证记录 |
+| 💻 **桌面 x86** | [`docs/PC-BUILD.md`](docs/PC-BUILD.md) | 三方基准（4.41/15.94/25.10）+ TVM 内核生成/模型转换/构建全配方 |
+| 🔬 **跨平台验证** | [`tests/lut-verify/`](tests/lut-verify/) | 内核对照参考法工具 + 全部 NMSE 实测记录 |
+
+---
+
+## 📁 仓库结构
+
+```
+fandou-t-mac/
+├── docs/
+│   ├── ANDROID-FIX.md        # 安卓专区：排坑指南 + 真机记录
+│   ├── PC-BUILD.md           # 桌面专区：构建与三方基准
+│   ├── knowledge.md / adr/   # 赛题调研与决策记录（初赛材料）
+│   └── output/report/        # 初赛报告归档
+├── ohos/                     # 🐾 鸿蒙专区
+│   ├── FULL-REPORT.md        #   ★ 全程技术总结（先读这个）
+│   ├── PROGRESS.md           #   逐日过程记录
+│   ├── BENCH-*.md            #   三份基准报告（PC 三方/模拟器 A/B/arm64 验证）
+│   ├── hap/                  #   HAP 应用工程（ArkTS + NAPI + 双 ABI）
+│   ├── screenshots/          #   真机/模拟器截图证据
+│   ├── patches/              #   llama.cpp 集成补丁
+│   ├── staging-{x64,arm64}/  #   双架构内核 CMake 包
+│   └── selftest/ scripts/    #   探针与一键部署脚本
+├── tests/lut-verify/         # 🔬 跨平台内核验证工具 + 实测记录
+├── deploy/tuned/             # TVM 生成内核（x64-ags64 / aarch64-hf 等）
+├── python/                   # T-MAC 量化与代码生成（上游）
+├── 3rdparty/llama.cpp/       # llama.cpp 子模块（打补丁构建）
+└── t-man/                    # NPU 扩展（上游）
+```
+
+---
 
 ## 一句话创意
 
@@ -64,7 +97,7 @@
 
 ## 上游公开性能基线（参考）
 
-> 本队已在鸿蒙模拟器 / qemu-arm64 / 零售真机完成自有实测（见上表），以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
+> 本队已在鸿蒙模拟器 / qemu-arm64 / 零售真机 / 安卓真机完成自有实测（见顶表），以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
 
 | 模型 | 设备 | 线程 | llama.cpp | T-MAC | 约倍速 |
 |---|---|---|---|---|---|
@@ -75,16 +108,14 @@
 | Llama-2-7B (W2) | M2-Ultra | 1 | 3.82 | 16.68 | ~4.4× |
 | Llama-2-7B (W2) | AGX Orin | 1 | 0.79 | 4.36 | ~5.5× |
 
-> 上游公开数据，非本队板测。复赛阶段在 OpenHarmony 模拟器或 ARM 设备完成复现与补充实测。
-
-## 移植到 OpenHarmony / HarmonyOS 的路线（已全部落地 ✅）
+## 移植路线（已全部落地 ✅）
 
 | 步骤 | 内容 | 状态 |
 |---|---|---|
 | 1 | 抽取 LUT Kernel 为 Native 静态/动态库 | ✅ 双 ABI 静态库（x86_64 / arm64-v8a），`ohos/staging-{x64,arm64}/` |
 | 2 | DevEco Native 模块，打通最小推理调用 | ✅ HAP App（ArkTS + NAPI），模拟器与真机均跑通 |
 | 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ `libtmac_sa.so` + sa_smoke（qemu 全链路）；最终交付以 HAP 应用形态——零售真机 SELinux 限制 CLI/SA 通道（见 FULL-REPORT §6.1） |
-| 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比（f16/Q4_0/T-MAC）+ 内核级微基准 |
+| 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比 + 内核级微基准 |
 | 5 | 固化本平台 tokens/s 等数据 | ✅ 真机 18.62 tok/s 实测归档（截图 + 原始输出） |
 
 移植全程（13 处上游/集成 bug 修复、五阶段验证方法学、诚实性声明）：**[`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)**
@@ -97,7 +128,7 @@
 
 工程实现分三层：计算层适配 T-MAC LUT Kernel 至 ARM 架构，处理访存模式与 LUT 表布局；服务层按 SAMgr 注册 LUT SystemAbility，对外暴露统一加速接口，应用按需获取 proxy；策略层将行为信号映射为优先级、预取与节流策略，可在演示场景中直观呈现。
 
-公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。**本队已完成自主复现与实测**：鸿蒙模拟器同模型 A/B（T-MAC 2.1× 于 Q4_0）、qemu-arm64 功能验证（内核 NMSE 8.4e-05）、华为零售真机端到端 18.62 tok/s——详见 [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)。
+公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。**本队已完成自主复现与实测**：鸿蒙模拟器同模型 A/B（T-MAC 2.1× 于 Q4_0）、qemu-arm64 功能验证（内核 NMSE 8.4e-05）、华为零售真机端到端 18.62 tok/s、安卓真机 11.55 tok/s——详见 [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)。
 
 作品意义在于将 LUT 计算范式产品化为系统级服务，降低端侧大模型部署门槛，为隐私本地推理、低功耗生成等场景提供基础支撑。
 
@@ -110,37 +141,31 @@
 | 指标 | 含义 |
 |---|---|
 | tokens / s | 生成吞吐 |
+| NMSE | 内核输出 vs NumPy 参考答案 |
 | NUM_THREADS | 参与计算的 CPU 线程数 |
 | TTFT | 首字延迟（复赛补测） |
-| 能耗 / 功耗 | 复赛在可测平台补采 |
 
-**复现步骤**：
+**复现入口**（全部实测可复现）：
 
 | 数据集 | 复现入口 |
 |---|---|
-| 桌面三方对比（f16 / Q4_0 / T-MAC） | [`ohos/BENCH-native-3way.md`](ohos/BENCH-native-3way.md) |
+| 桌面三方对比（f16 / Q4_0 / T-MAC） | [`ohos/BENCH-native-3way.md`](ohos/BENCH-native-3way.md) · [`docs/PC-BUILD.md`](docs/PC-BUILD.md) |
 | 鸿蒙模拟器同模型 A/B + 内核级微基准 | [`ohos/BENCH-tmac-vs-simd.md`](ohos/BENCH-tmac-vs-simd.md) |
 | aarch64 三层验证（内核/构建/端到端） | [`ohos/ARM64-VALIDATION.md`](ohos/ARM64-VALIDATION.md) |
+| 安卓真机（内核 + 端到端） | [`docs/ANDROID-FIX.md`](docs/ANDROID-FIX.md) · [`tests/lut-verify/android-*-run.txt`](tests/lut-verify/) |
 | HAP 应用（DevEco 打开即跑） | [`ohos/hap/README.md`](ohos/hap/README.md) |
 | 全程总结（真机数据 + 13 处修复清单） | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
-
-上游路径（克隆上游仓库按官方流程）：
-
-1. 克隆本仓或上游 T-MAC，按 README 与 `docs/e2e.md` 准备依赖。
-2. 按文档转换或获取对应低比特模型。
-3. 运行官方或本仓 benchmark，记录 tokens / s 与线程配置。
-4. 同配置运行 llama.cpp 基线并制表。
 
 **风险与边界**：
 
 | 风险 | 说明 |
 |---|---|
-| 上游数据与自有实测已分列 | 初赛曾引用上游公开数据；现自有实测（模拟器/qemu/真机）已归档并标注测量方法 |
+| 上游数据与自有实测已分列 | 初赛曾引用上游公开数据；现自有实测（模拟器/qemu/真机×2）已归档并标注测量方法 |
 | ISA / 内存布局差异 | 已处理：arm64 按 fp16 契约 + kcfg 重转模型 + 强制 armv8.2a+fp16（防真机 SIGILL） |
 | 零售真机环境限制 | SELinux 禁 CLI 执行与 hilog，已以 HAP 应用 + 屏幕控制台方案落地（FULL-REPORT §6） |
 | 权限边界 | SystemAbility 能力级别以可申请 / 可演示为准 |
 
-> 全文：[`docs/output/report/phase1-test-report.md`](docs/output/report/phase1-test-report.md)
+> 初赛报告全文：[`docs/output/report/phase1-test-report.md`](docs/output/report/phase1-test-report.md)
 
 ## 团队
 
@@ -153,14 +178,13 @@
 | 队员 | 范腾达、郑李惠杰 |
 | 报名时间 | 2026-07-17 |
 
-## 仓库内指针
+## 深入材料索引
 
 | 维度 | 入口 |
 |---|---|
-| **全程技术总结（先读这个）** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+| 全程技术总结（先读） | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+| 逐日过程记录 | [`ohos/PROGRESS.md`](ohos/PROGRESS.md) |
 | 实测截图证据（真机/模拟器） | [`ohos/screenshots/`](ohos/screenshots/) |
-| HAP 应用工程 | [`ohos/hap/README.md`](ohos/hap/README.md) |
-| 性能对比三份报告 | [`ohos/BENCH-native-3way.md`](ohos/BENCH-native-3way.md) · [`ohos/BENCH-tmac-vs-simd.md`](ohos/BENCH-tmac-vs-simd.md) · [`ohos/ARM64-VALIDATION.md`](ohos/ARM64-VALIDATION.md) |
 | 项目一句话 / 边界 | [`AGENTS.md`](AGENTS.md) · [`CONTEXT.md`](CONTEXT.md) |
 | 赛题与方案 | [`docs/knowledge.md`](docs/knowledge.md) |
 | 决策记录 | [`docs/adr/0001-lut-systemability-path.md`](docs/adr/0001-lut-systemability-path.md) |

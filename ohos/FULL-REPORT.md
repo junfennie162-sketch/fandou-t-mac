@@ -325,7 +325,7 @@ llama_perf_context_print:       total time =  1099.38 ms /    23 tokens
 |---|---|---|---|---|---|---|
 | **🏆 真机 HBN-AL00（arm64）** | **T-MAC LUT** | **2.44** | **966 MB** | **18.62** | **53.72** | **1.96 s** |
 | 真机 HBN-AL00（prompt 处理） | T-MAC LUT | 2.44 | 966 MB | 29.18 | 34.27 | — |
-| 安卓真机 vivo V2323A（SD8G2，t4，`android` 分支） | T-MAC LUT | 2.44 | 966 MB | 11.55 峰值 / ~10.6 持续 | 86.58 | 1.46 s |
+| 安卓真机 vivo V2323A（SD8G2，t4，指南 `docs/ANDROID-FIX.md`） | T-MAC LUT | 2.44 | 966 MB | 11.55 峰值 / ~10.6 持续 | 86.58 | 1.46 s |
 | 桌面 i7-14650HX（4t，WSL） | T-MAC LUT | 2.44 | 965 MiB | 25.10 | 39.84 | 8.2 s |
 | 桌面 i7-14650HX（4t） | llama.cpp Q4_0 | 4.63 | 1.79 GiB | 15.94 | 62.75 | 18.7 s |
 | 桌面 i7-14650HX（4t） | llama.cpp f16 | 16.0 | 6.19 GiB | 4.41 | 226.72 | 67.9 s |
