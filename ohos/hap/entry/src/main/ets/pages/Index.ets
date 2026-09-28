@@ -4,20 +4,45 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import tmac from 'libtmac_hap.so';
 
+// One chat bubble. role: 'user' | 'model'. meta = small caption (e.g. "18.62 tok/s").
+interface ChatMsg {
+  role: string;
+  text: string;
+  meta: string;
+}
+
+const BG_PAGE: string = '#12182B';
+const BG_CARD: string = '#1C2438';
+const BG_INPUT: string = '#243044';
+const C_BORDER: string = '#323E58';
+const C_ACCENT: string = '#4FA8E8';
+const C_TEXT: string = '#E8EEF7';
+const C_SUB: string = '#8E9BB3';
+const C_DIM: string = '#5A6A80';
+const C_OK: string = '#34C77B';
+const C_WARN: string = '#F5A623';
+const C_ERR: string = '#E85B5B';
+
 @Entry
 @Component
 struct Index {
   @State status: string = '就绪';
-  @State detail: string = '先「加载模型」，再「生成」。模型需预先推到设备（见 README）。';
+  @State detail: string = '先「模型」页导入/加载，再在「对话」页生成。';
   @State modelPath: string = '/data/local/tmp/llm-tmac/model.gguf';
   @State sandboxInfo: string = '';
   @State prompt: string = 'The capital of France is';
-  @State nPredict: string = '16';
+  @State nPredict: string = '32';
   @State threads: string = '4';
   @State useMmap: boolean = false;
   @State busy: boolean = false;
   @State loadInfo: string = '';
   @State output: string = '';
+  // chat page
+  @State msgs: Array<ChatMsg> = [];
+  @State lastToks: string = '--';
+  @State lastLoad: string = '--';
+  @State tabIdx: number = 0;
+  scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     try {
@@ -26,15 +51,13 @@ struct Index {
     } catch (e) {
       this.loadInfo = `native 模块加载失败: ${e}`;
     }
-    // The app sandbox is the only place this process may read the model from on HarmonyOS 7
-    // (/data/local/tmp is blocked by SELinux). chmod it so `hdc file send` can push the file in,
-    // and default the model path to it.
+    // The app sandbox is the only place this process may read the model from on HarmonyOS
+    // (/data/local/tmp is blocked by SELinux). chmod it so `hdc file send` can push the file in.
     const fd = this.filesDir();
     if (fd.length > 0) {
       this.modelPath = `${fd}/model.gguf`;
       try {
         this.sandboxInfo = tmac.prepareSandbox(fd);
-        hilog.info(0x0000, 'LUTSA', 'sandbox: %{public}s', this.sandboxInfo);
       } catch (e) {
         this.sandboxInfo = `prepareSandbox 异常: ${e}`;
       }
@@ -50,6 +73,83 @@ struct Index {
     }
   }
 
+  private num(s: string, dflt: number): number {
+    const v = Number.parseInt(s);
+    return Number.isNaN(v) ? dflt : v;
+  }
+
+  // status dot color by current status text
+  private dotColor(): string {
+    if (this.status.indexOf('❌') >= 0 || this.status.indexOf('⚠') >= 0) {
+      return C_ERR;
+    }
+    if (this.status.indexOf('⏳') >= 0 || this.busy) {
+      return C_WARN;
+    }
+    if (this.status.indexOf('✅') >= 0) {
+      return C_OK;
+    }
+    return C_DIM;
+  }
+
+  // One rolling console log, with a timestamped separator per operation — so the load report
+  // and each generation report stay distinguishable instead of overwriting each other.
+  private appendLog(tag: string, text: string): void {
+    let stamp = '';
+    try {
+      stamp = new Date().toTimeString().slice(0, 8);
+    } catch (e) {
+      stamp = '--:--:--';
+    }
+    this.output = `${this.output}\n===== ${tag} @ ${stamp} =====\n${text}\n`;
+    if (this.output.length > 100000) {
+      this.output = this.output.slice(this.output.length - 100000);
+    }
+  }
+
+  private pushMsg(m: ChatMsg): void {
+    this.msgs = this.msgs.concat([m]);
+    setTimeout(() => {
+      this.scroller.scrollEdge(Edge.Bottom);
+    }, 60);
+  }
+
+  // The native report is: sampler header, blank line, prompt echo + generated text, perf block.
+  // Split off the clean continuation text and the eval tok/s caption for the chat bubble.
+  private splitReport(r: string, asked: string): string[] {
+    let text = r;
+    const cut = r.indexOf('llama_perf_sampler_print');
+    if (cut >= 0) {
+      text = r.substring(0, cut);
+    }
+    const nl = text.indexOf('\n\n');
+    if (nl >= 0) {
+      text = text.substring(nl + 2);
+    }
+    if (asked.length > 0 && text.startsWith(asked)) {
+      text = text.substring(asked.length);
+    }
+    text = text.trim();
+    let paren = '';
+    const lines = r.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].indexOf('eval time') >= 0) {
+        const p = lines[i].indexOf('(');
+        const q = lines[i].lastIndexOf(')');
+        if (p >= 0 && q > p) {
+          paren = lines[i].substring(p + 1, q);
+        }
+        break;
+      }
+    }
+    let toks = paren;
+    const comma = paren.lastIndexOf(',');
+    if (comma >= 0) {
+      toks = paren.substring(comma + 1).trim().replace('tokens per second', 'tok/s');
+    }
+    return [text, toks, paren];
+  }
+
   private doLoad(): void {
     if (this.busy) {
       return;
@@ -62,6 +162,19 @@ struct Index {
         this.status = r.startsWith('OK') || r.includes('llm_load_print_meta')
                         ? '✅ 模型已加载' : '❌ 加载失败';
         this.detail = '';
+        const lines = r.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const li = lines[i].indexOf('load time');
+          const le = lines[i].indexOf('load=');
+          if (li >= 0 || le >= 0) {
+            const nums = lines[i].replace(/[^0-9.]/g, ' ').trim().split(' ');
+            const ms = this.num(nums[0], 0);
+            if (ms > 0) {
+              this.lastLoad = `${(ms / 1000).toFixed(2)}s`;
+            }
+            break;
+          }
+        }
         if (r.includes('llm_load_print_meta')) {
           this.appendLog('加载模型 · 完整日志', r);   // full llama.cpp verbose report
         } else {
@@ -77,7 +190,6 @@ struct Index {
   }
 
   // Product-grade model import: system file picker -> copy into the app sandbox -> load.
-  // No shell/hdc needed, works on any device regardless of sandbox policy.
   private async pickAndImportModel(): Promise<void> {
     if (this.busy) {
       return;
@@ -110,8 +222,7 @@ struct Index {
       this.modelPath = dest;
       this.status = `✅ 模型已导入（${Math.round(dstSize / 1048576)} MB）`;
       this.detail = `source: ${uris[0]}\ndest:   ${dest}\n${copied}`;
-      hilog.info(0x0000, 'LUTSA', 'imported model, %{public}d MB -> %{public}s',
-                 Math.round(dstSize / 1048576), dest);
+      hilog.info(0x0000, 'LUTSA', 'imported model, %{public}d MB', Math.round(dstSize / 1048576));
       this.busy = false;
       this.doLoad();   // chain straight into loading
     } catch (e) {
@@ -119,26 +230,6 @@ struct Index {
       this.status = '❌ 导入失败';
       this.detail = `文件选择/拷贝异常: ${e}`;
       hilog.error(0x0000, 'LUTSA', 'import failed: %{public}s', JSON.stringify(e));
-    }
-  }
-
-  private num(s: string, dflt: number): number {
-    const v = Number.parseInt(s);
-    return Number.isNaN(v) ? dflt : v;
-  }
-
-  // One rolling console log, with a timestamped separator per operation — so the load report
-  // and each generation report stay distinguishable instead of overwriting each other.
-  private appendLog(tag: string, text: string): void {
-    let stamp = '';
-    try {
-      stamp = new Date().toTimeString().slice(0, 8);
-    } catch (e) {
-      stamp = '--:--:--';
-    }
-    this.output = `${this.output}\n===== ${tag} @ ${stamp} =====\n${text}\n`;
-    if (this.output.length > 100000) {
-      this.output = this.output.slice(this.output.length - 100000);
     }
   }
 
@@ -169,8 +260,6 @@ struct Index {
   }
 
   // Export the sandbox model to phone storage via the system SAVE dialog.
-  // Real feature (share/backup the converted GGUF) and it also makes the picker-import flow
-  // testable on an emulator whose user storage cannot be written from outside.
   private async exportModel(): Promise<void> {
     if (this.busy) {
       return;
@@ -184,8 +273,7 @@ struct Index {
         return;
       }
       const doc = new picker.DocumentViewPicker(ctx);
-      // unique name: the system save dialog refuses to overwrite an existing file
-      const fileName = `bitnet-3b-tmac-${Date.now()}.gguf`;
+      const fileName = `bitnet-3b-tmac-${Date.now()}.gguf`;   // unique: save dialog refuses overwrite
       const uris = await doc.save({ newFileNames: [fileName] } as picker.DocumentSaveOptions);
       if (!uris || uris.length === 0) {
         this.status = '已取消导出';
@@ -206,9 +294,8 @@ struct Index {
         return;
       }
       this.status = `✅ 模型已导出（${Math.round(dstSize / 1048576)} MB）`;
-      this.detail = `dest: ${uris[0]}\n${copied}\n现在可以用「📂 选择模型文件」把它选回来（验证导入链路）`;
-      hilog.info(0x0000, 'LUTSA', 'exported model to %{public}s (%{public}d MB)',
-                 uris[0], Math.round(dstSize / 1048576));
+      this.detail = `dest: ${uris[0]}\n${copied}\n可用「📂 选择模型文件」选回来（验证导入链路）`;
+      hilog.info(0x0000, 'LUTSA', 'exported model, %{public}d MB', Math.round(dstSize / 1048576));
     } catch (e) {
       this.status = '❌ 导出失败';
       this.detail = `导出异常: ${e}`;
@@ -229,164 +316,334 @@ struct Index {
     this.busy = true;
     this.status = '⏳ 推理中…';
     const asked = this.prompt;
+    this.pushMsg({ role: 'user', text: asked, meta: '' });
     tmac.generateAsync(asked, this.num(this.nPredict, 16), 0.8, 40)
       .then((r: string) => {
         this.status = '✅ 生成完成';
-        // native side already emits the full llama.cpp-style console report
-        this.appendLog('生成', r);
+        const parts = this.splitReport(r, asked);
+        this.lastToks = parts[1].length > 0 ? parts[1] : '--';
+        this.pushMsg({ role: 'model', text: parts[0].length > 0 ? parts[0] : r, meta: parts[2] });
+        this.appendLog('生成 · 完整报告', r);   // console page keeps the verbatim report
         hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
       })
       .catch((e: Object) => {
         this.status = '❌ 推理异常';
+        this.pushMsg({ role: 'model', text: `${e}`, meta: '异常' });
         this.appendLog('生成 · 异常', `${e}`);
       })
       .finally(() => { this.busy = false; });
   }
 
-  build() {
-    Column({ space: 10 }) {
-      Text('LUT-SA · T-MAC')
-        .fontSize(26)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#4FA8E8')
-      Text('查找表低比特 LLM 推理 · 鸿蒙原生（ArkTS + NAPI）')
-        .fontSize(12)
-        .fontColor('#9AA4B5')
-      Text(this.loadInfo)
-        .fontSize(11)
-        .fontColor('#6B7A90')
-      Text(this.sandboxInfo)
-        .fontSize(10)
-        .fontColor('#5A6A80')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+  // ---------------- small building blocks ----------------
 
-      // ---- model path ----
-      Text('📁 模型路径')
-        .fontSize(11).fontColor('#7A8AA0').width('92%').textAlign(TextAlign.Start)
-      TextInput({ text: this.modelPath })
-        .width('92%').height(44).fontSize(12).fontFamily('monospace')
-        .fontColor('#CFE0F5').backgroundColor('#1E2738')
-        .borderRadius(8).border({ width: 1, color: '#33405A' })
-        .padding({ left: 12, right: 12 })
-        .onChange((v: string) => { this.modelPath = v; })
+  @Builder
+  chip(label: string, value: string, wide: boolean) {
+    Column({ space: 2 }) {
+      Text(label)
+        .fontSize(10).fontColor(C_DIM).textAlign(TextAlign.Center)
+      Text(value)
+        .fontSize(15).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .justifyContent(FlexAlign.Center)
+    .layoutWeight(wide ? 1.4 : 1)
+    .height(52)
+    .backgroundColor(BG_CARD)
+    .borderRadius(10)
+    .border({ width: 1, color: C_BORDER })
+  }
 
-      // ---- params ----
-      Row({ space: 10 }) {
-        Text('线程').fontSize(12).fontColor('#9AA4B5')
-        TextInput({ text: this.threads })
-          .width(52).height(40).fontSize(12).textAlign(TextAlign.Center)
-          .fontColor('#E8EEF7').backgroundColor('#1E2738').borderRadius(8)
-          .border({ width: 1, color: '#33405A' })
-          .onChange((v: string) => { this.threads = v; })
-        Text('生成长度').fontSize(12).fontColor('#9AA4B5')
-        TextInput({ text: this.nPredict })
-          .width(60).height(40).fontSize(12).textAlign(TextAlign.Center)
-          .fontColor('#E8EEF7').backgroundColor('#1E2738').borderRadius(8)
-          .border({ width: 1, color: '#33405A' })
-          .onChange((v: string) => { this.nPredict = v; })
-        Text('mmap').fontSize(12).fontColor('#9AA4B5')
-        Toggle({ type: ToggleType.Switch, isOn: this.useMmap })
-          .onChange((v: boolean) => { this.useMmap = v; })
-      }
-      .width('92%')
+  @Builder
+  cardTitle(icon: string, t: string) {
+    Text(`${icon} ${t}`)
+      .fontSize(13).fontWeight(FontWeight.Medium).fontColor(C_SUB)
+      .width('100%').textAlign(TextAlign.Start)
+  }
 
-      // ---- buttons ----
-      Row({ space: 8 }) {
-        Button('📂 选择模型文件')
-          .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => { this.pickAndImportModel(); })
-        Button('📤 导出到手机')
-          .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => { this.exportModel(); })
-      }
-      .width('92%')
-
-      Row({ space: 8 }) {
-        Button('加载模型')
-          .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => { this.doLoad(); })
-        Button('生成')
-          .height(42).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => { this.doGenerate(); })
-      }
-      .width('92%')
-
-      Row({ space: 8 }) {
-        Button('内核自测')
-          .height(38).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            const r: string = tmac.selfTest();
-            this.status = r.includes('PASS') ? '✅ 内核自测通过' : '❌ 内核自测失败';
-            this.appendLog('内核自测（不依赖模型）', r);
-          })
-        Button('内核基准')
-          .height(38).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            const r: string = tmac.bench(200);
-            this.appendLog('内核基准（不依赖模型）', r);
-            this.status = '⏱ 基准完成';
-          })
-        Button('释放')
-          .height(38).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            const r: string = tmac.release();
-            this.appendLog('释放模型', r);
-            this.status = '已释放模型（内存已回收）';
-          })
-        Button('清空日志')
-          .height(38).layoutWeight(1).enabled(!this.busy)
-          .onClick(() => {
-            this.output = '';
-            this.status = '日志已清空';
-          })
-      }
-      .width('92%')
-      Text('内核自测/基准与模型无关：直接调用 LUT 内核验证其正确性与速度（模型加载失败时可用它排查内核本身）')
-        .fontSize(10)
-        .fontColor('#5A6A80')
-
-      // ---- prompt (the main interactive box) ----
-      Text('✍️ 提示词（输入后回车，或点「生成」）')
-        .fontSize(11).fontColor('#7A8AA0').width('92%').textAlign(TextAlign.Start)
-      TextInput({ text: this.prompt, placeholder: '在这里输入提示词…' })
-        .width('92%').height(50).fontSize(15)
-        .fontColor('#FFFFFF').placeholderColor('#5A6A80')
-        .backgroundColor('#243044').borderRadius(8)
-        .border({ width: 1.5, color: '#4FA8E8' })
-        .padding({ left: 12, right: 12 })
-        .enterKeyType(EnterKeyType.Go)
-        .onChange((v: string) => { this.prompt = v; })
-        .onSubmit(() => { this.doGenerate(); })
-      Text('base 模型：按你的提示词续写（不是问答）；英文语料为主，中文续写质量一般')
-        .fontSize(10)
-        .fontColor('#5A6A80')
-
-      Text(this.status)
+  @Builder
+  bubble(m: ChatMsg) {
+    Column({ space: 4 }) {
+      Text(m.text)
         .fontSize(15)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#E8EEF7')
-
-      Scroll() {
-        Text((this.detail.length > 0 ? `» ${this.detail}\n\n` : '') +
-             (this.output.length > 0
-                ? this.output
-                : '（控制台输出显示在这里：加载模型 → 完整日志；生成 → 文本与计时；内核自测/基准 → 内核结果）'))
-          .fontSize(12)
-          .fontFamily('monospace')
-          .textAlign(TextAlign.Start)
-          .fontColor('#CFE0F5')
+        .fontColor(m.role === 'user' ? '#FFFFFF' : C_TEXT)
+        .textAlign(TextAlign.Start)
+      if (m.meta.length > 0) {
+        Text(m.meta)
+          .fontSize(10).fontColor(C_DIM).textAlign(TextAlign.End)
       }
-      .width('92%')
+    }
+    .constraintSize({ maxWidth: '82%' })
+    .padding(12)
+    .backgroundColor(m.role === 'user' ? '#2E6DA8' : BG_CARD)
+    .borderRadius(14)
+    .border({ width: 1, color: m.role === 'user' ? '#3D7FC0' : C_BORDER })
+  }
+
+  build() {
+    Column({ space: 0 }) {
+      // ---- header ----
+      Row({ space: 8 }) {
+        Text('LUT-SA')
+          .fontSize(22).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
+        Text('T-MAC 低比特 LLM · 鸿蒙原生')
+          .fontSize(11).fontColor(C_SUB).layoutWeight(1).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Column()
+          .width(9).height(9).borderRadius(5).backgroundColor(this.dotColor())
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 6 })
+
+      Row() {
+        Text(this.loadInfo)
+          .fontSize(10).fontColor(C_DIM).layoutWeight(1).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.status)
+          .fontSize(11).fontColor(C_SUB).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, bottom: 8 })
+
+      // ---- three pages ----
+      Tabs({ index: this.tabIdx, barPosition: BarPosition.Start }) {
+        // ============ page 1: chat ============
+        TabContent() {
+          Column({ space: 10 }) {
+            Row({ space: 8 }) {
+              this.chip('生成速度', this.lastToks, true)
+              this.chip('模型加载', this.lastLoad, false)
+              this.chip('架构', 'arm64·LUT', false)
+            }
+            .width('92%')
+
+            Scroll(this.scroller) {
+              Column({ space: 10 }) {
+                if (this.msgs.length === 0) {
+                  Column({ space: 6 }) {
+                    Text('💬')
+                      .fontSize(34)
+                    Text('加载模型后，输入提示词开始对话')
+                      .fontSize(13).fontColor(C_SUB)
+                    Text('base 模型：按提示词续写（非问答）；英文语料为主')
+                      .fontSize(10).fontColor(C_DIM)
+                  }
+                  .width('100%')
+                  .padding({ top: 60, bottom: 20 })
+                  .alignItems(HorizontalAlign.Center)
+                }
+                ForEach(this.msgs, (m: ChatMsg) => {
+                  Row() {
+                    if (m.role === 'user') {
+                      Blank()
+                      this.bubble(m)
+                    } else {
+                      this.bubble(m)
+                      Blank()
+                    }
+                  }
+                  .width('100%')
+                }, (m: ChatMsg, idx: number) => `${m.role}-${idx}`)
+              }
+              .width('92%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .align(Alignment.Center)
+            .scrollBar(BarState.Auto)
+
+            Row({ space: 8 }) {
+              TextInput({ text: this.prompt, placeholder: '输入提示词…' })
+                .layoutWeight(1)
+                .height(46)
+                .fontSize(14)
+                .fontColor('#FFFFFF')
+                .placeholderColor(C_DIM)
+                .backgroundColor(BG_INPUT)
+                .borderRadius(10)
+                .border({ width: 1.2, color: this.busy ? C_BORDER : C_ACCENT })
+                .padding({ left: 12, right: 12 })
+                .enterKeyType(EnterKeyType.Go)
+                .enabled(!this.busy)
+                .onChange((v: string) => { this.prompt = v; })
+                .onSubmit(() => { this.doGenerate(); })
+              Button(this.busy ? '…' : '生成')
+                .width(76).height(46).fontSize(14)
+                .backgroundColor(this.busy ? C_BORDER : C_ACCENT)
+                .borderRadius(10)
+                .enabled(!this.busy)
+                .onClick(() => { this.doGenerate(); })
+            }
+            .width('92%')
+          }
+          .width('100%').height('100%')
+          .padding({ bottom: 10 })
+        }
+        .tabBar('对话')
+
+        // ============ page 2: console ============
+        TabContent() {
+          Column({ space: 8 }) {
+            Scroll() {
+              Text((this.detail.length > 0 ? `» ${this.detail}\n\n` : '') +
+                   (this.output.length > 0
+                      ? this.output
+                      : '（控制台输出：加载模型 → 完整日志；生成 → 文本与计时；内核自测/基准 → 内核结果。与 llama.cpp CLI 同格式，可直接对拍）'))
+                .fontSize(11)
+                .fontFamily('monospace')
+                .textAlign(TextAlign.Start)
+                .fontColor('#CFE0F5')
+            }
+            .width('94%')
+            .layoutWeight(1)
+            .padding(10)
+            .backgroundColor('#161D30')
+            .borderRadius(10)
+            .border({ width: 1, color: C_BORDER })
+          }
+          .width('100%').height('100%')
+          .padding({ top: 8, bottom: 10 })
+        }
+        .tabBar('控制台')
+
+        // ============ page 3: model ============
+        TabContent() {
+          Scroll() {
+            Column({ space: 12 }) {
+              // -- model files --
+              Column({ space: 10 }) {
+                this.cardTitle('📦', '模型文件')
+                TextInput({ text: this.modelPath })
+                  .width('100%').height(42).fontSize(11).fontFamily('monospace')
+                  .fontColor('#CFE0F5').backgroundColor(BG_INPUT)
+                  .borderRadius(8).border({ width: 1, color: C_BORDER })
+                  .padding({ left: 10, right: 10 })
+                  .onChange((v: string) => { this.modelPath = v; })
+                Row({ space: 8 }) {
+                  Button('📂 选择模型文件')
+                    .height(40).layoutWeight(1).fontSize(13).enabled(!this.busy)
+                    .backgroundColor(BG_CARD).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => { this.pickAndImportModel(); })
+                  Button('📤 导出到手机')
+                    .height(40).layoutWeight(1).fontSize(13).enabled(!this.busy)
+                    .backgroundColor(BG_CARD).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => { this.exportModel(); })
+                }
+                .width('100%')
+                Button('⚡ 加载模型')
+                  .width('100%').height(44).fontSize(14).enabled(!this.busy)
+                  .backgroundColor(C_ACCENT).fontColor('#0B1526')
+                  .borderRadius(10)
+                  .onClick(() => { this.doLoad(); })
+                Toggle({ type: ToggleType.Switch, isOn: this.useMmap })
+                  .width('100%')
+                  .height(30)
+                  .padding({ left: 12, right: 12 })
+                  .onChange((v: boolean) => { this.useMmap = v; })
+              }
+              .width('92%')
+              .padding(14)
+              .backgroundColor(BG_CARD)
+              .borderRadius(12)
+              .border({ width: 1, color: C_BORDER })
+              .alignItems(HorizontalAlign.Start)
+
+              // -- params --
+              Column({ space: 10 }) {
+                this.cardTitle('⚙️', '推理参数')
+                Row({ space: 10 }) {
+                  Column({ space: 4 }) {
+                    Text('线程').fontSize(11).fontColor(C_SUB)
+                    TextInput({ text: this.threads })
+                      .width(64).height(40).fontSize(13).textAlign(TextAlign.Center)
+                      .fontColor(C_TEXT).backgroundColor(BG_INPUT).borderRadius(8)
+                      .border({ width: 1, color: C_BORDER })
+                      .onChange((v: string) => { this.threads = v; })
+                  }
+                  Column({ space: 4 }) {
+                    Text('生成长度').fontSize(11).fontColor(C_SUB)
+                    TextInput({ text: this.nPredict })
+                      .width(72).height(40).fontSize(13).textAlign(TextAlign.Center)
+                      .fontColor(C_TEXT).backgroundColor(BG_INPUT).borderRadius(8)
+                      .border({ width: 1, color: C_BORDER })
+                      .onChange((v: string) => { this.nPredict = v; })
+                  }
+                  Blank()
+                }
+                .width('100%')
+              }
+              .width('92%')
+              .padding(14)
+              .backgroundColor(BG_CARD)
+              .borderRadius(12)
+              .border({ width: 1, color: C_BORDER })
+              .alignItems(HorizontalAlign.Start)
+
+              // -- kernel tools --
+              Column({ space: 10 }) {
+                this.cardTitle('🔬', '内核工具（不依赖模型）')
+                Row({ space: 8 }) {
+                  Button('自测')
+                    .height(38).layoutWeight(1).fontSize(13).enabled(!this.busy)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => {
+                      const r: string = tmac.selfTest();
+                      this.status = r.includes('PASS') ? '✅ 内核自测通过' : '❌ 内核自测失败';
+                      this.appendLog('内核自测', r);
+                    })
+                  Button('基准')
+                    .height(38).layoutWeight(1).fontSize(13).enabled(!this.busy)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => {
+                      const r: string = tmac.bench(200);
+                      this.appendLog('内核基准', r);
+                      this.status = '⏱ 基准完成';
+                    })
+                  Button('释放')
+                    .height(38).layoutWeight(1).fontSize(13).enabled(!this.busy)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => {
+                      const r: string = tmac.release();
+                      this.appendLog('释放模型', r);
+                      this.status = '已释放模型（内存已回收）';
+                      this.lastToks = '--';
+                      this.lastLoad = '--';
+                    })
+                }
+                .width('100%')
+                Text('自测/基准直接调用 LUT 内核验证正确性与速度；模型加载失败时可用它排查内核本身。')
+                  .fontSize(10).fontColor(C_DIM).width('100%').textAlign(TextAlign.Start)
+              }
+              .width('92%')
+              .padding(14)
+              .backgroundColor(BG_CARD)
+              .borderRadius(12)
+              .border({ width: 1, color: C_BORDER })
+              .alignItems(HorizontalAlign.Start)
+
+              Text(this.sandboxInfo)
+                .fontSize(10).fontColor(C_DIM).maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('92%')
+            }
+            .width('100%')
+          }
+          .width('100%').height('100%')
+        }
+        .tabBar('模型')
+      }
       .layoutWeight(1)
-      .padding(10)
-      .backgroundColor('#1E2738')
-      .borderRadius(8)
+      .barMode(BarMode.Fixed)
+      .onChange((i: number) => { this.tabIdx = i; })
     }
     .width('100%')
     .height('100%')
-    .padding({ top: 14 })
-    .justifyContent(FlexAlign.Start)
-    .backgroundColor('#141B2E')
+    .backgroundColor(BG_PAGE)
   }
 }
