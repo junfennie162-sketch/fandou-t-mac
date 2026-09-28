@@ -3,6 +3,16 @@
 > **竞赛 fork（fandou-t-mac）**：本仓库基于 [microsoft/T-MAC](https://github.com/microsoft/T-MAC)（EuroSys 2025）二开，把比特级查找表（LUT）驱动的低比特 LLM 推理封装为 **OpenHarmony / HarmonyOS 用户态 SystemAbility** 加速服务，参赛「鸿蒙高校创新赛 · 方向四 · 操作系统智能创新」。  
 > 作品技术名 **LUT-SA**，队伍 **翻斗花园（中北大学）**。
 
+## 分支布局（按平台三分支）
+
+| 分支 | 平台 | 招牌产出 |
+|---|---|---|
+| **`main`**（本分支，默认） | **鸿蒙** | HAP 应用 + 真机 18.62 tok/s + [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) 全程总结 |
+| **`android`** | 安卓 | [`docs/ANDROID-FIX.md`](../android/docs/ANDROID-FIX.md)·"能跑不输出"排坑 + 真机端到端 11.55 tok/s（vivo V2323A） |
+| **`pc`** | 桌面 x86 | [`docs/PC-BUILD.md`](../pc/docs/PC-BUILD.md)·三方基准 4.41/15.94/25.10 tok/s + 全套构建配方 |
+
+> 同一套 T-MAC 内核与模型横跨三平台（2026-09-28 实证：同一静态二进制跑通鸿蒙/安卓/qemu）。
+
 <p align="center">
   <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
 </p>
