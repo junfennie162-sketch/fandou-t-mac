@@ -1,7 +1,6 @@
 # LUT-SA · 鸿蒙高校创新赛
 
-> **竞赛 fork（fandou-t-mac）**：本仓库基于 [microsoft/T-MAC](https://github.com/microsoft/T-MAC)（EuroSys 2025）二开，把比特级查找表（LUT）驱动的低比特 LLM 推理移植到 **HarmonyOS / 安卓 / 桌面 Linux** 三平台端侧运行，参赛「鸿蒙高校创新赛 · 方向四 · 操作系统智能创新」。
-> 作品技术名 **LUT-SA**，队伍 **翻斗花园（中北大学）**。
+> 作品技术名 **LUT-SA（应用名「鸿蒙玲珑核」）**，队伍 **翻斗花园（中北大学）**，参赛「鸿蒙高校创新赛 · 方向四 · 操作系统智能创新」——比特级查找表（LUT）驱动的低比特 LLM 推理，落地 **HarmonyOS / 安卓 / 桌面 Linux** 三平台端侧。上游开源出处见文末致谢。
 
 <p align="center">
   <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
@@ -18,13 +17,13 @@
 | 桌面 | i7-14650HX · WSL · 4 线程 | 25.10 tok/s | 8.2 s | NMSE 8.765e-05 |
 | 桌面对手盘 | 同机 llama.cpp Q4_0（4.63 BPW / 1.79 GiB） | 15.94 tok/s | 18.7 s | — |
 | 桌面对手盘 | 同机 llama.cpp f16（16 BPW / 6.19 GiB） | 4.41 tok/s | 67.9 s | — |
-| 鸿蒙模拟器 | x86_64 · 同模型 A/B | T-MAC 11.7 vs Q4_0 5.5 → **2.1×** | 1.4~3.7 s | — |
+| 鸿蒙模拟器 | x86_64 · 同模型 A/B | LUT-SA 11.7 vs Q4_0 5.5 → **2.1×** | 1.4~3.7 s | — |
 
 **三个杀手级结论**：
 
-1. **手机上的 T-MAC（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
+1. **手机上的 LUT-SA（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
 2. 同一静态二进制 + 同一模型**横跨 鸿蒙 / 安卓 / qemu 三环境零改动运行**（2026-09-28 实证）
-3. 冷数据下 T-MAC 与 Q4_0/Q8_0 每字节带宽持平 → 加速全部来自 **2.44 BPW 位宽优势**（无争议机理解释）
+3. 冷数据下 LUT-SA 与 Q4_0/Q8_0 每字节带宽持平 → 加速全部来自 **2.44 BPW 位宽优势**（无争议机理解释）
 
 <p align="center">
   <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="鸿蒙真机桌面：LUT-SA 已安装" />
@@ -64,7 +63,7 @@ fandou-t-mac/
 │   └── selftest/ scripts/    #   探针与一键部署脚本
 ├── tests/lut-verify/         # 🔬 跨平台内核验证工具 + 实测记录
 ├── deploy/tuned/             # TVM 生成内核（x64-ags64 / aarch64-hf 等）
-├── python/                   # T-MAC 量化与代码生成（上游）
+├── python/                   # LUT-SA 量化与代码生成（上游）
 ├── 3rdparty/llama.cpp/       # llama.cpp 子模块（打补丁构建）
 └── t-man/                    # NPU 扩展（上游）
 ```
@@ -77,7 +76,7 @@ fandou-t-mac/
 
 ## 系统架构
 
-四层垂直单向依赖：L1 应用层 → L2 感知与调度 → L3 系统服务层（用户态 SystemAbility）→ L4 计算核心（T-MAC 二开 LUT Kernel）。右侧并列「对照与验证」，与 llama.cpp 反量化基线对照。
+四层垂直单向依赖：L1 应用层 → L2 感知与调度 → L3 系统服务层（用户态 SystemAbility）→ L4 计算核心（LUT-SA 二开 LUT Kernel）。右侧并列「对照与验证」，与 llama.cpp 反量化基线对照。
 
 <p align="center">
   <img src="assets/images/readme/architecture-phase1.png" width="85%" alt="LUT-SA 系统架构图" />
@@ -95,7 +94,7 @@ fandou-t-mac/
 
 > 源文件：`assets/images/readme/sequence-phase1.drawio` · 设计说明：`assets/images/readme/sequence-phase1.md`
 
-## 上游公开性能基线（参考）
+## 上游开源项目基线与致谢（参考）
 
 > 本队已在鸿蒙模拟器 / qemu-arm64 / 零售真机 / 安卓真机完成自有实测（见顶表），以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
 

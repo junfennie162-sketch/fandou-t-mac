@@ -564,7 +564,7 @@ napi_value queue_job(napi_env env, AsyncJob *j, const char *name) {
 napi_value NativeVersion(napi_env env, napi_callback_info) {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
-                  "libtmac_hap | %s | tfloat=%d B | kcfg embedded | static llama.cpp + T-MAC",
+                  "LUT-SA native | %s | tfloat=%d B | kcfg embedded | static llama.cpp",
 #if defined(__x86_64__)
                   "x86_64 (AVX2, no FMA)",
 #else
