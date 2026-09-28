@@ -61,10 +61,11 @@ struct Index {
       .then((r: string) => {
         this.status = r.startsWith('OK') || r.includes('llm_load_print_meta')
                         ? '✅ 模型已加载' : '❌ 加载失败';
-        this.detail = r;
-        // the full llama.cpp verbose log goes into the scrollable console panel
+        this.detail = '';
         if (r.includes('llm_load_print_meta')) {
-          this.output = r;
+          this.appendLog('加载模型 · 完整日志', r);   // full llama.cpp verbose report
+        } else {
+          this.appendLog('加载模型 · 失败', r);
         }
         hilog.info(0x0000, 'LUTSA', 'loadModel: %{public}s', r);
       })
@@ -124,6 +125,21 @@ struct Index {
   private num(s: string, dflt: number): number {
     const v = Number.parseInt(s);
     return Number.isNaN(v) ? dflt : v;
+  }
+
+  // One rolling console log, with a timestamped separator per operation — so the load report
+  // and each generation report stay distinguishable instead of overwriting each other.
+  private appendLog(tag: string, text: string): void {
+    let stamp = '';
+    try {
+      stamp = new Date().toTimeString().slice(0, 8);
+    } catch (e) {
+      stamp = '--:--:--';
+    }
+    this.output = `${this.output}\n===== ${tag} @ ${stamp} =====\n${text}\n`;
+    if (this.output.length > 100000) {
+      this.output = this.output.slice(this.output.length - 100000);
+    }
   }
 
   // Big file copies must not run on the JS thread (a synchronous 1 GB copy freezes the UI and the
@@ -212,18 +228,17 @@ struct Index {
     }
     this.busy = true;
     this.status = '⏳ 推理中…';
-    this.output = '';
     const asked = this.prompt;
     tmac.generateAsync(asked, this.num(this.nPredict, 16), 0.8, 40)
       .then((r: string) => {
         this.status = '✅ 生成完成';
         // native side already emits the full llama.cpp-style console report
-        this.output = r;
+        this.appendLog('生成', r);
         hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
       })
       .catch((e: Object) => {
         this.status = '❌ 推理异常';
-        this.output = `generateAsync 异常: ${e}`;
+        this.appendLog('生成 · 异常', `${e}`);
       })
       .finally(() => { this.busy = false; });
   }
@@ -303,22 +318,33 @@ struct Index {
           .onClick(() => {
             const r: string = tmac.selfTest();
             this.status = r.includes('PASS') ? '✅ 内核自测通过' : '❌ 内核自测失败';
-            this.detail = r;
+            this.appendLog('内核自测（不依赖模型）', r);
           })
         Button('内核基准')
           .height(38).layoutWeight(1).enabled(!this.busy)
           .onClick(() => {
-            this.detail = tmac.bench(200);
+            const r: string = tmac.bench(200);
+            this.appendLog('内核基准（不依赖模型）', r);
             this.status = '⏱ 基准完成';
           })
         Button('释放')
           .height(38).layoutWeight(1).enabled(!this.busy)
           .onClick(() => {
-            this.detail = tmac.release();
-            this.status = '已释放模型';
+            const r: string = tmac.release();
+            this.appendLog('释放模型', r);
+            this.status = '已释放模型（内存已回收）';
+          })
+        Button('清空日志')
+          .height(38).layoutWeight(1).enabled(!this.busy)
+          .onClick(() => {
+            this.output = '';
+            this.status = '日志已清空';
           })
       }
       .width('92%')
+      Text('内核自测/基准与模型无关：直接调用 LUT 内核验证其正确性与速度（模型加载失败时可用它排查内核本身）')
+        .fontSize(10)
+        .fontColor('#5A6A80')
 
       // ---- prompt (the main interactive box) ----
       Text('✍️ 提示词（输入后回车，或点「生成」）')
@@ -342,7 +368,10 @@ struct Index {
         .fontColor('#E8EEF7')
 
       Scroll() {
-        Text(this.output.length > 0 ? this.output : this.detail)
+        Text((this.detail.length > 0 ? `» ${this.detail}\n\n` : '') +
+             (this.output.length > 0
+                ? this.output
+                : '（控制台输出显示在这里：加载模型 → 完整日志；生成 → 文本与计时；内核自测/基准 → 内核结果）'))
           .fontSize(12)
           .fontFamily('monospace')
           .textAlign(TextAlign.Start)
