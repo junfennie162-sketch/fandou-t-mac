@@ -76,8 +76,13 @@ adb shell /data/local/tmp/run_test_dev_android /data/local/tmp/vdata
 | `qgemm ret=0` 但 `C_impl` 全 0 / NaN | 坑 1（kcfg 不配套）或坑 3（scales 没广播） |
 | `NMSE < 1e-3 PASS` | 内核层健康，问题在更上层集成 |
 
-我们的基线（本仓 `tests/lut-verify/` 实测）：aarch64 NEON 内核 vs NumPy 参考 **NMSE 8.4e-05**
-（qemu 验证）；x64-ags64-f32 内核 chunk=64 **NMSE 8.765e-05**（Kali WSL 实测）。
+我们的基线（本仓 `tests/lut-verify/` 实测）：
+
+- **安卓真机**（vivo V2323A · iQOO Neo9 · Android 16 · arm64）：aarch64 NEON 内核 vs NumPy 参考
+  **NMSE 8.397e-05**，与 qemu 模拟**逐位一致**（原始记录 `tests/lut-verify/android-device-run.txt`）
+- qemu-aarch64：NMSE 8.4e-05（`ohos/ARM64-VALIDATION.md`）
+- x64-ags64-f32 内核 chunk=64：NMSE 8.765e-05（Kali WSL 实测）
+
 错误配对的复现数据（chunk=128 / fp16 契约违背）见 `tests/lut-verify/README.md` 的对照表。
 
 ## 三、Android 构建注意

@@ -13,6 +13,7 @@
 | 配置 | NMSE | 结论 |
 |---|---|---|
 | aarch64 NEON 内核，chunk=64（qemu 验证） | 8.4e-05 | PASS |
+| **aarch64 NEON 内核，chunk=64（vivo V2323A 真机，Android 16）** | **8.397e-05** | **PASS——与 qemu 逐位一致**（原始记录：`android-device-run.txt`） |
 | x64-ags64-**f32** 内核，chunk=64（Kali WSL / i7 实测） | **8.765e-05** | **PASS** |
 | 同上但 chunk=128 | 2.17 | FAIL —— 分块约定坑 |
 | x64-ags64 内核直喂 fp32 激活 | ~1e72 | FAIL —— fp16 契约坑（ggml 集成层转 fp16 后才正确） |
