@@ -246,7 +246,7 @@ T-MAC LUT（2.44 BPW，966MB）**11.7~11.9 tok/s** vs llama.cpp SIMD Q4_0（4.63
 **✅ 已在模拟器（Mate X7 / HarmonyOS 7.0 / x86_64）实测通过**：
 - 「内核自测」→ **✅ 通过**；「加载模型」→ **✅ load=4956 ms**（含 288 张量内核变换）
 - 「生成」（`The capital of France is`，16 token，4 线程）→ **`the city of Paris. The city is located in France. Paris was a Roman`**，
-  **eval ~10.5 tok/s**（见下方交叉验证）；截图 `ohos/hap-demo-screenshot.png`
+  **eval ~10.5 tok/s**（见下方交叉验证）；截图 `ohos/screenshots/emulator/hap-demo-screenshot.png`
 - 验证方式：DevEco 点 Run（自动签名）安装 → 用 `Emulator.exe -instance "Mate X7" -click/-uiLayout/-screenshot` 驱动与读结果
 
 **踩通的关键坑（HarmonyOS 7 沙箱）**：App **读不了 `/data/local/tmp`**（SELinux，非文件问题）；shell 也**不能在 App 沙箱新建文件**。
