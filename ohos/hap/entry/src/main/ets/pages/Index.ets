@@ -385,7 +385,7 @@ struct Index {
       Row({ space: 8 }) {
         Text('鸿蒙玲珑核')
           .fontSize(21).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
-        Text('LUT-SA · T-MAC 低比特 LLM · 鸿蒙原生')
+        Text('LUT-SA · 低比特 LLM · 鸿蒙原生')
           .fontSize(10).fontColor(C_SUB).layoutWeight(1).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Column()
