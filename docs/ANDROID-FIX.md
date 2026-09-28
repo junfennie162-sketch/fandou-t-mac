@@ -1,6 +1,6 @@
 # Android / PC 路径「能跑但不输出」排坑与修复指南
 
-> 适用分支：`android-pc`（通用 Linux / Android / 桌面路径）· 鸿蒙路径见 `main` 分支 [`ohos/FULL-REPORT.md`](../ohos/FULL-REPORT.md)
+> 适用分支：`android`（安卓路径）· 其余分支：`pc`（桌面）· `main`（鸿蒙，[`ohos/FULL-REPORT.md`](../ohos/FULL-REPORT.md)）
 >
 > **✅ 端到端已真机验证（2026-09-28）**：vivo V2323A（SD 8 Gen 2 · Android 16）跑通完整 LLM 推理，
 > 输出正确连贯文本，峰值 **11.55 tok/s**（t4 冷机）/ 持续 ~10.6，load 1.46 s——
