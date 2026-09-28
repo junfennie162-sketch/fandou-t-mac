@@ -32,6 +32,18 @@ export const generateAsync: (
   topK?: number
 ) => Promise<string>;
 
+/**
+ * Streaming generation: onToken(piece) fires on the JS thread for every generated token
+ * piece (typewriter effect); the Promise then resolves with the full console-style report.
+ */
+export const generateStreamAsync: (
+  prompt: string,
+  nPredict: number,
+  temp: number,
+  topK: number,
+  onToken: (piece: string) => void
+) => Promise<string>;
+
 export const release: () => string;
 
 /** chmod the sandbox (so `hdc file send` can push a model into it) and report the exact path. */

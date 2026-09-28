@@ -41,6 +41,8 @@ struct Index {
   @State msgs: Array<ChatMsg> = [];
   @State lastToks: string = '--';
   @State lastLoad: string = '--';
+  @State lastTtft: string = '--';
+  @State lastRss: string = '--';
   @State tabIdx: number = 0;
   scroller: Scroller = new Scroller();
 
@@ -305,6 +307,22 @@ struct Index {
     }
   }
 
+  // first number on the line containing `key` (e.g. "ttft =  123.45 ms" -> "123.45 ms")
+  private extractNum(r: string, key: string): string {
+    const lines = r.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const k = lines[i].indexOf(key);
+      if (k >= 0) {
+        const after = lines[i].substring(k + key.length).replace(/[=]/g, ' ').trim();
+        const parts = after.split(/\s+/);
+        if (parts.length >= 2) {
+          return `${parts[0]} ${parts[1]}`;
+        }
+      }
+    }
+    return '';
+  }
+
   private doGenerate(): void {
     if (this.busy) {
       return;
@@ -317,12 +335,31 @@ struct Index {
     this.status = '⏳ 推理中…';
     const asked = this.prompt;
     this.pushMsg({ role: 'user', text: asked, meta: '' });
-    tmac.generateAsync(asked, this.num(this.nPredict, 16), 0.8, 40)
+    const streamIdx = this.msgs.length;   // the model bubble that will type live
+    this.pushMsg({ role: 'model', text: '', meta: '' });
+    const onToken = (piece: string): void => {
+      // reassign the array (not just the element) so @State refreshes per token
+      const arr = this.msgs.slice();
+      arr[streamIdx] = { role: 'model', text: arr[streamIdx].text + piece, meta: '' };
+      this.msgs = arr;
+    };
+    tmac.generateStreamAsync(asked, this.num(this.nPredict, 16), 0.8, 40, onToken)
       .then((r: string) => {
         this.status = '✅ 生成完成';
         const parts = this.splitReport(r, asked);
         this.lastToks = parts[1].length > 0 ? parts[1] : '--';
-        this.pushMsg({ role: 'model', text: parts[0].length > 0 ? parts[0] : r, meta: parts[2] });
+        const ttft = this.extractNum(r, 'ttft');
+        const rss = this.extractNum(r, 'peak_rss');
+        if (ttft.length > 0) {
+          this.lastTtft = ttft.replace('ms', '').trim() + ' ms';
+        }
+        if (rss.length > 0) {
+          this.lastRss = rss.replace('MB', '').trim() + ' MB';
+        }
+        // finalize the streamed bubble: clean continuation text + perf caption
+        const arr = this.msgs.slice();
+        arr[streamIdx] = { role: 'model', text: parts[0].length > 0 ? parts[0] : arr[streamIdx].text, meta: parts[2] };
+        this.msgs = arr;
         this.appendLog('生成 · 完整报告', r);   // console page keeps the verbatim report
         hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
       })
@@ -410,10 +447,11 @@ struct Index {
         // ============ page 1: chat ============
         TabContent() {
           Column({ space: 10 }) {
-            Row({ space: 8 }) {
+            Row({ space: 6 }) {
               this.chip('生成速度', this.lastToks, true)
-              this.chip('模型加载', this.lastLoad, false)
-              this.chip('架构', 'arm64·LUT', false)
+              this.chip('TTFT', this.lastTtft, false)
+              this.chip('加载', this.lastLoad, false)
+              this.chip('峰值内存', this.lastRss, false)
             }
             .width('92%')
 
@@ -614,6 +652,8 @@ struct Index {
                       this.status = '已释放模型（内存已回收）';
                       this.lastToks = '--';
                       this.lastLoad = '--';
+                      this.lastTtft = '--';
+                      this.lastRss = '--';
                     })
                 }
                 .width('100%')

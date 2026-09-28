@@ -400,6 +400,12 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
                   resolved.c_str(), note.c_str(), g_llm.kcfg_path.c_str());
     return log + footer;
 }
+// Streaming hook: when set (generateStreamAsync), every generated token piece is pushed to the
+// JS thread through a napi_threadsafe_function. Plain C fn-pointer keeps this header-light;
+// concurrency is safe because the app's busy flag allows one generate at a time.
+static void (*g_stream_sink)(const char *piece, size_t n) = nullptr;
+static napi_threadsafe_function g_active_tsfn = nullptr;
+
 std::string do_generate(const std::string &prompt, int n_predict, double temp, int top_k) {
     if (!g_llm.model || !g_llm.ctx) return "FAIL: call loadModel() first";
 
@@ -435,6 +441,7 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
 
     const auto t_eval0 = std::chrono::steady_clock::now();
     double sampling_ms = 0.0;
+    double ttft_ms = -1.0;   // eval-loop start -> first token produced (-1: none generated)
     for (int i = 0; i < n_predict && n_past < g_llm.n_ctx - 1; ++i) {
         float *logits = llama_get_logits(ctx);
         if (!logits) break;
@@ -447,7 +454,14 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
         if (id == eos) break;
         char piece[256];
         const int np = llama_token_to_piece(model, id, piece, sizeof(piece), 0, false);
-        if (np > 0) text.append(piece, (size_t) np);
+        if (np > 0) {
+            text.append(piece, (size_t) np);
+            if (ttft_ms < 0.0) {
+                ttft_ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - t_eval0).count();
+            }
+            if (g_stream_sink) g_stream_sink(piece, (size_t) np);
+        }
         llama_batch b1 = llama_batch_get_one((llama_token *) &id, 1, n_past, 0);
         if (llama_decode(ctx, b1) != 0) break;
         ++n_past;
@@ -465,12 +479,26 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
                   "sampler params: top_k = %d, top_p = 0.950, temp = %.3f\n"
                   "generate: n_ctx = %d, n_batch = 512, n_predict = %d\n\n%s\n",
                   top_k, temp, g_llm.n_ctx, n_predict, prompt.c_str());
+    // peak RSS via /proc/self/status (VmHWM = high-water mark, kB)
+    double peak_rss_mb = 0.0;
+    if (FILE *st = fopen("/proc/self/status", "r")) {
+        char line[256];
+        while (fgets(line, sizeof(line), st)) {
+            if (strncmp(line, "VmHWM:", 6) == 0) {
+                peak_rss_mb = atof(line + 6) / 1024.0;
+                break;
+            }
+        }
+        fclose(st);
+    }
     std::snprintf(perf, sizeof(perf),
                   "\nllama_perf_sampler_print:    sampling time = %8.2f ms / %5d runs ( %8.2f ms per token, %8.2f tokens per second)\n"
                   "llama_perf_context_print:        load time = %8.2f ms\n"
                   "llama_perf_context_print:  prompt eval time = %8.2f ms / %5d tokens ( %8.2f ms per token, %8.2f tokens per second)\n"
                   "llama_perf_context_print:        eval time = %8.2f ms / %5d runs ( %8.2f ms per token, %8.2f tokens per second)\n"
-                  "llama_perf_context_print:       total time = %8.2f ms / %5d tokens\n",
+                  "llama_perf_context_print:       total time = %8.2f ms / %5d tokens\n"
+                  "llama_perf_context_print:           ttft = %8.2f ms\n"
+                  "llama_perf_context_print:       peak_rss = %8.1f MB\n",
                   sampling_ms, generated,
                   generated > 0 ? sampling_ms / generated : 0.0,
                   sampling_ms > 0 ? generated / (sampling_ms / 1000.0) : 0.0,
@@ -479,9 +507,10 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
                   n_tok > 0 ? prompt_ms / n_tok : 0.0,
                   prompt_ms > 0 ? n_tok / (prompt_ms / 1000.0) : 0.0,
                   eval_ms, generated,
-                  generated > 0 ? eval_ms / generated : 0.0,
-                  eval_ms > 0 ? generated / (eval_ms / 1000.0) : 0.0,
-                  total_ms, n_tok + generated);
+                  eval_ms > 0 && generated > 0 ? eval_ms / generated : 0.0,
+                  eval_ms > 0 && generated > 0 ? generated / (eval_ms / 1000.0) : 0.0,
+                  total_ms, n_tok + generated,
+                  ttft_ms, peak_rss_mb);
     return std::string(head) + text + perf;
 }
 
@@ -519,6 +548,8 @@ struct AsyncJob {
     int threads = 4, n_ctx = 512, n_predict = 32, top_k = 40;
     double temp = 0.8;
     bool use_mmap = false;
+    bool stream = false;    // op 1 + stream: per-token tsfn callback
+    napi_threadsafe_function tsfn = nullptr;
     std::string result;
 };
 
@@ -528,6 +559,8 @@ void execute_job(napi_env, void *data) {
         j->result = do_load(j->s1, j->s2, j->threads, j->n_ctx, j->use_mmap);
     } else if (j->op == 1) {
         j->result = do_generate(j->s2, j->n_predict, j->temp, j->top_k);
+        g_stream_sink = nullptr;
+        g_active_tsfn = nullptr;
     } else {
         j->result = do_copy_fds(j->fd_src, j->fd_dst);
     }
@@ -545,6 +578,10 @@ void complete_job(napi_env env, napi_status status, void *data) {
         napi_value err = nullptr;
         napi_create_error(env, nullptr, msg, &err);
         napi_reject_deferred(env, j->deferred, err);
+    }
+    if (j->tsfn) {
+        napi_release_threadsafe_function(j->tsfn, napi_tsfn_release);
+        j->tsfn = nullptr;
     }
     napi_delete_async_work(env, j->work);
     delete j;
@@ -632,8 +669,26 @@ napi_value Generate(napi_env env, napi_callback_info info) {
     return make_string(env, do_generate(prompt, n_predict, temp, top_k));
 }
 
-napi_value GenerateAsync(napi_env env, napi_callback_info info) {
-    size_t argc = 4;
+// ---- streaming generate: every token piece is marshalled to the JS thread and passed to
+// the app's onToken(piece) callback, then the Promise resolves with the full console report ----
+static void tsfn_sink(const char *piece, size_t n) {
+    if (g_active_tsfn == nullptr) return;
+    std::string *p = new std::string(piece, n);
+    napi_call_threadsafe_function(g_active_tsfn, p, napi_tsfn_blocking);
+}
+
+static void tsfn_call_js(napi_env env, napi_value js_cb, void * /*context*/, void *data) {
+    std::string *p = static_cast<std::string *>(data);
+    if (env != nullptr && js_cb != nullptr && p != nullptr) {
+        napi_value undefined = nullptr, argv = nullptr, unused = nullptr;
+        napi_get_undefined(env, &undefined);
+        napi_create_string_utf8(env, p->c_str(), p->size(), &argv);
+        napi_call_function(env, js_cb, undefined, 1, &argv, &unused);
+    }
+    delete p;
+}
+
+napi_value GenerateAsync(napi_env env, napi_callback_info info) {    size_t argc = 4;
     napi_value argv[4] = {nullptr, nullptr, nullptr, nullptr};
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     AsyncJob *j = new AsyncJob();
@@ -643,6 +698,31 @@ napi_value GenerateAsync(napi_env env, napi_callback_info info) {
     if (argc >= 3) napi_get_value_double(env, argv[2], &j->temp);
     if (argc >= 4) napi_get_value_int32(env, argv[3], &j->top_k);
     return queue_job(env, j, "tmac_generate");
+}
+
+napi_value GenerateStreamAsync(napi_env env, napi_callback_info info) {
+    size_t argc = 5;
+    napi_value argv[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc < 5) return make_string(env, "FAIL: generateStreamAsync(prompt, nPredict, temp, topK, onToken)");
+    AsyncJob *j = new AsyncJob();
+    j->op = 1;
+    j->stream = true;
+    j->s2 = get_string_arg(env, argv[0]);
+    napi_get_value_int32(env, argv[1], &j->n_predict);
+    napi_get_value_double(env, argv[2], &j->temp);
+    napi_get_value_int32(env, argv[3], &j->top_k);
+    napi_value name = nullptr;
+    napi_create_string_utf8(env, "tmac_token", NAPI_AUTO_LENGTH, &name);
+    if (napi_create_threadsafe_function(env, argv[4], nullptr, name, 0, 1,
+                                        nullptr, nullptr, nullptr, tsfn_call_js,
+                                        &j->tsfn) != napi_ok) {
+        delete j;
+        return make_string(env, "FAIL: create threadsafe function");
+    }
+    g_active_tsfn = j->tsfn;
+    g_stream_sink = tsfn_sink;
+    return queue_job(env, j, "tmac_generate_stream");
 }
 
 napi_value CopyFdAsync(napi_env env, napi_callback_info info) {
@@ -718,6 +798,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"loadModelAsync", nullptr, LoadModelAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generate", nullptr, Generate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"generateAsync", nullptr, GenerateAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"generateStreamAsync", nullptr, GenerateStreamAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"copyFdAsync", nullptr, CopyFdAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"prepareSandbox", nullptr, PrepareSandbox, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"release", nullptr, Release, nullptr, nullptr, nullptr, napi_default, nullptr},
