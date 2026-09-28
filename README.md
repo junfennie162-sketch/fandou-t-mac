@@ -147,6 +147,7 @@
 
 | 维度 | 入口 |
 |---|---|
+| **本分支（android-pc）：安卓/PC 路径** | [`docs/ANDROID-FIX.md`](docs/ANDROID-FIX.md)（"能跑不输出"五大坑 + 诊断工具） |
 | **全程技术总结（先读这个）** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
 | 实测截图证据（真机/模拟器） | [`ohos/screenshots/`](ohos/screenshots/) |
 | HAP 应用工程 | [`ohos/hap/README.md`](ohos/hap/README.md) |
