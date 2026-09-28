@@ -44,6 +44,11 @@ struct Index {
   @State lastTtft: string = '--';
   @State lastRss: string = '--';
   @State tabIdx: number = 0;
+  // L2 perception-driven scheduling: foreground -> full tier (+auto warm-up), background -> release.
+  @StorageLink('appFgState') @Watch('onFgChange') appFg: boolean = true;
+  @State l2Enabled: boolean = true;
+  @State autoWarmup: boolean = true;
+  @State l2State: string = '前台 · 满载';
   scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -150,6 +155,36 @@ struct Index {
       toks = paren.substring(comma + 1).trim().replace('tokens per second', 'tok/s');
     }
     return [text, toks, paren];
+  }
+
+  // L2 rule engine (deliberately tiny): the app's own foreground/background signal maps to two
+  // actions — background releases the engine (~1 GB RSS back to the system: real throttling),
+  // foreground warm-loads it again so the demo "recovers" in ~2 s. Never interrupts a running job.
+  private onFgChange(): void {
+    if (!this.l2Enabled) {
+      return;
+    }
+    if (!this.appFg) {
+      this.l2State = '后台 · 降载';
+      if (!this.busy) {
+        const r: string = tmac.release();
+        this.appendLog('L2 调度 · 转后台 → 引擎释放（降载）', r);
+        this.status = '🌙 已后台降载（引擎释放，内存归还系统）';
+        this.lastToks = '--';
+        this.lastLoad = '--';
+        this.lastTtft = '--';
+        this.lastRss = '--';
+      } else {
+        this.appendLog('L2 调度 · 转后台', '生成进行中，不打断；完成后下一轮生效');
+      }
+    } else {
+      this.l2State = '前台 · 满载';
+      this.status = '☀️ 已回前台';
+      if (this.autoWarmup && !this.busy) {
+        this.appendLog('L2 调度 · 回前台 → 预热（自动重载模型）', '');
+        this.doLoad();
+      }
+    }
   }
 
   private doLoad(): void {
@@ -612,6 +647,36 @@ struct Index {
                   Blank()
                 }
                 .width('100%')
+              }
+              .width('92%')
+              .padding(14)
+              .backgroundColor(BG_CARD)
+              .borderRadius(12)
+              .border({ width: 1, color: C_BORDER })
+              .alignItems(HorizontalAlign.Start)
+
+              // -- L2 perception & scheduling --
+              Column({ space: 10 }) {
+                this.cardTitle('🧠', '感知调度（L2）')
+                Row({ space: 8 }) {
+                  Text(this.l2State)
+                    .fontSize(13).fontWeight(FontWeight.Medium)
+                    .fontColor(this.appFg ? C_OK : C_WARN)
+                    .layoutWeight(1)
+                  Column() {
+                    Text('启用调度').fontSize(11).fontColor(C_SUB)
+                    Toggle({ type: ToggleType.Switch, isOn: this.l2Enabled })
+                      .onChange((v: boolean) => { this.l2Enabled = v; })
+                  }
+                  Column({ space: 4 }) {
+                    Text('回前台预热').fontSize(11).fontColor(C_SUB)
+                    Toggle({ type: ToggleType.Switch, isOn: this.autoWarmup })
+                      .onChange((v: boolean) => { this.autoWarmup = v; })
+                  }
+                }
+                .width('100%')
+                Text('规则：切后台 → 释放引擎（约 1GB 内存归还系统，生成中不打断）；回前台 → 自动重载模型（约 2s 恢复满载）。关闭开关即得「无调度」对照组，可直接演示差异。')
+                  .fontSize(10).fontColor(C_DIM).width('100%').textAlign(TextAlign.Start)
               }
               .width('92%')
               .padding(14)

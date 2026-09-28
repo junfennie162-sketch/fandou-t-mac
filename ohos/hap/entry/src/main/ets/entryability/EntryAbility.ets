@@ -24,4 +24,16 @@ export default class EntryAbility extends UIAbility {
   onWindowStageDestroy(): void {
     hilog.info(0x0000, 'LUTSA', 'onWindowStageDestroy');
   }
+
+  // L2 perception source: publish foreground/background transitions through AppStorage so the
+  // page-level scheduler can react (throttle on background, warm up on foreground).
+  onForeground(): void {
+    AppStorage.setOrCreate('appFgState', true);
+    hilog.info(0x0000, 'LUTSA', 'L2 perception: FOREGROUND');
+  }
+
+  onBackground(): void {
+    AppStorage.setOrCreate('appFgState', false);
+    hilog.info(0x0000, 'LUTSA', 'L2 perception: BACKGROUND');
+  }
 }
