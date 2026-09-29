@@ -329,6 +329,22 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 **回退点**：`v1.0-submission-verified`（13:09 已验 HAP 精确坐标）· `v1.1-chained-kv` · `v1.2-final-candidate`（本日终态）。
 **代码冻结**：截止前不再动 native 主线；换 fork（新版 llama.cpp + T-MAC 补丁重移植）为周级工程，列入复赛后。
 
+## 📦 提交打包夜 · 2026-09-29（截止前 1 天）
+
+**触发**：官方通知四连（可安装性自查 / 视频规范 / 交付件完整性 / 10 次刷新）。打包全程 hvigorw CLI 完成；真机不在场 → 以官方模拟器三闸门 + 离线签名校验 + 真机级功能跑通为证据。
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| ① **剔除 ASan**（DevEco Run 注入 `-p ohos-debug-asan=true`：`__asan_*` 全量插桩 + `libclang_rt.asan.so` 依赖） | ✅ 性能 2.4× | 同模拟器同模型：ASan 版 10.5 tok/s → CLI 纯净版 **25.01 tok/s**（`_verify/ui4.jpeg`） |
+| ② **四指标卡修复** | ✅ | 根因：`@Builder chip(label, value, wide)` 按值传参 → ArkUI 不刷新（气泡能刷是因为 ForEach key 含 `text.length` 强制重建）。改按引用传对象 `ChipVM`：23.35 tok/s / TTFT 186.34ms / 加载 4.55s / 峰值 1469.0MB 全亮（`_verify/ui7.jpeg`） |
+| ③ **品牌残渣清零** | ✅ | `string.json` module_desc / EntryAbility_desc 去 "T-MAC"（应用信息页可见处）；HAP 资源内 T-MAC 命中归零 |
+| ④ 三闸门（模拟器） | ✅ | 安装 `install bundle successfully` · 启动 `start ability successfully` · 渲染整屏（`_verify/ui1-ui3.jpeg`） |
+| ⑤ 二轮链式 KV 复盘 | ✅ | 最终 HAP 实测 `reused 6 of 6`、prompt eval **0.00 ms**、TTFT **0.57 ms**（`_verify/ui9.jpeg`） |
+| ⑥ 离线签名校验 | ✅ | `hap-sign-tool verify-app` → `Verify success`（终版 SHA256 见交付说明） |
+| ⑦ 源码包 | ✅ | git archive + **内嵌 3rdparty/llama.cpp 全量源码**（子模块指向本地提交 181ad23a，上游不可达 → 必须内嵌，否则评委拉不到引擎）；脚本 `ohos/scripts/make_source_zip.ps1` |
+
+**签名实况（评委须知）**：HAP 为 debug 自动签名，profile `type=debug`、UDID 白名单 2 台（本队手机 + 官方模拟器）、有效期至 **2026-10-13**。真机装包需在 DevEco 用自己的证书重签；无 UDID 限制的发布版签名需 AGC 发布证书（复赛后补）。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`

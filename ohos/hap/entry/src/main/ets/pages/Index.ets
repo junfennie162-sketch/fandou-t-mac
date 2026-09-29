@@ -11,6 +11,14 @@ interface ChatMsg {
   meta: string;
 }
 
+// @Builder params are only reactive when passed by reference — a by-value param
+// freezes the builder subtree, so live values must travel as an object.
+class ChipVM {
+  label: string = '';
+  value: string = '';
+  wide: boolean = false;
+}
+
 const BG_PAGE: string = '#12182B';
 const BG_CARD: string = '#1C2438';
 const BG_INPUT: string = '#243044';
@@ -442,16 +450,16 @@ struct Index {
   // ---------------- small building blocks ----------------
 
   @Builder
-  chip(label: string, value: string, wide: boolean) {
+  chip(vm: ChipVM) {
     Column({ space: 2 }) {
-      Text(label)
+      Text(vm.label)
         .fontSize(10).fontColor(C_DIM).textAlign(TextAlign.Center)
-      Text(value)
+      Text(vm.value)
         .fontSize(15).fontWeight(FontWeight.Bold).fontColor(C_ACCENT)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .justifyContent(FlexAlign.Center)
-    .layoutWeight(wide ? 1.4 : 1)
+    .layoutWeight(vm.wide ? 1.4 : 1)
     .height(52)
     .backgroundColor(BG_CARD)
     .borderRadius(10)
@@ -516,10 +524,10 @@ struct Index {
         TabContent() {
           Column({ space: 10 }) {
             Row({ space: 6 }) {
-              this.chip('生成速度', this.lastToks, true)
-              this.chip('TTFT', this.lastTtft, false)
-              this.chip('加载', this.lastLoad, false)
-              this.chip('峰值内存', this.lastRss, false)
+              this.chip({ label: '生成速度', value: this.lastToks, wide: true })
+              this.chip({ label: 'TTFT', value: this.lastTtft, wide: false })
+              this.chip({ label: '加载', value: this.lastLoad, wide: false })
+              this.chip({ label: '峰值内存', value: this.lastRss, wide: false })
             }
             .width('92%')
 
