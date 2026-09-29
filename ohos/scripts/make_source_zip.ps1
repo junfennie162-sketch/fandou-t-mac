@@ -50,15 +50,18 @@ foreach ($f in ($dirty | Where-Object { $_ } | Select-Object -Unique)) {
 }
 
 # 3) manifest / readme for the reviewer
+#    Single-quoted here-string on purpose: inside a DOUBLE-quoted one a backtick escapes
+#    the next character, so markdown code spans break the text (`$var stayed literal,
+#    `f turned into a form feed). Values are injected through placeholders instead.
 $repoHead = (git -C $RepoRoot rev-parse --short HEAD).Trim()
 $date     = Get-Date -Format 'yyyy-MM-dd HH:mm'
-$readme = @"
+$readme = @'
 # LUT-SA 源码包说明（鸿蒙玲珑核）
 
 **作品**：鸿蒙玲珑核 · LUT-SA 端侧低比特 LLM 推理
 **赛事**：2026 中国高校计算机大赛 · AI 创意赛 · 鸿蒙赛道
 **队伍**：翻斗花园（中北大学）
-**打包**：$date
+**打包**：__DATE__
 
 ## 目录结构
 - `fandou-t-mac/` … 主仓库（评审入口：README.md、ohos/、docs/、deploy/）
@@ -68,21 +71,25 @@ $readme = @"
   - `ohos/sa/` … 系统服务化（SystemAbility）预研
   - `ohos/scripts/` … 构建/打包脚本（含本包生成脚本 make_source_zip.ps1）
   - `docs/SUBMISSION-CHECKLIST.md` … 提交清单与实测记录
+  - `docs/RELEASE-SIGNING.md` … 可选：发布签名（AGC）流程
 - `fandou-t-mac/3rdparty/llama.cpp/` … **引擎全量源码（已内嵌）**
   - 基线 fork：kaleid-liner/llama.cpp @ master-rebased
-  - 含提交 `$engineHead`：ohos 移植修复（构建系统的 OHOS 适配、内核接入）
+  - 含提交 __ENGINE__：ohos 移植修复（构建系统的 OHOS 适配、内核接入）
   - 说明：该目录在原仓库是 git submodule，指向上述**本地提交**（上游不可达）→ 本包内嵌全量源码，**无需联网拉子模块**。
 
 ## 提交坐标
-- 主仓库：`$repoHead`（分支 $Branch）
-- 引擎：`$engineHead`
+- 主仓库：__REPO__（分支 __BRANCH__）
+- 引擎：__ENGINE__
+
+## 签名口径
+- 组委会通知（2026-09-30）：未上架作品优先 Debug 签名；硬性要求 = 必须提交**已签名**的包。
+- 本作品未上架，提交的 HAP 为 Debug 签名（hap-sign-tool verify-app 通过）；发布签名流程为可选项（docs/RELEASE-SIGNING.md）。
 
 ## 构建 HAP（命令行复刻，与提交版一致）
 ``````powershell
-`$env:DEVECO_SDK_HOME = "D:\DevEco Studio\sdk"   # 指向 DevEco 安装自带 SDK
+$env:DEVECO_SDK_HOME = "D:\DevEco Studio\sdk"   # 指向 DevEco 安装自带 SDK
 cd fandou-t-mac\ohos\hap
-& "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" `
-    --mode module -p module=entry@default -p product=default -p requiredDeviceType=phone assembleHap
+& "D:\DevEco Studio\tools\node\node.exe" "D:\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default -p product=default -p requiredDeviceType=phone assembleHap
 # 产物：entry/build/default/outputs/default/entry-default-signed.hap（需先在 IDE 配置签名）
 ``````
 
@@ -90,7 +97,8 @@ cd fandou-t-mac\ohos\hap
 
 ## 重建原生静态库（可选）
 见 `fandou-t-mac/ohos/scripts/*.ps1` 与 `ohos/ARM64-VALIDATION.md`；LUT 内核由 t-mac 代码生成流程产出（详见仓库根 README 与 docs/）。
-"@
+'@
+$readme = $readme.Replace('__DATE__', $date).Replace('__REPO__', $repoHead).Replace('__ENGINE__', $engineHead).Replace('__BRANCH__', $Branch)
 Set-Content -Path (Join-Path $pkg '源码包说明.md') -Value $readme -Encoding UTF8
 
 # 4) zip — zip_tree.py writes the UTF-8 name flag for the Chinese paths; Compress-Archive
