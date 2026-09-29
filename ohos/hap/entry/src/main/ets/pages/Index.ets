@@ -534,7 +534,7 @@ struct Index {
                     }
                   }
                   .width('100%')
-                }, (m: ChatMsg, idx: number) => `${m.role}-${idx}`)
+                }, (m: ChatMsg, idx: number) => `${idx}-${m.role}-${m.text.length}-${m.meta.length}`)
               }
               .width('92%')
               .alignItems(HorizontalAlign.Start)
