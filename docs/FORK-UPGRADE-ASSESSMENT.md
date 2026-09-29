@@ -106,3 +106,20 @@
 ① 检查运行时 scale 读取代码（ggml-tmac.cpp 中读取 tensor->data 的 scale 段布局：块内插 vs 尾部追加）；
 ② 按处方修转换器 BitNet 路径：per-group(g=64) 三值量化（每 64 组算 scale）→ `preprocess_for_t_mac(w, scales=per_group_array)`；
 ③ 重转 + 重测（预计 1~2 小时一轮）。
+
+## 十、阶段 5 终局（2026-09-29 凌晨，实验线收官存档）
+
+**修复链回顾**:列转换器 per-group 量化（g=64，max-abs scale，`patch_conv.py`）→ 转换成功 **1,214,183,840 B（1.21GB，比单 scale 版大 1.7MB×~80 张量 = 组 scale 字节）**，逐张量字节数精确命中类型表（如 3200×3200 → 3,200,000 B ✓）→ 加载器补丁**全部撤回**（修好转换器后标准代码即正确，文件与上游类型表严丝合缝）。
+
+**验证结果**:模型**完整加载** ✓（1157 MiB / KV 162.5 MiB / 994 节点）→ **内核自动调优运行** ✓（实时 tune q_group_size=64 配置）→ 预热推理 **SIGSEGV** ✗。
+
+**崩溃精确坐标**（dmesg + llvm-addr2line）:
+- `segfault at 0`（空指针解引用），ip=0x4c3ba7，**单/多线程同址（确定性）**
+- 函数:**`ggml_backend_tmac_mul_mat`**
+
+**下一步处方（下个会话 30 分钟级）**:
+① 读 `ggml-tmac.cpp` 的 `ggml_backend_tmac_mul_mat` 全部指针解引用点，锁定哪一个为 NULL（候选：kernel_config 查找失败分支、tmac_tensor_extras/workspace 未初始化、warmup 空 batch 的退化路径）；
+② 对照作者历史提交 5c79170a（x86 correct）与 tip 的 diff，看该函数是否在 WIP 末期改坏；
+③ 修复后即可跑通"新 fork + BitNet-3B"——那将是本项目历史上第一个把 BitNet 带上该分支的完整链路。
+
+**备份环境**:py311 + torch（conda 清华频道）安装结果见任务日志；主线不受影响。
