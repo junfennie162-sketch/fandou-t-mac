@@ -238,3 +238,11 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 **残余定性（终）**："is is is" 退化循环位于作者 WIP 的**内核/置换数值层**——其提交自标 "[WIP] Wrong outputs" 未解除。我方（转换/文件格式/加载/接线/惰性转换）在**一切可验证的层面已完全一致**。后续攻坚需黄金参照物级数值调试（单 matmul NMSE 对照 / 对照作者 GPTQ-correct 路径），属独立专项；或等待作者更新（我们的补丁集可直接套用）。
 
 **现场恢复**：`lut_mul_mat.cpp` = 官方版 + 仅存 `patch_lazy_clean.py`（惰性转换，核心修复）；构建产物 rebuilt（FINAL_BUILD=0）。
+
+## 十七、KV 量化根因再修正（2026-09-30 · 队友复核 + 三重验证）
+
+**结论修正**：早期（main 0100d6f/ed4a72f）将 KV 量化失败归属为"fork 强制量化 KV 需 flash-attn、x86 FA 路径不可用"——**该归属错误**。三重验证：① V 门（旧 src/llama.cpp:19199）= LOG_ERROR + return nullptr（优雅失败非 abort，仅约束 V）；② K 侧唯一门 = 行对齐断言（旧 :19307 = 新 llama-context.cpp:201）：`n_embd_head_k % ggml_blck_size(type_k) == 0` → 100 % 32 = 4 → abort（与崩溃签名 ggml_abort ← llama_new_context_with_model 吻合；K-only 试验 V=f16/fa=off，V 门未参与）；③ 补丁文件相关改动计数 = 0。
+
+**规划修正（重要）**：**"换新版 fork 后重启 KV 量化"之说作废**——新版（2025-04）同款无条件断言仍在、零 padding 补救。真正前提 = **KV head padding（100→128）**：ggml 全部量化类型块大小均为 32 的幂，head_dim=100 无任何现成量化类型可用 → 属格式层改造，独立工作项，与 fork 版本无关。
+
+**方法学教训**：归属必须"读到断言原文/崩点行号"再落结论；早期以行为推断替代原文验证 = 一次误判，已全链修正（main 提交 + 代码注释 + PROGRESS）。
