@@ -386,6 +386,7 @@ struct Index {
       const arr = this.msgs.slice();
       arr[streamIdx] = { role: 'model', text: arr[streamIdx].text + piece, meta: '' };
       this.msgs = arr;
+      this.status = `⏳ 生成中… 已输出 ${arr[streamIdx].text.length} 字`;   // live progress
     };
     tmac.generateStreamAsync(asked, this.num(this.nPredict, 16), 0.8, 40, onToken)
       .then((r: string) => {
@@ -402,7 +403,15 @@ struct Index {
         }
         // finalize the streamed bubble: clean continuation text + perf caption
         const arr = this.msgs.slice();
-        arr[streamIdx] = { role: 'model', text: parts[0].length > 0 ? parts[0] : arr[streamIdx].text, meta: parts[2] };
+        const streamed = arr[streamIdx].text;
+        let finalText = parts[0].length > 0 ? parts[0] : streamed;
+        if (finalText.length === 0) {
+          // diagnosis: never leave the user with a silent empty bubble
+          finalText = r.length > 0
+            ? `（无续写输出，原始响应前 400 字：）\n${r.substring(0, 400)}`
+            : '（native 返回空响应——请到「控制台」页查看日志）';
+        }
+        arr[streamIdx] = { role: 'model', text: finalText, meta: parts[2] };
         this.msgs = arr;
         this.appendLog('生成 · 完整报告', r);   // console page keeps the verbatim report
         hilog.info(0x0000, 'LUTSA', 'generate done, %{public}d chars', r.length);
