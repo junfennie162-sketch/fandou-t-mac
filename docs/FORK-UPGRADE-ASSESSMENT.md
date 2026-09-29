@@ -54,3 +54,16 @@
 | 下一步 | ①弄清内核如何接线（旧 staging-x64 内核包是否兼容 / 是否需 TVM 重生成）→ ②用 OHOS SDK clang（Windows 侧，target x86_64-linux-ohos，已验证管线）配置+构建 → ③`tests/lut-verify` NMSE 对照判定健康度 |
 
 **风险更新**：新分支把部分运行时代码 in-tree（可能降低对外置 kernels 包的依赖，利好移植；但也可能要配套新版 kernel 生成流程，阶段 2 核对）。
+
+## 六、阶段 2 纪事（2026-09-29 深夜）
+
+**构建环境**：Windows OHOS SDK clang（`--target=x86_64-linux-ohos`）+ DevEco cmake/ninja，产物静态 musl 丢 WSL 跑（成熟管线）。
+
+| 轮次 | 结果 | 根因与处置 |
+|---|---|---|
+| configure | ✅ | `GGML_TMAC=ON` 原生支持，零缺包（作者的 t-MAC 全在树内，运行时 kcfg 注册表派发） |
+| build #1 | ❌ | `SignedHalvingAdder`/`scales` 未声明 —— **AVX2 守卫未激活**（GGML_NATIVE=OFF 只给 SSE4.2）→ 加 `-DGGML_AVX2=ON -DGGML_F16C=ON` |
+| build #2 | ❌ | `_mm256_fmadd_ps requires fma` —— **新版 x86 路径硬依赖 FMA，且没带我们老 fork 的"FMA 兜底宏"补丁** → 验证构建先 `-DGGML_FMA=ON`（WSL i7 有 FMA）；**鸿蒙/模拟器构建需重放我们的 FMA 兜底补丁（阶段 3 任务，老修复直接复用）** |
+| build #3 | 🔄 | 加了 GGML_FMA=ON，构建中 |
+
+**结论（重要）**：新分支的适配需求与旧 fork **同族同源**（AVX2 守卫 / FMA 依赖 / 可能还有类型契约），我们的移植知识库 100% 可迁移——阶段 3 预估可从 1 天下调。
