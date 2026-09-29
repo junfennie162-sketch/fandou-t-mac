@@ -67,3 +67,15 @@
 | build #3 | 🔄 | 加了 GGML_FMA=ON，构建中 |
 
 **结论（重要）**：新分支的适配需求与旧 fork **同族同源**（AVX2 守卫 / FMA 依赖 / 可能还有类型契约），我们的移植知识库 100% 可迁移——阶段 3 预估可从 1 天下调。
+
+## 七、阶段 3 开局（2026-09-29 深夜续）
+
+| 项 | 结果 |
+|---|---|
+| 静态构建 | ✅ `build-ohos-x86-static/bin/llama-cli`（10.3 MB，全静态 musl） |
+| WSL 运行 | ✅ 二进制正常启动（loader/backend init 全过） |
+| 已重放的老补丁（3/3 命中） | ① `-DGGML_AVX2=ON -DGGML_F16C=ON`（AVX2 守卫）② `-DGGML_FMA=ON`（新版 x86 硬依赖 FMA；**鸿蒙版仍需重放我们的 FMA 兜底宏**）③ `common.cpp` 两处守卫加 `!defined(__MUSL__)`（musl 无 pthread affinity） |
+| **旧模型被拒**（关键发现） | `tensor 'blk.0.ffn_down.weight' of type 37 (TYPE_IQ4_NL_4_8 REMOVED, use IQ4_NL with runtime repacking)` —— 旧 fork 的自定义 T-MAC 张量类型**已移除**，新版改为 **IQ4_NL + 运行时重排布** 方案 |
+| 待办 | ✅ 下一步：用新版 `convert_hf_to_gguf.py`（自带 `enable_t_mac` 参数）+ HF 源模型 `D:\ohos-models\bitnet-3b` **重新转换** → 重跑 llama-cli 验证文本 → 再查内核/kcfg 接线（新版或在构建期生成/打包内核） |
+
+**意义**：格式换代 = 一次重转（半小时级），不是拦路虎；三条老补丁 1:1 命中已三度验证"移植知识完全可迁移"。
