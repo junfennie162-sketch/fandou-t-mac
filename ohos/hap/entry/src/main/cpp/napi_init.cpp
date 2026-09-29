@@ -377,10 +377,13 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     cparams.n_batch = 512;
     cparams.n_threads = threads;
     cparams.n_threads_batch = threads;
-    // KV quantization: NOT possible on this llama.cpp fork — it GGML_ASSERTs on any quantized
-    // KV type (K or V) unless flash attention is on, and its flash-attn path aborts on x86.
-    // Both were reproduced on the emulator (cppcrash: ggml_abort <- llama_new_context_with_model
-    // for q8_0 K+V and for K-only). Keep f16 KV; revisit after a llama.cpp fork upgrade.
+    // KV quantization: blocked by MODEL GEOMETRY on this llama.cpp version, not by flash-attn.
+    // BitNet-3B has head_dim = 100; all legacy KV quant types use 32-element blocks, and
+    // llama_new_context_with_model asserts n_embd_head_k % blck_size == 0 (src/llama.cpp:19307)
+    // -> GGML_ASSERT -> abort for q8_0 K+V and for K-only alike (both reproduced: cppcrash
+    // ggml_abort <- llama_new_context_with_model). Newer llama.cpp forks support quantized KV
+    // by PADDING head dims to the block size — that (plus a full T-MAC re-port to the new ggml
+    // backend architecture) is the post-competition work item. Keep f16 KV here.
     cparams.type_k = GGML_TYPE_F16;
     cparams.type_v = GGML_TYPE_F16;
     cparams.flash_attn = false;
