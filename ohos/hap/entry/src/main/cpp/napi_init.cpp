@@ -477,8 +477,9 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
         if (np > 0) {
             text.append(piece, (size_t) np);
             if (ttft_ms < 0.0) {
+                // true TTFT: request start (incl. prompt eval) -> first token
                 ttft_ms = std::chrono::duration<double, std::milli>(
-                              std::chrono::steady_clock::now() - t_eval0).count();
+                              std::chrono::steady_clock::now() - t_prompt0).count();
             }
             if (g_stream_sink) g_stream_sink(piece, (size_t) np);
         }
