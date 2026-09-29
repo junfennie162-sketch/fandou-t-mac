@@ -321,7 +321,7 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 | 招式 | 结果 | 证据 |
 |---|---|---|
 | ① **链式 KV v1**（跨轮前缀复用，省计算） | ✅ **大成功** | 同 prompt 二轮：`reused 6 of 6`、prompt eval **421.41ms → 0.00ms**、TTFT 0.46ms（控制台铁证） |
-| ② KV 量化 f16→q8_0（省内存） | ❌ **本 fork 封死** | 双重 cppcrash 实证：`ggml_abort ← llama_new_context_with_model`——fork 对**任何**量化 KV（K 或 V）强制要求 flash-attn，而其 x86 flash-attn 路径不可用。留待换新 fork 后重启（非代码问题，是框架版本能力边界） |
+| ② KV 量化 f16→q8_0（省内存） | ❌ **模型几何封死**（根因修正 2026-09-30） | 崩溃来自 **K 行对齐断言** `GGML_ASSERT(n_embd_head_k % ggml_blck_size(type_k) == 0)`（src/llama.cpp:19307）：head_dim=100 ÷ q8_0 块 32 除不尽 → abort。V/flash-attn 门（19199）是 LOG_ERROR+return nullptr（非 abort）且 K-only 试验中未参与。**新版 fork（llama-context.cpp:201）同款无条件断言仍在 → 升级不解除**；解锁前提 = KV head padding（100→128），独立工作项（详见 fork-upgrade 分支评估报告 §17） |
 | ③ 上下文 512→1024 | ✅ 保留 | 配合链式复用装更长对话 |
 
 **配套修复**：L2 调度加 60s 滞回（修"回前台重载冲掉 KV 链"）、TTFT 改诚实口径（含 prompt）。实现：`LlmState.kv_tokens` 追踪 KV 链 + 最长公共前缀 → `seq_rm` 删分歧段 → 只解码增量。
