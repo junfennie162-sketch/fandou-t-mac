@@ -49,6 +49,8 @@ struct Index {
   @State l2Enabled: boolean = true;
   @State autoWarmup: boolean = true;
   @State l2State: string = '前台 · 满载';
+  @State modelLoaded: boolean = false;
+  private bgReleaseTimer: number = -1;   // hysteresis: release only after staying backgrounded
   scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -165,30 +167,42 @@ struct Index {
     return [text, toks, paren];
   }
 
-  // L2 rule engine (deliberately tiny): the app's own foreground/background signal maps to two
-  // actions — background releases the engine (~1 GB RSS back to the system: real throttling),
-  // foreground warm-loads it again so the demo "recovers" in ~2 s. Never interrupts a running job.
+  // L2 rule engine with hysteresis: quick app-switch keeps the engine (and its chained KV)
+  // alive; only a STAY in background (>60 s) releases it. Foreground reloads only if released.
   private onFgChange(): void {
     if (!this.l2Enabled) {
       return;
     }
     if (!this.appFg) {
-      this.l2State = '后台 · 降载';
-      if (!this.busy) {
-        const r: string = tmac.release();
-        this.appendLog('L2 调度 · 转后台 → 引擎释放（降载）', r);
-        this.status = '🌙 已后台降载（引擎释放，内存归还系统）';
-        this.lastToks = '--';
-        this.lastLoad = '--';
-        this.lastTtft = '--';
-        this.lastRss = '--';
-      } else {
-        this.appendLog('L2 调度 · 转后台', '生成进行中，不打断；完成后下一轮生效');
+      this.l2State = '后台 · 计时降载';
+      if (this.bgReleaseTimer >= 0) {
+        clearTimeout(this.bgReleaseTimer);
+        this.bgReleaseTimer = -1;
       }
+      this.bgReleaseTimer = setTimeout(() => {
+        this.bgReleaseTimer = -1;
+        if (!this.appFg && this.l2Enabled && this.modelLoaded && !this.busy) {
+          const r: string = tmac.release();
+          this.modelLoaded = false;
+          this.appendLog('L2 调度 · 后台停留 >60s → 引擎释放（降载）', r);
+          this.status = '🌙 已后台降载（~1GB 内存归还系统）';
+          this.lastToks = '--';
+          this.lastLoad = '--';
+          this.lastTtft = '--';
+          this.lastRss = '--';
+        }
+      }, 60000);
     } else {
+      if (this.bgReleaseTimer >= 0) {   // came back within grace: engine + KV chain intact
+        clearTimeout(this.bgReleaseTimer);
+        this.bgReleaseTimer = -1;
+        this.l2State = '前台 · 满载';
+        this.appendLog('L2 调度 · 快速切回（<60s）', '引擎与 KV 链保持，未降载');
+        return;
+      }
       this.l2State = '前台 · 满载';
       this.status = '☀️ 已回前台';
-      if (this.autoWarmup && !this.busy) {
+      if (this.autoWarmup && !this.modelLoaded && !this.busy) {
         this.appendLog('L2 调度 · 回前台 → 预热（自动重载模型）', '');
         this.doLoad();
       }
@@ -206,6 +220,7 @@ struct Index {
       .then((r: string) => {
         this.status = r.startsWith('OK') || r.includes('llm_load_print_meta')
                         ? '✅ 模型已加载' : '❌ 加载失败';
+        this.modelLoaded = r.includes('llm_load_print_meta');
         this.detail = '';
         const lines = r.split('\n');
         for (let i = 0; i < lines.length; i++) {
@@ -731,6 +746,7 @@ struct Index {
                     .borderRadius(8).border({ width: 1, color: C_BORDER })
                     .onClick(() => {
                       const r: string = tmac.release();
+                      this.modelLoaded = false;
                       this.appendLog('释放模型', r);
                       this.status = '已释放模型（内存已回收）';
                       this.lastToks = '--';
