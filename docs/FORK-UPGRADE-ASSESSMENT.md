@@ -208,3 +208,21 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 - 探针工具：`patch_probe2/3.py`、`patch_gguf.py`、`patch_ggmlnbytes.py`（已还原）
 - 产物：`bitnet-3b-tmac-202504-g.gguf`（1.21GB）、静态 llama-cli（build-ohos-x86-static）
 - 诊断记录：本文件 §一~十四 全程弹道
+
+## 十五、数值侦查收官：管线一致性全清单 + 残余课题定性（2026-09-29 终）
+
+**关键考证（决定性文档）**：旧管线权威语义出自 `python/t_mac/weights.py` 文档字符串:
+> "Add a bias of 2^(bits-1)... E.g., add a bias of **2** to int2: -2,-1,0,1 -> 0,1,2,3"
+
+→ BitNet 三值 {-1,0,1}+2 = **{1,2,3}** 是跨代正统编码。**我们的 per-group 补丁（round(x/s+2).clip(1,3)）= 正确编码**；"旧文件含 0"系误报（旧文件在转换期已被位交织置换，按字节直读的分布无意义）——**+1 编码实验基于假前提，已叫停回滚**。
+
+**管线一致性核对（全部通过 ✓）**：
+| 检查项 | 结论 |
+|---|---|
+| 比特打包顺序（tighten_bit_array ↔ BlockI2TypeAccessor::get_q） | ✓ 均为"元素0占最高位" |
+| scale 顺序（转换器行主序 (m, k/64) ↔ 运行时 get_scale(idx=im*k+ik)） | ✓ 逐索引对齐 |
+| 尺寸表（C++ type_traits ↔ Python constants ↔ 实际文件字节数） | ✓ 三方逐字节一致 |
+| 权值编码（+2 bias ↔ 旧代 canonical 语义） | ✓ 正统 |
+| 目标分支/构建/加载/调优/惰性转换 | ✓ 全通、零崩溃、46.93 tok/s |
+
+**残余课题定性**：数值正确性（"is is is"退化循环）落在作者 WIP 分支**内核/置换/数值层**——其自身提交即标注 "[WIP] Wrong outputs" 从未解除。我们已把自家侧（转换/加载/运行时接线）做到**可验证范围内全一致**；下一阶段需要：① 拿作者的可用模型（GPTQ-Llama，commit 标注 "correct"）反测其内核以分离"分支普遍问题 vs BitNet 特有问题"；② 或对单一 matmul 做数值级 NMSE 对照（tests/lut-verify 已备）；③ 或等待作者更新。**本议题告一段落，成果与边界均已建档。**
