@@ -121,11 +121,19 @@ struct Index {
     }, 60);
   }
 
-  // The native report is: sampler header, blank line, prompt echo + generated text, perf block.
-  // Split off the clean continuation text and the eval tok/s caption for the chat bubble.
+  // The native report is: sampler header, blank line, prompt echo + generated text, then a
+  // timing block ("llama_perf_sampler_print" / "[[timings]]" / "llama_perf:"). Cut at the
+  // earliest timing marker, strip the header (first blank line) and the echoed prompt.
   private splitReport(r: string, asked: string): string[] {
     let text = r;
-    const cut = r.indexOf('llama_perf_sampler_print');
+    let cut = r.indexOf('llama_perf_sampler_print');
+    const alt = r.indexOf('[[timings]]');
+    if (alt >= 0 && (cut < 0 || alt < cut)) {
+      cut = alt;
+    }
+    if (cut < 0) {
+      cut = r.indexOf('llama_perf:');
+    }
     if (cut >= 0) {
       text = r.substring(0, cut);
     }
@@ -368,6 +376,7 @@ struct Index {
     }
     this.busy = true;
     this.status = '⏳ 推理中…';
+    this.output = '';   // each generation starts a fresh console report
     const asked = this.prompt;
     this.pushMsg({ role: 'user', text: asked, meta: '' });
     const streamIdx = this.msgs.length;   // the model bubble that will type live
