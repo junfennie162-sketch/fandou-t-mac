@@ -79,3 +79,15 @@
 | 待办 | ✅ 下一步：用新版 `convert_hf_to_gguf.py`（自带 `enable_t_mac` 参数）+ HF 源模型 `D:\ohos-models\bitnet-3b` **重新转换** → 重跑 llama-cli 验证文本 → 再查内核/kcfg 接线（新版或在构建期生成/打包内核） |
 
 **意义**：格式换代 = 一次重转（半小时级），不是拦路虎；三条老补丁 1:1 命中已三度验证"移植知识完全可迁移"。
+
+## 八、阶段 3 终局记录（2026-09-29 深夜，实验线暂停点）
+
+| 项 | 结果 |
+|---|---|
+| 环境 | 老 Py3.8 conda 环境 + 一行 `from __future__ import annotations`（tmac_utils.py）= 新脚本全通（py311 环境已建为备胎） |
+| 转换格式选型 | `tmac_bn_0`（块256）对 BitNet-3B 的 8640 维度**除不尽被拒**；改用 **`tmac_w2g64_0`（块64，8640÷64=135 ✓）** 转换**成功**：966MB / 288 张量 |
+| 加载终审 | ❌ `tensor 'blk.0.ffn_sub_norm.weight' has offset 211737632, expected 213465600`（差 1,727,968 B）——写入器/读取器**偏移记账不一致** |
+| 根因排查 | ① 已排除类型尺寸表不一致（C++ `ggml.c:579` 与 Python `constants.py:2040` 两边都是 blck=64/type_size=20，完全一致）② 报错点=BitNet **特有**的 sub_norm 张量（作者测试的 Llama-2/Phi-3 **没有此类张量**）→ 高嫌疑区：WIP 分支对 sub_norm + TMAC 混合布局的 raw_shape/offset 处理（对应其历史提交 "ggml_tmac_transform_tensor should use *data as the original data" 同族） |
+| 上游动态 | `kaleid-liner/llama.cpp@202504_tmac` 顶点仍为 81475f4（作者未推新修复） |
+
+**结论与后续**：新 fork 的**构建链已打通**（三补丁 + 转换器可用），卡在作者 WIP 分支的**模型布局 bug**（BitNet 专项，作者盲区）。两条出路：① 专门调试 writer/reader offset 记账（半天~数天，需逐张量比对写入偏移 vs 读取期望）；② 等作者更新或提 issue 反馈（本地材料已齐备）。**实验线自此暂停，主线（提交）全程零影响。**
