@@ -188,3 +188,23 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 ③ 重编重跑——通过即「新 fork + BitNet-3B」全链路首通。
 
 **探针工具链**（重放即可，全部在 D:\ohos-models\）：`patch_probe2.py`（:983 双探针）· `patch_probe3.py`（三联探针）· 各 rebuild*.log。
+
+## 十四、🏁 收官：端到端首通 + 真性能基线（2026-09-29 凌晨终章）
+
+**突破性修复（本项目原创）**：在 `tensor_traits::work_size`（图规划期、单线程、每图一次）补「**惰性转换**」——发现张量未注册则就地 `ggml_tmac_transform_tensor(src0, src0->data)`。这补齐了作者"gather logics in can_mul_mat"未完成的半页：因加载管线绕过了 set_tensor，转换/注册从未发生（三联探针实证 map sz 0）。
+
+**结果（清探针后）**：
+| 指标 | 数值 |
+|---|---|
+| 崩溃 | ✅ 零（182 张量全惰性转换成功） |
+| **eval 性能** | **46.93 tok/s**（21.31 ms/token，WSL i7）——**接近旧 fork PC 基线 25.10 的 1.9 倍** |
+| prompt eval | 88.43 tok/s |
+| 输出质量 | ❌ `The capital of France is is is is is…` 退化循环 = 作者同款 "[WIP] Wrong outputs" |
+
+**结论**：新 fork 于本项目首次「**不崩地跑完端到端**」，且**性能潜力显著高于旧 fork**；剩余唯一课题 = **数值正确性**（嫌疑：per-group scale 读取约定 / transform permute 布局 / 量化语义微差），已有 `tests/lut-verify` NMSE 对照法可直接开攻。
+
+**fork-upgrade 工具包（全部在本仓/本地）**：
+- 补丁：`patch_conv.py`（转换器 per-group）、`patch_lazy_clean.py`（惰性转换，核心）
+- 探针工具：`patch_probe2/3.py`、`patch_gguf.py`、`patch_ggmlnbytes.py`（已还原）
+- 产物：`bitnet-3b-tmac-202504-g.gguf`（1.21GB）、静态 llama-cli（build-ohos-x86-static）
+- 诊断记录：本文件 §一~十四 全程弹道
