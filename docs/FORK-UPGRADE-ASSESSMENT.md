@@ -143,3 +143,24 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 - 派发门控正常（tmac.cpp:39-42：仅当 src0 在 tmac buffer 时才派发到该函数）。
 
 **下一步（15 分钟级）**：在 :983 前插入探针打印（`src0->extra`、`src0->name`、`wt`），重编 → 运行 → 一眼定罪；A → 查 init_tensor 链路为何遗漏该张量；B → 对齐注册/查询的命名与时机（对照作者提交 "Fix ggml_tmac_transform_tensor should use *data"）。
+
+## 十二、探针定罪与最后一英里（2026-09-29 凌晨，本段结束）
+
+**探针实证**（`lut_mul_mat.cpp:983` 两侧插打印，`patch_probe2.py`）:
+```
+[TMAC-DBG] src0=blk.0.attn_q.weight extra=0x5e1140 buf=0x...(有效)
+[TMAC-DBG] wt=0 name=blk.0.attn_q.weight        ← 定罪：名字表查空
+```
+- 嫌疑 A（extra NULL）**排除**：traits 正常挂载；
+- 定罪 **B：运行时 extras 表查询返回 NULL** → 下一行 `wt->lut_scales_size` 在 0 址解引用 → SIGSEGV。
+
+**已逐一排除**（全部有源码证据）:
+1. 环境/构建（确定性、单多线程同址）✗
+2. 类型闸 `is_type_supported(W2G64_0)` = true（`is_tmac_2bit_type` 含 39-43）✗
+3. 注册/查询同文件（单一定义 `lut_mul_mat.cpp:924` convert_weight、:983 查询）✗
+4. 表重置 `tmac_init()` 在 `ggml-cpu.c:3466`（first-call 块内、加载之前执行一次）✗
+5. 派发门控（tmac.cpp:39-42 仅 tmac-buffer 张量进此函数）✗
+
+**最后一英里（下一步 30 分钟级）**:读 `ggml_tmac_transform_tensor`（lut_mul_mat.cpp:~674 起）的**注册尾部**（~700-780 行）——即剔除断言后的实际注册代码。注意:Release 构建 `-DNDEBUG` 使 `assert(kernel_config->has_scale)` 等**编译期消失**，若注册尾部存在"按 config 类型分叉"的逻辑（如仅 one_scale 路径注册），我们的 per-group 配置可能落入**跳注册**分支——这就是 B 的机制。修法大概率是 1 行（补注册分支或修正条件）。
+
+**另存**：`patch_probe2.py`、探针构建产物均在 D:\ohos-models\llama-202504；实验线整体暂停于"最后一英里"。
