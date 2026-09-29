@@ -314,6 +314,21 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 - 证据：`tests/lut-verify/android-{device,e2e}-run.txt`；排坑指南 `docs/ANDROID-FIX.md`（2026-09-28 三分支并回单 main，平台改专区制）
 - 当年"安卓能跑不输出"的病根（数据契约层）按本仓修复集使用后根治 ✅
 
+## 🧠 KV 三连击工作日 · 2026-09-29
+
+**背景**：识别 KV 为下一个数量级入口（每 token KV = 325 KiB，n_ctx≈3000 时 KV 读取量追平全部权重；纯 MHA 无 GQA，属最坏情况）。
+
+| 招式 | 结果 | 证据 |
+|---|---|---|
+| ① **链式 KV v1**（跨轮前缀复用，省计算） | ✅ **大成功** | 同 prompt 二轮：`reused 6 of 6`、prompt eval **421.41ms → 0.00ms**、TTFT 0.46ms（控制台铁证） |
+| ② KV 量化 f16→q8_0（省内存） | ❌ **本 fork 封死** | 双重 cppcrash 实证：`ggml_abort ← llama_new_context_with_model`——fork 对**任何**量化 KV（K 或 V）强制要求 flash-attn，而其 x86 flash-attn 路径不可用。留待换新 fork 后重启（非代码问题，是框架版本能力边界） |
+| ③ 上下文 512→1024 | ✅ 保留 | 配合链式复用装更长对话 |
+
+**配套修复**：L2 调度加 60s 滞回（修"回前台重载冲掉 KV 链"）、TTFT 改诚实口径（含 prompt）。实现：`LlmState.kv_tokens` 追踪 KV 链 + 最长公共前缀 → `seq_rm` 删分歧段 → 只解码增量。
+
+**回退点**：`v1.0-submission-verified`（13:09 已验 HAP 精确坐标）· `v1.1-chained-kv` · `v1.2-final-candidate`（本日终态）。
+**代码冻结**：截止前不再动 native 主线；换 fork（新版 llama.cpp + T-MAC 补丁重移植）为周级工程，列入复赛后。
+
 ## 提交包
 
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
