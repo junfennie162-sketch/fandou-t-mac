@@ -43,3 +43,14 @@
 
 ---
 *证据：`git ls-remote` 分支清单、`git log origin/202504_tmac`、`git diff --stat eb07ecf0 origin/202504_tmac`。*
+
+## 五、阶段 1 进展（2026-09-29 晚）
+
+| 步骤 | 状态 |
+|---|---|
+| 克隆 202504_tmac 到隔离目录 | ✅ `D:\ohos-models\llama-202504`（分支顶点 81475f4，独立于生产子模块，零污染） |
+| 构建开关确认 | ✅ `ggml/CMakeLists.txt:211` 有 `GGML_TMAC` 选项 |
+| 代码结构侦察 | ✅ T-MAC 移入 **`ggml/src/ggml-cpu/tmac/`**（11 文件：ggml-tmac / tmac / lut_ctor / lut_mul_mat / tbl 各 .cpp+.h）——注意：**多了 lut_ctor/lut_mul_mat/tbl 运行时组件**，内核接线方式可能与旧版 TMAC_DIR 外置包不同 |
+| 下一步 | ①弄清内核如何接线（旧 staging-x64 内核包是否兼容 / 是否需 TVM 重生成）→ ②用 OHOS SDK clang（Windows 侧，target x86_64-linux-ohos，已验证管线）配置+构建 → ③`tests/lut-verify` NMSE 对照判定健康度 |
+
+**风险更新**：新分支把部分运行时代码 in-tree（可能降低对外置 kernels 包的依赖，利好移植；但也可能要配套新版 kernel 生成流程，阶段 2 核对）。
