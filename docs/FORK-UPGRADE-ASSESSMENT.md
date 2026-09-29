@@ -123,3 +123,23 @@
 ③ 修复后即可跑通"新 fork + BitNet-3B"——那将是本项目历史上第一个把 BitNet 带上该分支的完整链路。
 
 **备份环境**:py311 + torch（conda 清华频道）安装结果见任务日志；主线不受影响。
+
+## 十一、崩溃弹道分析（2026-09-29 凌晨，函数级定位完成）
+
+**案发现场**：`lut_mul_mat.cpp:983`（`ggml_backend_tmac_mul_mat` 内）:
+```cpp
+struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->extra)
+                                    ->get_tmac_tensor_extra(src0->name);
+```
+崩溃签名 = `segfault at 0`（地址 0 精确命中 = 虚表/首成员偏移 0 的解引用）。
+
+**双嫌疑犯**：
+- **A**: `src0->extra == NULL` → 虚表调用在 0 处解引用（签名完美吻合）；
+- **B**: extra 正常但 `get_tmac_tensor_extra(name)` 返回 NULL（结构体首成员偏移 0 处解引用，同签名）。注册点在同文件 :677（"已注册则跳过"），若注册与查询的张量命名/时机不一致则命中。
+
+**已排除**：
+- 不是构建/环境问题（确定性、单/多线程同址）；
+- 类型尺寸表（逐字节核对一致）、文件布局（per-group 版全部命中）、加载器（全通）；
+- 派发门控正常（tmac.cpp:39-42：仅当 src0 在 tmac buffer 时才派发到该函数）。
+
+**下一步（15 分钟级）**：在 :983 前插入探针打印（`src0->extra`、`src0->name`、`wt`），重编 → 运行 → 一眼定罪；A → 查 init_tensor 链路为何遗漏该张量；B → 对齐注册/查询的命名与时机（对照作者提交 "Fix ggml_tmac_transform_tensor should use *data"）。
