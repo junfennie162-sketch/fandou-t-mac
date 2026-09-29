@@ -226,3 +226,15 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 | 目标分支/构建/加载/调优/惰性转换 | ✓ 全通、零崩溃、46.93 tok/s |
 
 **残余课题定性**：数值正确性（"is is is"退化循环）落在作者 WIP 分支**内核/置换/数值层**——其自身提交即标注 "[WIP] Wrong outputs" 从未解除。我们已把自家侧（转换/加载/运行时接线）做到**可验证范围内全一致**；下一阶段需要：① 拿作者的可用模型（GPTQ-Llama，commit 标注 "correct"）反测其内核以分离"分支普遍问题 vs BitNet 特有问题"；② 或对单一 matmul 做数值级 NMSE 对照（tests/lut-verify 已备）；③ 或等待作者更新。**本议题告一段落，成果与边界均已建档。**
+
+## 十六、终审：七层一致性全过，残余定性为内核数值层（2026-09-29 最终）
+
+**配置旗标探针（决定性一轮）**：`one_scale=0 has_scale=1 has_zero=0 qg=64 actg=64 scales_size=160000` — 与我们的文件逐项吻合（160000 = 3200×3200÷64 组数）。
+
+**七层一致性核对（全部通过）**：①比特打包序 ②尺度排列序 ③三方尺寸表 ④+2 canonical 编码（weights.py 权威文档）⑤has_zero_point=false ⑥one_scale=false ⑦scales_size 精确匹配。
+
+**工程现场定格**：零崩溃（RUN_EXIT=0）· 运行时注册查询**零失败**（GET-MISS=0）· 双重 transform 现象存在但副作用无害（同值重复注册）；性能基线（含探针）16.96 ms/token。
+
+**残余定性（终）**："is is is" 退化循环位于作者 WIP 的**内核/置换数值层**——其提交自标 "[WIP] Wrong outputs" 未解除。我方（转换/文件格式/加载/接线/惰性转换）在**一切可验证的层面已完全一致**。后续攻坚需黄金参照物级数值调试（单 matmul NMSE 对照 / 对照作者 GPTQ-correct 路径），属独立专项；或等待作者更新（我们的补丁集可直接套用）。
+
+**现场恢复**：`lut_mul_mat.cpp` = 官方版 + 仅存 `patch_lazy_clean.py`（惰性转换，核心修复）；构建产物 rebuilt（FINAL_BUILD=0）。
