@@ -164,3 +164,27 @@ struct tmac_tensor_extra * wt = ((struct ggml::cpu::tmac::tensor_traits *)src0->
 **最后一英里（下一步 30 分钟级）**:读 `ggml_tmac_transform_tensor`（lut_mul_mat.cpp:~674 起）的**注册尾部**（~700-780 行）——即剔除断言后的实际注册代码。注意:Release 构建 `-DNDEBUG` 使 `assert(kernel_config->has_scale)` 等**编译期消失**，若注册尾部存在"按 config 类型分叉"的逻辑（如仅 one_scale 路径注册），我们的 per-group 配置可能落入**跳注册**分支——这就是 B 的机制。修法大概率是 1 行（补注册分支或修正条件）。
 
 **另存**：`patch_probe2.py`、探针构建产物均在 D:\ohos-models\llama-202504；实验线整体暂停于"最后一英里"。
+
+## 十三、真凶全链闭合（2026-09-29 凌晨，探针三联定案）
+
+**三联探针实证**（`patch_probe3.py`：header 的 set/get + tmac.cpp 的 set_tensor 同时埋点）:
+```
+[TMAC-DBG] set_tensor ...   ← 加载全程：零输出（从未被调用！）
+[TMAC-DBG] SET ...          ← 零输出（注册从未发生！）
+[TMAC-DBG] GET-MISS (map sz 0)  ← 运行时查询：表空
+```
+
+**完整因果链（定案）**:
+1. 模型加载（--no-mmap）→ 张量进了 TMAC buffer（1157 MiB 已分配、init_tensor 挂好 traits ✓）
+2. **但 `ggml_backend_tmac_buffer_set_tensor`（转换+注册入口）从未被调用** → 权重未转换、extras 未注册
+3. 运行时 mul_mat 查询 extras → GET-MISS（表空）→ `wt=NULL`
+4. `wt->lut_scales_size` 在 0 址解引用 → SIGSEGV（与 dmesg "segfault at 0" 完全吻合）
+
+**病因判读**：作者 WIP 的加载管线处于"半迁移"状态——设计假设数据经 set_tensor 走转换/注册路径，但当前架构的装载流程（mmap 直映或新 loader 批量路径）绕过了它。这与历史提交 "Fix ggml_tmac_transform_tensor / gather logics in can_mul_mat" 同族（把转换时机挪来挪去没挪完）。
+
+**下一步处方（下会话收尾，1-2 个探针内可定）**:
+① 在 `llama-model-loader.cpp` 的 load_data() 埋探针，看实际走的是 mmap 分支还是 read+set 分支（`--no-mmap` 下为何仍绕过 set_tensor）；
+② 视结果二选一：修 loader 的分支条件，或把 transform 挂到正确的装载回调用；
+③ 重编重跑——通过即「新 fork + BitNet-3B」全链路首通。
+
+**探针工具链**（重放即可，全部在 D:\ohos-models\）：`patch_probe2.py`（:983 双探针）· `patch_probe3.py`（三联探针）· 各 rebuild*.log。
