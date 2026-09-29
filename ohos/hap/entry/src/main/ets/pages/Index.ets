@@ -216,7 +216,7 @@ struct Index {
     this.busy = true;
     this.status = '⏳ 加载中（首次含内核变换，可能几十秒）…';
     this.detail = '';
-    tmac.loadModelAsync(this.modelPath, this.filesDir(), this.num(this.threads, 4), 512, this.useMmap)
+    tmac.loadModelAsync(this.modelPath, this.filesDir(), this.num(this.threads, 4), 1024, this.useMmap)
       .then((r: string) => {
         this.status = r.startsWith('OK') || r.includes('llm_load_print_meta')
                         ? '✅ 模型已加载' : '❌ 加载失败';

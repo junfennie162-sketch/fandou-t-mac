@@ -377,6 +377,12 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     cparams.n_batch = 512;
     cparams.n_threads = threads;
     cparams.n_threads_batch = threads;
+    // KV quantization: f16 -> q8_0 halves the KV footprint (162.5 -> ~86 MiB @512 ctx)
+    // and the per-token KV read bandwidth; near-lossless. A q8_0 V cache requires
+    // flash attention in this llama.cpp version (assert in llama.cpp otherwise).
+    cparams.type_k = GGML_TYPE_Q8_0;
+    cparams.type_v = GGML_TYPE_Q8_0;
+    cparams.flash_attn = true;
     // NOTE: no cparams.seed in this llama.cpp version — determinism comes from the sampler
     // below (std::mt19937 seeded with 42).
     llama_context *ctx = llama_new_context_with_model(model, cparams);
