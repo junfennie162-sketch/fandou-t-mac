@@ -246,6 +246,10 @@ struct LlmState {
     int n_threads = 4;
     int n_ctx = 512;
     double load_ms = 0.0;
+    // Chained-KV bookkeeping: the exact token chain currently living in the KV cache.
+    // Next generate() finds the common prefix with this chain, keeps those KV cells and
+    // only decodes the divergent suffix (multi-turn prefix reuse, zero recompute).
+    std::vector<llama_token> kv_tokens;
 };
 
 LlmState g_llm;
@@ -387,6 +391,7 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     g_llm.model_path = resolved;
     g_llm.n_threads = threads;
     g_llm.n_ctx = n_ctx;
+    g_llm.kv_tokens.clear();   // fresh context: empty KV chain
     g_llm.load_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     // The complete llama.cpp verbose output (hparams, special tokens, tensor buffers, graph
@@ -413,10 +418,6 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     llama_context *ctx = g_llm.ctx;
     const int n_vocab = llama_n_vocab(model);
 
-    // Each generate() call is an independent completion: drop the previous prompt/answer from
-    // the KV cache, otherwise stale positions leak into the next run.
-    llama_kv_cache_clear(ctx);
-
     std::vector<llama_token> tokens(prompt.size() + 8);
     int n_tok = llama_tokenize(model, prompt.c_str(), (int32_t) prompt.size(), tokens.data(),
                                (int32_t) tokens.size(), true, false);
@@ -428,15 +429,34 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     if (n_tok <= 0) return "FAIL: tokenize";
     tokens.resize(n_tok);
 
+    // ---- chained KV: reuse the longest common token prefix still in the cache ----
+    // The cache holds a token chain from the previous turn; find where the new prompt diverges,
+    // drop only that suffix (seq_rm) and decode just the delta — zero recompute of the prefix.
+    int common = 0;
+    const int cached = (int) g_llm.kv_tokens.size();
+    const int max_cmp = std::min(n_tok, cached);
+    while (common < max_cmp && tokens[(size_t) common] == g_llm.kv_tokens[(size_t) common]) {
+        ++common;
+    }
+    if (common == 0) {
+        llama_kv_cache_clear(ctx);                        // nothing reusable: fresh start
+    } else if (common < cached) {
+        llama_kv_cache_seq_rm(ctx, 0, common, -1);        // keep prefix chain, cut divergent tail
+    }                                                     // common == cached: prompt fully cached
+
     const auto t_prompt0 = std::chrono::steady_clock::now();
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tok, 0, 0);
-    if (llama_decode(ctx, batch) != 0) return "FAIL: prompt decode";
+    int n_past = common;
+    if (n_tok > common) {
+        llama_batch batch = llama_batch_get_one(tokens.data() + common, n_tok - common, common, 0);
+        if (llama_decode(ctx, batch) != 0) return "FAIL: prompt decode";
+        n_past = n_tok;
+    }
     const auto t_prompt1 = std::chrono::steady_clock::now();
 
     std::mt19937 rng(42);
     const llama_token eos = llama_token_eos(model);
     std::string text;
-    int n_past = n_tok;
+    std::vector<llama_token> gen_ids;   // continuation tokens -> appended to the KV chain
     int generated = 0;
 
     const auto t_eval0 = std::chrono::steady_clock::now();
@@ -464,10 +484,15 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
         }
         llama_batch b1 = llama_batch_get_one((llama_token *) &id, 1, n_past, 0);
         if (llama_decode(ctx, b1) != 0) break;
+        gen_ids.push_back(id);
         ++n_past;
         ++generated;
     }
     const auto t_eval1 = std::chrono::steady_clock::now();
+
+    // build the KV chain for the next turn: prompt + continuation as decoded
+    g_llm.kv_tokens = tokens;
+    g_llm.kv_tokens.insert(g_llm.kv_tokens.end(), gen_ids.begin(), gen_ids.end());
 
     const double prompt_ms = std::chrono::duration<double, std::milli>(t_prompt1 - t_prompt0).count();
     const double eval_ms = std::chrono::duration<double, std::milli>(t_eval1 - t_eval0).count();
@@ -477,8 +502,9 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     std::snprintf(head, sizeof(head),
                   "sampler seed: 42\n"
                   "sampler params: top_k = %d, top_p = 0.950, temp = %.3f\n"
-                  "generate: n_ctx = %d, n_batch = 512, n_predict = %d\n\n%s\n",
-                  top_k, temp, g_llm.n_ctx, n_predict, prompt.c_str());
+                  "generate: n_ctx = %d, n_batch = 512, n_predict = %d\n"
+                  "kv chain: reused %d of %d prompt tokens (prefix chain kept, delta decoded)\n\n%s\n",
+                  top_k, temp, g_llm.n_ctx, n_predict, common, n_tok, prompt.c_str());
     // peak RSS via /proc/self/status (VmHWM = high-water mark, kB)
     double peak_rss_mb = 0.0;
     if (FILE *st = fopen("/proc/self/status", "r")) {
