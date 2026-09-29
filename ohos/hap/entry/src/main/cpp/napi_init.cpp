@@ -377,12 +377,13 @@ std::string do_load(const std::string &model_path, const std::string &files_dir,
     cparams.n_batch = 512;
     cparams.n_threads = threads;
     cparams.n_threads_batch = threads;
-    // KV quantization: f16 -> q8_0 halves the KV footprint (162.5 -> ~86 MiB @512 ctx)
-    // and the per-token KV read bandwidth; near-lossless. A q8_0 V cache requires
-    // flash attention in this llama.cpp version (assert in llama.cpp otherwise).
+    // KV quantization (safe half): K -> q8_0 halves the K cache (81->43 MiB @512 ctx) and its
+    // read bandwidth. V stays f16: a quantized V requires flash attention, and this llama.cpp
+    // version's flash-attn path aborts (GGML_ASSERT) during context creation — observed on the
+    // emulator. K-only is assert-free and near-lossless; V quantization waits for a newer fork.
     cparams.type_k = GGML_TYPE_Q8_0;
-    cparams.type_v = GGML_TYPE_Q8_0;
-    cparams.flash_attn = true;
+    cparams.type_v = GGML_TYPE_F16;
+    cparams.flash_attn = false;
     // NOTE: no cparams.seed in this llama.cpp version — determinism comes from the sampler
     // below (std::mt19937 seeded with 42).
     llama_context *ctx = llama_new_context_with_model(model, cparams);
