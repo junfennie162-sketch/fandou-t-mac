@@ -91,3 +91,18 @@
 | 上游动态 | `kaleid-liner/llama.cpp@202504_tmac` 顶点仍为 81475f4（作者未推新修复） |
 
 **结论与后续**：新 fork 的**构建链已打通**（三补丁 + 转换器可用），卡在作者 WIP 分支的**模型布局 bug**（BitNet 专项，作者盲区）。两条出路：① 专门调试 writer/reader offset 记账（半天~数天，需逐张量比对写入偏移 vs 读取期望）；② 等作者更新或提 issue 反馈（本地材料已齐备）。**实验线自此暂停，主线（提交）全程零影响。**
+
+## 九、阶段 4 战报（2026-09-29 深夜，重大突破 + 最后一块拼图）
+
+**两个加载器补丁**（脚本存档：`D:\ohos-models\patch_gguf.py` / `patch_ggmlnbytes.py`）：
+1. `gguf.cpp`：5 处尺寸记账改用 TMAC 感知 helper；
+2. `ggml.c` 的 `ggml_nbytes()` 本体加 TMAC 特判（一处修、全员受益，llama-model-loader 的 6 处边界检查自动正确）。
+
+**结果**：模型**完整加载** ✅（288 张量 / TMAC buffer 1157.23 MiB / KV 162.5 MiB / 图 994 节点），运行时**内核自动调优生效**（实时 tune：bm=320/640/1280, kfactor=16, q_group_size=64, act_group_size=64）。
+
+**崩溃与根因（证据链闭环）**：预热推理 SIGSEGV。调优配置显示 **q_group_size=64（每 64 元素一组 scale）**，而转换器 BitNet 路径（`convert_hf_to_gguf.py:~2290`）硬编码 `scale.reshape(1)` → **每张量只写 1 个 scale**。与最初 1,727,968 B 偏移差完全对应：`8640×3200÷64×4 = 1,728,000` = 缺失的每组 scale 字节数。**结论：类型表（4+16/64）自始正确，是转换器 BitNet 路径的"单 scale 硬编码"是 WIP 未完成品（与 "Hard code bits/groupsize/sym" 提交同族）。**
+
+**下一步（已精确处方）**：
+① 检查运行时 scale 读取代码（ggml-tmac.cpp 中读取 tensor->data 的 scale 段布局：块内插 vs 尾部追加）；
+② 按处方修转换器 BitNet 路径：per-group(g=64) 三值量化（每 64 组算 scale）→ `preprocess_for_t_mac(w, scales=per_group_array)`；
+③ 重转 + 重测（预计 1~2 小时一轮）。
