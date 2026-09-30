@@ -1,5 +1,3 @@
-// LUT-SA SA 对外 IPC 接口（OH IDL）；用 SDK 的 idl.exe 生成 C++/ArkTS stub：
-//   idl.exe --gen-cpp --out-dir . ILutSa.idl   （生成后落地为 lut_sa_idl_stub.cpp / ilut_sa.h）
 interface OHOS.LutSa.ILutSa {
   String NativeVersion();
   void LoadModel([in] String path, [in] int threads, [in] int nCtx);

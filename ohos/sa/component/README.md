@@ -108,3 +108,35 @@ hdc shell "hilog | grep -i LutSa"                      # ③ OnStart/Publish 日
 3. `./build.sh --product-name <p> --build-target lut_sa_package`
 4. 刷机 → 按第 3 节四条验证 → 截图归档
 5. 回填数据到 `docs/` 与作品说明文档（"系统服务级形态：真机注册成功"）
+
+## 8. 编译级验证记录（2026-09-30，已完成 ✅）
+
+用 **OH 平台真实头文件 + SDK idl.exe 生成的桩 + OH SDK clang** 对 `lut_sa_ability.{h,cpp}` 做了编译验证
+（目标 `aarch64-linux-ohos`，产出对象文件 ~100 KB）。过程中定位并修正 **3 处真实接口差异**：
+
+| # | 差异 | 修正 |
+|---|---|---|
+| 1 | `SystemAbility` 在 `namespace OHOS` 内 | 类声明移入 `namespace OHOS` |
+| 2 | 该 OH 版本的 dump 钩子是 **`OnSvcCmd(int32_t fd, const std::vector<std::u16string>&)`**，不是 `Dump(fd,args)` | 改签名并实现 |
+| 3 | `Publish(this)` 要求 `sptr<IRemoteObject>` → 必须继承 **IDL 生成的 `OHOS::LutSa::LutSaStub`**（`IRemoteStub<ILutSa>`） | 生成并继承 stub，实现六个 IPC 方法 |
+
+### 复现命令（本机已验证）
+
+```bash
+# 1) 生成 IPC 桩（SDK 自带 idl.exe；输出目录用 Windows 路径）
+idl.exe --intf-type sa -c ILutSa.idl --gen-cpp -d <out-dir>
+#    → ilut_sa.h / lut_sa_proxy.{h,cpp} / lut_sa_stub.{h,cpp}（已随本目录 idl/ 归档）
+
+# 2) 编译绑定（需从 gitee 浅克隆 safwk/samgr/ipc/c_utils/hilog 取头文件；见第 4 节）
+clang++ --target=aarch64-linux-ohos --sysroot=<OHOS_SDK>/native/sysroot -std=c++17 -fPIC \
+  -DTMAC_SA_SAMGR_BINDING -c lut_sa_ability.cpp -o lut_sa_ability.o \
+  -I<safwk>/services/safwk/include -I<samgr>/interfaces/innerkits/samgr_proxy/include \
+  -I<ipc>/interfaces/innerkits/ipc_core/include -I<c_utils>/base/include \
+  -I<hilog>/interfaces/native/innerkits/include -I<out-dir>
+```
+
+> 头文件获取（gitee 可达，浅克隆即可）：`openharmony/systemabilitymgr_safwk`、`systemabilitymgr_samgr`、
+> `communication_ipc`、`commonlibrary_c_utils`、`hiviewdfx_hilog`（合计 ~20 MB）。
+
+**结论**：本目录的 SA 代码与注册/策略/构建描述，已对齐真实 OH 接口（编译零错误）；
+剩余唯一事项 = 在可编镜像的环境（开发板或自编 qemu 镜像）中点亮它。
