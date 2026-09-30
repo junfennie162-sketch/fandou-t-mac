@@ -98,3 +98,58 @@ hdc shell id; hdc shell getenforce
 hdc shell "test -w /system && echo W || echo R; ls /system/profile"
 hdc shell "hidumper -ls | head -30"
 ```
+
+## 五、深度复查补充证据（2026-09-30 二次核查）
+
+### 5.1 系统分区注入：官方工具直接拒绝
+
+```
+$ hdc target mount
+[Fail][E007100] Operate need running under debug mode
+```
+
+`hdc target mount`（重挂系统分区为可写）要求镜像为 **debug 模式**（userdebug/eng 构建）。
+官方模拟器镜像不是 debug 版 → **注入路径被官方工具明确关闭**（不是"没找到办法"）。
+
+### 5.2 SA 开发所需头文件不在 SDK 中（API 分层证据）
+
+对两套 SDK 的 native sysroot 做显式查找（`-iname "*system_ability*" -o -iname "*samgr*" -o -iname "*sa_mgr*"`）：
+
+| SDK | 结果 |
+|---|---|
+| DevEco Studio 26.0.0 SDK（`sdk/default/openharmony/native/sysroot`） | **无** samgr / SystemAbility 头文件 |
+| 独立 OpenHarmony SDK（`/d/ohos-sdk/ohos-sdk/windows/native/sysroot`） | **无** |
+
+→ SystemAbility 的基类（`system_ability.h`）、samgr 客户端等均属 **OpenHarmony 平台源码树**
+（`foundation/systemabilitymgr/...`）内容，**应用 SDK 不提供**。即："SA 开发 = 平台开发"，
+第三方应用从 API 层面就不在这条路上（与 `profile/init` 目录不可访问互为印证）。
+
+### 5.3 第三方 SA 管理工具不存在
+
+```
+$ hdc shell "which sa_main samgr_client sa_tool"
+（均不存在；仅有 aa / bm / param / hidumper 等应用与诊断工具）
+```
+
+### 5.4 应用级"服务"API 同样受限（零售设备上第三方的极限）
+
+| API | 约束（SDK d.ts 原文） | 我们可用性 |
+|---|---|---|
+| `AppServiceExtensionAbility` | "only 2-in-1 devices are supported"；需 ACL 权限 `ohos.permission.SUPPORT_APP_SERVICE_EXTENSION`，**该权限仅企业应用可申请** | ❌ 手机 + 学生团队不可用 |
+| 通用 `ServiceExtensionAbility` | API 26 SDK 中**已无通用版本**（仅剩广告/打印/输入法等专用扩展） | ❌ 不存在 |
+| `BackgroundTasksKit`（后台长时任务/延迟挂起） | 应用级 API，无特殊权限 | ✅ 可用（当前用于模型拷贝的延迟挂起） |
+
+→ 零售设备上第三方能做的"服务化"上限 = **应用内后台保活 + 进程内服务能力**，
+无法向其他应用/系统提供真正的服务接口。
+
+### 5.5 结论更新：不是"权限低"，是"平台未开放"
+
+四重系统事实（非 root/无 su、SELinux Enforcing、/system 只读且不可访问、/sys_prod 对 shell 不可写）
+　　　+ 一条工具拒绝（`hdc target mount` → E007100 需 debug 镜像）
+　　　+ 一条 API 面缺失（两套 SDK 均无 samgr/SystemAbility 头文件）
+　　　+ 一条应用级 API 约束（AppServiceExtensionAbility 仅 2in1 + 企业 ACL）
+
+= **零售版 HarmonyOS 的平台设计未向第三方开放系统服务注册**。要运行系统服务形态，
+载体必须是**基于 OpenHarmony 平台源码树构建的标准系统镜像**（开发板或自编镜像，
+把 SA + 注册描述 + SELinux 策略编入镜像）——这正是我们把该形态定位为"预研 + 载体待迁移"的原因。
+
