@@ -370,3 +370,13 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 **系统服务边界（真机复证）**：`id`=uid 2000 shell、无 su、`getenforce` **Permission denied**（比模拟器更严）、
 `/system` 与 `profile/init` 目录不可访问、`hdc target mount` → E007100（需 debug 镜像）。
 完整证据链见 `ohos/SA-BOUNDARY-EVIDENCE.md`（含模拟器与两套 SDK 的六条锁）。
+
+## 🔬 对比试验日（模拟器侧）· 2026-09-30
+
+| 实验 | 方法 | 结果 |
+|---|---|---|
+| ① 链式 KV **部分复用** | 先以「The capital of France is」建链，再以追加式提问「… Paris. The capital of Spain is」二次生成 | **`reused 6 of 13 prompt tokens`**（前缀 6 复用、增量 7 解码）——LCP 精确裁剪对"部分相同前缀"成立；产出连贯续写（Madrid→Berlin→Washington DC） |
+| ② L2 调度 **A/B 内存对照** | `hidumper --mem` 采样进程 Pss：调度开 vs 关，同样后台 70 s | **调度开：1370 MB → 71 MB（释放 1.30 GB）→ 回前台 1364 MB**；**调度关（对照）：1356 MB → 1356 MB（不释放）**；唯一变量=开关 ✓ |
+| ③ T-MAC vs Q4_0（同机同模型） | 沙箱推入 `bitnet-3b-q4_0.gguf`（1.92 GB）后点加载 | ❌ **加载即 cppcrash**（14:26/14:27/14:29 三条 faultlog）：T-MAC 构建只支持自身 kcfg/LUT 格式，标准量化格式不在支持面内 → 应用内 Q4_0 基线不可测；跨平台反量化基线沿用初赛 llama.cpp CLI 对照（表 7）。模型已还原为 `bitnet-3b-tmac-ags64.gguf` 并复验加载 ✓ |
+
+附带确认：模型装载日志 288 张量 / 29 元数据键；`head_count = head_count_kv = 32`（纯 MHA 无 GQA，印证 KV 成本模型）。
