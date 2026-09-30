@@ -53,6 +53,15 @@
 | 6 | 15s | 切后台 3 秒 → 切回 | L2 日志「转后台→引擎释放」「回前台→预热重载」 |
 | 7 | 10s | 控制台页：完整 llama.cpp 同格式报告 + 内核自测 PASS | 对拍证据 |
 
+### 录制要点（2026-09-30 采样器升级后）
+
+- **采样器已升级**（重复惩罚 1.15/64 + 真 top-p 0.95）：默认提示的输出现在是通顺段落
+  （`the city where all things French are made. From the bistros with crêpes and croissants, to the boutiques brimming with Chanel`），
+  不再是复读；打字机镜头可直接用默认提示 ✓
+- **生成长度建议 32–64**：3B base 模型越长越容易跑题；256 只在需要展示长文稳定性时用
+- 想展示"问答感"，可用语料风格提示：`Q: What is the capital of France? A:`（模型按续写补全）
+- 报告页那行 `sampler params` 现在会显示真实参数（top_k / top_p / temp / repeat_penalty），可作"口径诚实"的旁证
+
 ### 方案 B · 第三视角实拍（手机拍手机/拍模拟器屏）
 
 同分镜，用另一台设备拍摄手指在屏幕上操作的全过程（触控可见、无剪辑拼接），突出"真实环境运行"。
