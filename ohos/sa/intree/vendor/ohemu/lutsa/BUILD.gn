@@ -1,0 +1,62 @@
+# LUT-SA SystemAbility —— 以「vendor/ohemu/lutsa」组件形态并入 OpenHarmony 标准系统
+#
+# 产物：
+#   /system/lib64/libtmac_sa.z.so   （SA 进程宿主库：sa_main 按 profile 加载）
+#   /system/profile/lut_sa.json     （SA 注册表：SA_ID=6901 → libtmac_sa.z.so）
+#   /system/etc/init/lut_sa.cfg     （init 启动项：exec /system/bin/sa_main /system/profile/lut_sa.json）
+#
+# 说明：业务内核（会话/工作区/瓦片计算/QoS）为自包含软件实现，不依赖预编译引擎，
+#       因此可在任意架构（x86_64 QEMU / arm64 真机）上编进系统；引擎接入见 README。
+import("//build/ohos.gni")
+
+ohos_shared_library("lut_sa") {
+  sources = [
+    "src/lut_sa_ability.cpp",        # SystemAbility 绑定（OnStart→Publish / OnSvcCmd dump）
+    "src/lut_sa.cpp",                # 业务内核：会话 / 加载 / 暖机 / 释放
+    "src/session_workspace.cpp",
+    "src/tile_compute.cpp",
+    "src/tile_pool.cpp",
+    "src/qos_policy.cpp",
+    "idl/lut_sa_proxy.cpp",          # ILutSa 生成物（IPC 代理）
+    "idl/lut_sa_stub.cpp",           # ILutSa 生成物（IPC 桩）
+  ]
+  include_dirs = [ "include", "idl" ]
+
+  external_deps = [
+    "safwk:system_ability_fwk",
+    "samgr:samgr_proxy",
+    "ipc:ipc_core",
+    "c_utils:utils",
+    "hilog:libhilog",
+  ]
+
+  output_name = "libtmac_sa.z"
+  install_enable = true
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+ohos_prebuilt_etc("lut_sa_profile") {
+  source = "sa_profile/lut_sa.json"
+  relative_install_dir = "profile"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+ohos_prebuilt_etc("lut_sa_init_cfg") {
+  source = "etc/init/lut_sa.cfg"
+  relative_install_dir = "etc/init"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+group("lut_sa_package") {
+  deps = [
+    ":lut_sa",
+    ":lut_sa_profile",
+    ":lut_sa_init_cfg",
+  ]
+}

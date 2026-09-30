@@ -1,0 +1,34 @@
+{
+  "name": "@ohemu/lutsa",
+  "description": "LUT-SA -- 端侧低比特 LLM 推理系统服务（SystemAbility，SA_ID=6901）；以 vendor/ohemu 组件形态编入标准系统",
+  "version": "1.0.0",
+  "license": "MIT",
+  "component": {
+    "name": "lutsa",
+    "subsystem": "ohemu",
+    "syscap": [],
+    "features": [],
+    "adapted_system_type": [
+      "standard"
+    ],
+    "rom": "2048KB",
+    "ram": "32768KB",
+    "deps": {
+      "components": [
+        "safwk",
+        "samgr",
+        "ipc",
+        "c_utils",
+        "hilog"
+      ],
+      "third_party": []
+    },
+    "build": {
+      "sub_component": [
+        "//vendor/ohemu/lutsa:lut_sa_package"
+      ],
+      "inner_kits": [],
+      "test": []
+    }
+  }
+}
