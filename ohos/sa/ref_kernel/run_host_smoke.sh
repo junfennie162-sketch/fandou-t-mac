@@ -12,7 +12,7 @@ trap 'rm -rf "$WORK"' EXIT
 cp "$HERE/sa_smoke_main.cpp" "$WORK/main.cpp"
 
 echo "== 编译（g++ -std=c++17 -O1） =="
-g++ -std=c++17 -O1 -Wall -I"$S" -I"$S/ref_kernel" -I"$S/ref_kernel/t-mac" \
+g++ -std=c++17 -O1 -Wall -I"$S" -I"$S/../sched" -I"$S/ref_kernel" -I"$S/ref_kernel/t-mac" \
   "$S/lut_sa.cpp" "$S/session_workspace.cpp" "$S/tile_compute.cpp" "$S/tile_pool.cpp" \
   "$S/../sched/qos_policy.cpp" "$S/ref_kernel/lut_kernel_ref.cpp" "$WORK/main.cpp" \
   -o "$WORK/sa_smoke" || { echo "❌ 编译失败"; exit 1; }
