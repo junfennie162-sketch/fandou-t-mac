@@ -390,3 +390,20 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 - **测量稳定性条款**：模拟器吞吐受宿主负载影响（同配置实测 **10.21–25.01 tok/s 区间**），跨平台结论以真机为准；
   提示词/生成长度随数字标注（256 token 比 32 token 低约 13%，属 KV 增长）
 - 文档同步：作品说明文档（表 8/表 10/说明段）· 内容 md · 交付 PDF（17 页）· BENCHMARK-PLAN · 证据 15 份（含模拟器内核截图）
+
+## 🔧 新 fork 数值缺口修复（上游 WIP 定罪 + 6 行分发表补丁）· 2026-09-30
+
+**症状**：新版 fork（202504_tmac）端到端跑通、速度快（46.93 tok/s），但输出退化为 `The capital of France is is is is…`（作者自标 "[WIP] Wrong outputs"）。
+
+**定罪链**（读源码 + A/B 实证）：
+1. `ggml-tmac.cpp:346 get_scales_size` 只有三种口径：`one_scale` → **1 个 scale/整张量**；`has_zero_point` → 每组 (scale+zp)；否则 → **每组 1 个 scale**（= BitNet 三值 + q_group_size=64，正是我们的模型）
+2. `tbl.cpp:819 qgemm_lut_int8_g4` 分发表 12 个条目只覆盖 `{有zp+每组}` 与 `{无zp+单scale}` 两个极端；**无 else 兜底、不抛错** → 我们的组合整段循环空转，`CBits` 恒为 0 → 输出退化
+3. 而 `tbl_g4_int8_float_update_impl<has_scale,K,Bits,ActK,FastAgg,ZeroPoint,OneScale>` 的**最终 else 分支已实现「每组 scale、无 zp」**（scales 指针寻址亦然）——**只缺分发表路由** 6 条
+4. 46.93 tok/s 之谜同源：空转 = 跳过矩阵乘 → 又快又错
+
+**修复**：`tbl.cpp` 补 bits=2/4 各 3 条 `ZeroPoint=false, OneScale=false` 路由（补丁：`ohos/patches/tmac-newfork-pergroup-nozp-dispatch.patch`，含新 fork 全部改动）；
+重编译（OH SDK clang 15 + Ninja 增量）→ **输出恢复通顺**（WSL 复现两次）：
+`The capital of France is the city of Paris. It is the largest city in the European Union…`
+
+**速度实况（WSL i7，宿主同时在跑模拟器，偏保守）**：修复版 eval **18.66–20.37 tok/s**（-t 4 / -t 8）→ **不高于旧 fork 的 PC 基线 25.10**，
+故**本版不并入提交包**；后续优化项：内核调优（kcfg）+ 128 组量化变体（同一补丁已支持）。
