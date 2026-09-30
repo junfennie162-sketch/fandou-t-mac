@@ -274,9 +274,34 @@ void release_llm() {
     g_llm.load_ms = 0.0;
 }
 
-// top-k / temperature sampler (self-contained: this fork keeps its samplers in common/,
-// which is not linked into the HAP)
-llama_token sample_top_k(float *logits, int n_vocab, int top_k, float temp, std::mt19937 &rng) {
+// top-k / top-p / temperature sampler + repetition penalty.
+// (self-contained: this fork keeps its samplers in common/, which is not linked into the HAP)
+struct SampleCfg {
+    int   top_k = 40;
+    float top_p = 0.95f;
+    float temp = 0.8f;
+    float repeat_penalty = 1.15f;   // > 1 suppresses tokens seen in the recent window
+    int   repeat_last_n = 64;
+};
+
+llama_token sample_token(float *logits, int n_vocab, const SampleCfg &cfg,
+                         const std::vector<llama_token> &recent, std::mt19937 &rng) {
+    // 1) repetition penalty (llama.cpp semantics: divide positive logits, multiply negative)
+    if (cfg.repeat_penalty > 1.0f && !recent.empty()) {
+        const int n = std::min((int) recent.size(), cfg.repeat_last_n);
+        for (int i = 0; i < n; ++i) {
+            const llama_token t = recent[recent.size() - 1 - (size_t) i];
+            if (t < 0 || t >= n_vocab) continue;
+            if (logits[t] > 0) logits[t] /= cfg.repeat_penalty;
+            else               logits[t] *= cfg.repeat_penalty;
+        }
+    }
+    // 2) greedy fast path
+    if (cfg.temp <= 0.0f) {
+        return (llama_token) (std::max_element(logits, logits + n_vocab) - logits);
+    }
+    // 3) top-k candidates
+    int top_k = cfg.top_k;
     if (top_k <= 0 || top_k > n_vocab) top_k = n_vocab;
     std::vector<int> idx(n_vocab);
     for (int i = 0; i < n_vocab; ++i) idx[i] = i;
@@ -285,22 +310,38 @@ llama_token sample_top_k(float *logits, int n_vocab, int top_k, float temp, std:
                          [&](int a, int b) { return logits[a] > logits[b]; });
         idx.resize(top_k);
     }
+    // 4) softmax over the candidates
     float maxl = -INFINITY;
     for (int i : idx) maxl = std::max(maxl, logits[i]);
     std::vector<double> p(idx.size());
     double sum = 0.0;
     for (size_t i = 0; i < idx.size(); ++i) {
-        p[i] = std::exp((double) (logits[idx[i]] - maxl) / (double) temp);
+        p[i] = std::exp((double) (logits[idx[i]] - maxl) / (double) cfg.temp);
         sum += p[i];
     }
-    std::uniform_real_distribution<double> dist(0.0, sum);
-    double r = dist(rng);
-    double acc = 0.0;
-    for (size_t i = 0; i < idx.size(); ++i) {
-        acc += p[i];
-        if (r <= acc) return idx[i];
+    // 5) top-p (nucleus): keep the shortest prefix of the sorted candidates whose
+    //    cumulative probability reaches top_p
+    std::vector<int> order(idx.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = (int) i;
+    std::sort(order.begin(), order.end(), [&](int a, int b) { return p[a] > p[b]; });
+    const double top_p = (cfg.top_p > 0.0f && cfg.top_p < 1.0f) ? (double) cfg.top_p : 1.0;
+    size_t keep = order.size();
+    double acc_p = 0.0;
+    for (size_t i = 0; i < order.size(); ++i) {
+        acc_p += p[order[i]] / sum;
+        if (acc_p >= top_p) { keep = i + 1; break; }
     }
-    return idx.back();
+    // 6) sample from the kept set
+    double sumk = 0.0;
+    for (size_t i = 0; i < keep; ++i) sumk += p[order[i]];
+    std::uniform_real_distribution<double> dist(0.0, sumk);
+    const double r = dist(rng);
+    double acc = 0.0;
+    for (size_t i = 0; i < keep; ++i) {
+        acc += p[order[i]];
+        if (r <= acc) return idx[order[i]];
+    }
+    return idx[order[keep - 1]];
 }
 
 napi_value make_string(napi_env env, const std::string &s) {
@@ -474,13 +515,15 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     const auto t_eval0 = std::chrono::steady_clock::now();
     double sampling_ms = 0.0;
     double ttft_ms = -1.0;   // eval-loop start -> first token produced (-1: none generated)
+    SampleCfg scfg;
+    scfg.top_k = top_k;
+    scfg.temp  = (float) temp;
+    std::vector<llama_token> recent = tokens;   // rep-penalty window grows with the reply
     for (int i = 0; i < n_predict && n_past < g_llm.n_ctx - 1; ++i) {
         float *logits = llama_get_logits(ctx);
         if (!logits) break;
         const auto ts0 = std::chrono::steady_clock::now();
-        const llama_token id =
-            (temp <= 0.0) ? (llama_token) (std::max_element(logits, logits + n_vocab) - logits)
-                          : sample_top_k(logits, n_vocab, top_k, (float) temp, rng);
+        const llama_token id = sample_token(logits, n_vocab, scfg, recent, rng);
         const auto ts1 = std::chrono::steady_clock::now();
         sampling_ms += std::chrono::duration<double, std::milli>(ts1 - ts0).count();
         if (id == eos) break;
@@ -498,6 +541,7 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
         llama_batch b1 = llama_batch_get_one((llama_token *) &id, 1, n_past, 0);
         if (llama_decode(ctx, b1) != 0) break;
         gen_ids.push_back(id);
+        recent.push_back(id);
         ++n_past;
         ++generated;
     }
@@ -514,10 +558,11 @@ std::string do_generate(const std::string &prompt, int n_predict, double temp, i
     char head[512], perf[1400];
     std::snprintf(head, sizeof(head),
                   "sampler seed: 42\n"
-                  "sampler params: top_k = %d, top_p = 0.950, temp = %.3f\n"
+                  "sampler params: top_k = %d, top_p = %.3f, temp = %.3f, repeat_penalty = %.2f (last_n = %d)\n"
                   "generate: n_ctx = %d, n_batch = 512, n_predict = %d\n"
                   "kv chain: reused %d of %d prompt tokens (prefix chain kept, delta decoded)\n\n%s\n",
-                  top_k, temp, g_llm.n_ctx, n_predict, common, n_tok, prompt.c_str());
+                  top_k, (double) scfg.top_p, temp, (double) scfg.repeat_penalty, scfg.repeat_last_n,
+                  g_llm.n_ctx, n_predict, common, n_tok, prompt.c_str());
     // peak RSS via /proc/self/status (VmHWM = high-water mark, kB)
     double peak_rss_mb = 0.0;
     if (FILE *st = fopen("/proc/self/status", "r")) {
