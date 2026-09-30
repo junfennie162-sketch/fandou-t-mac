@@ -1,0 +1,2 @@
+# 强制钩子脚本 LF 行尾（CRLF 会让 pre-commit 失效）
+.githooks/* text eol=lf
