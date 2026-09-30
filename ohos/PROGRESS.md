@@ -1,4 +1,4 @@
-# P0–P5 落地状态（host 侧 2026-07-26）
+﻿# P0–P5 落地状态（host 侧 2026-07-26）
 
 | 阶段 | Issue | Host | Board |
 |------|-------|------|-------|
@@ -415,3 +415,11 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 - **效果（模拟器 A/B，同默认提示）**：升级前 `…the city of Paris. It is the most visited city in the world attracts millions of tourist every year from every corner of the world and attracts millions of…`（复读）→ 升级后 `the city where all things French are made. From the bistros with crêpes and croissants, to the boutiques brimming with Chanel`（通顺零复读）
 - **交付同步**：HAP 重出（`d5798121…`）+ 源码包重生成（`61f73657…`）+ 证据 16/17 + 提交说明更新
 - **构建经验**：CLI 重打 HAP 必须 `--no-daemon` + `JAVA_HOME=D:\DevEco Studio\jbr`（守护进程残留会带 JDK8 环境 → `11014003 Init keystore failed`）
+
+### 系统服务化脚手架编译级验证 + 源码包重打（9/30 傍晚，收尾）
+
+- **SA 脚手架补全**：`ohos/sa/component/` 全量落地（SystemAbility + IDL 桩 + profile/cfg/sepolicy/BUILD.gn）
+- **编译级验证通过**（真实 OH 头文件 + SDK `idl.exe` 生成的桩 + OH SDK clang，target `aarch64-linux-ohos`，零接口错误）：
+  修正 3 处真实差异 —— ① `SystemAbility` 位于 `namespace OHOS`；② dump 钩子为 `OnSvcCmd(fd,args)`；③ `Publish(this)` 需继承 IDL 生成的 `IRemoteStub` 桩。生成物归档 `ohos/sa/component/idl/`
+- **源码包重打**：纳入 SA 脚手架（+17 条目）与技术文档索引（TECH-CORE / VERSION-COMPARISON / BENCHMARK-PLAN / STRENGTHS）→ 交付包与 `03-作品名称+翻斗花园-复赛.zip` 同步（最终 SHA256 见交付包 `03-提交说明/提交说明.md`）
+- 说明：包内文档不引用本包自身哈希（避免自引用失效），哈希统一由交付包《提交说明》外引
