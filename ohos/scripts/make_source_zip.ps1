@@ -68,8 +68,12 @@ $readme = @'
   - `ohos/hap/` … DevEco 工程（ArkTS UI + NAPI + 预编译静态库）
   - `ohos/hap/prebuilt/{arm64-v8a,x86_64}/lib{llama,ggml}.a` … 预编译引擎静态库（LUT 内核已内嵌）
   - `ohos/staging-{arm64,x64}/t-mac/include` … LUT 内核头文件
-  - `ohos/sa/` … 系统服务化（SystemAbility）预研
+  - `ohos/sa/` … 系统服务化（SystemAbility）：权限边界实测证据（SA-BOUNDARY-EVIDENCE.md）+ 组件脚手架 `component/`（对齐真实 OH 接口，编译级验证通过）
+  - `ohos/patches/tmac-newfork-pergroup-nozp-dispatch.patch` … 新版 fork 数值修复补丁（分发表缺「每组 scale、无 zero-point」路由导致静默空转）
   - `ohos/scripts/` … 构建/打包脚本（含本包生成脚本 make_source_zip.ps1）
+  - `docs/TECH-CORE.md` … 技术核心总纲（七大核心技术 + 全量实测数据）
+  - `docs/BENCHMARK-PLAN.md` … 基准测试与 Baseline 设计（五组对照矩阵）
+  - `docs/VERSION-COMPARISON.md` / `docs/STRENGTHS.md` … 新旧引擎版本对比 / 项目优势
   - `docs/SUBMISSION-CHECKLIST.md` … 提交清单与实测记录
   - `docs/RELEASE-SIGNING.md` … 可选：发布签名（AGC）流程
 - `fandou-t-mac/3rdparty/llama.cpp/` … **引擎全量源码（已内嵌）**
