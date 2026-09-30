@@ -1,0 +1,52 @@
+#!/bin/sh
+# 拒绝把"本机签名材料 / 隐私路径"提交进这个【公开】仓库。
+#
+# 背景：ohos/hap/build-profile.json5 以"无密钥形态"入库（"signingConfigs": []），
+# 但本机跑 DevEco 自动签名后会被改写成带机器绑定材料的版本：
+#   绝对路径 %USERPROFILE%\.ohos\config\...  +  DPAPI 加密的 keyPassword/storePassword。
+# 这份本地改动绝不能进历史（仓库是公开的，一旦进历史就洗不干净）。
+#
+# 双保险：
+#   第一道（本机已设）：git update-index --skip-worktree ohos/hap/build-profile.json5
+#   第二道（本文件）：提交前扫描暂存内容，命中即拒绝
+#
+# 新克隆启用本钩子（一次性）：
+#   git config core.hooksPath .githooks
+#
+# 确属误报（例如有意提交清洗过的模板）：
+#   git commit --no-verify
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+bad=""
+for f in $staged; do
+  content=$(git show ":$f" 2>/dev/null || true)
+  [ -z "$content" ] && continue
+  if printf '%s' "$content" | grep -qE '0000001B[0-9A-Fa-f]{16,}'; then
+    bad="$bad
+  $f  → DPAPI 口令串"
+  elif printf '%s' "$content" | grep -qE '"(keyPassword|storePassword)"[[:space:]]*:[[:space:]]*"[0-9A-Fa-f]{32,}"'; then
+    bad="$bad
+  $f  → keyPassword/storePassword 长十六进制"
+  elif printf '%s' "$content" | grep -qE '[A-Za-z]:[\\/]+Users[\\/]+[^"]*[\\/]+\.ohos[\\/]+config'; then
+    bad="$bad
+  $f  → 本机 .ohos\\config 私有路径"
+  fi
+done
+
+if [ -n "$bad" ]; then
+  {
+    echo "✖ pre-commit 拒绝提交：检测到本机签名材料/隐私路径（公开仓库，绝不能进历史）"
+    printf '%s\n' "$bad"
+    echo
+    echo "处理办法："
+    echo "  git reset <file>        # 取消暂存该文件"
+    echo "  git stash -u            # 或整体暂存"
+    echo "  本机签名配置请保持未提交（build-profile.json5 已设 skip-worktree）"
+    echo "  确属误报：git commit --no-verify"
+  } >&2
+  exit 1
+fi
+exit 0

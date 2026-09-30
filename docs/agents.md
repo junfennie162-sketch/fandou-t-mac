@@ -29,6 +29,26 @@ GitHub Issue
 
 产出直接落 `docs/output/report/`、`docs/output/prd/`，不使用业务 theme 子目录。
 
+## 公开仓库密钥红线（强制）
+
+本仓库**公开**（GitHub: junfennie162-sketch/fandou-t-mac）。以下内容**永远不得提交**：
+
+- `ohos/hap/build-profile.json5` 的**本地版本**（含 `%USERPROFILE%\.ohos\config\...` 绝对路径 +
+  DPAPI 加密的 `keyPassword`/`storePassword`）。仓库里只保留 `"signingConfigs": []` 的干净形态。
+- 任何 `.p12` / `.p7b` / `.csr` / `.pem` / `.jks` 密钥材料（本机签名材料放在仓库外
+  `C:\Users\NJF\.ohos\` 下）。
+- 任何机器绑定口令串（`0000001B…` 形态）与本机私有绝对路径。
+
+**双保险已启用**（新克隆需一次性执行第 2 条）：
+
+1. `git update-index --skip-worktree ohos/hap/build-profile.json5`
+   —— 本机改动永不进入暂存区（`git add -A` 也拿它没办法）
+2. `.githooks/pre-commit` 提交前扫描暂存内容，命中上述模式即**拒绝提交**
+   —— 新克隆启用：`git config core.hooksPath .githooks`
+
+需要更新该文件被跟踪的（干净）版本时：先
+`git update-index --no-skip-worktree ohos/hap/build-profile.json5`，提交后记得再设回来。
+
 ## 交付物
 
 赛程、截止、提交材料口径见 [`docs/knowledge.md` · 赛事简报](knowledge.md#赛事简报)。本仓落盘位置：
