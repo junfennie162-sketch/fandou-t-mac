@@ -17,6 +17,7 @@ ohos_shared_library("lut_sa") {
     "src/tile_compute.cpp",
     "src/tile_pool.cpp",
     "src/qos_policy.cpp",
+    "src/lut_kernel_ref.cpp",        # 便携参考 LUT 内核（标量；与 t-mac 优化内核同接口）
     "idl/lut_sa_proxy.cpp",          # ILutSa 生成物（IPC 代理）
     "idl/lut_sa_stub.cpp",           # ILutSa 生成物（IPC 桩）
   ]

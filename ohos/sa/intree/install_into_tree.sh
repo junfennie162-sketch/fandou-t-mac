@@ -20,6 +20,12 @@ cp "$SA/../sched/qos_policy.cpp" "$DST/src/"
 cp "$SA/lut_sa.h" "$SA/session_workspace.h" "$SA/tile_compute.h" "$SA/tile_pool.h" "$DST/include/"
 cp "$SA/../sched/qos_policy.h" "$DST/include/"
 
+echo "== 2b. 便携参考 LUT 内核（与引擎同接口：include/t-mac/tmac_gemm_wrapper.h） =="
+mkdir -p "$DST/include/t-mac"
+cp "$SA/ref_kernel/lut_kernel_ref.h" "$DST/include/"
+cp "$SA/ref_kernel/lut_kernel_ref.cpp" "$DST/src/"
+cp "$SA/ref_kernel/t-mac/tmac_gemm_wrapper.h" "$DST/include/t-mac/"
+
 echo "== 3. SA 绑定 + IDL 生成物 =="
 sed 's|#include "../lut_sa.h"|#include "lut_sa.h"|' "$SA/component/lut_sa_ability.cpp" > "$DST/src/lut_sa_ability.cpp"
 cp "$SA/component/lut_sa_ability.h" "$DST/include/"

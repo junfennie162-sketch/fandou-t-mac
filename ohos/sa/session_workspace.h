@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
+#if defined(__ARM_NEON) || defined(__aarch64__)
 #include <arm_neon.h>
+#endif
 
 #include "t-mac/tmac_gemm_wrapper.h"
 

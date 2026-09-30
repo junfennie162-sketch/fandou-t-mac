@@ -4,6 +4,8 @@
 
 #include "lut_sa_ability.h"
 
+#include "lut_kernel_ref.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -110,9 +112,12 @@ ErrCode LutSystemAbility::SelfTest(std::string &result) {
         }
     }
     const ::tmac_sa::Status st = ::tmac_sa::WarmKernel(g_session, 4);
-    result = (st == ::tmac_sa::Status::kOk) ? "PASS: LUT kernel warm-up (m128-k3200) ok"
-                                            : "FAIL: WarmKernel";
-    return st == ::tmac_sa::Status::kOk ? ERR_OK : ERR_INVALID_VALUE;
+    std::string ref_detail;
+    const bool ref_ok = ::tmac_sa::RefKernelSelfCheck(ref_detail);
+    const bool warm_ok = (st == ::tmac_sa::Status::kOk);
+    result = std::string(warm_ok ? "PASS: LUT kernel warm-up (m128-k3200) ok" : "FAIL: WarmKernel") +
+             " | " + ref_detail;
+    return (warm_ok && ref_ok) ? ERR_OK : ERR_INVALID_VALUE;
 }
 
 ErrCode LutSystemAbility::Release(std::string &result) {

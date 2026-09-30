@@ -1,6 +1,6 @@
 #include "tile_compute.h"
 
-#include "t-mac/kernels.h"
+#include "lut_kernel_ref.h"
 
 namespace tmac_sa {
 

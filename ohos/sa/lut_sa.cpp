@@ -5,7 +5,6 @@
 #include "tile_compute.h"
 #include "tile_pool.h"
 
-#include <arm_neon.h>
 
 #include <atomic>
 #include <cstdio>
@@ -112,9 +111,13 @@ Status WarmKernel(uint64_t session_id, int n_threads_override) {
 
   // Zero packed weights + shared qlut (already zero from EnsureWorkspace).
   const size_t a_bytes = static_cast<size_t>(kWarmMLogical) * kWarmBits * kWarmK;
-  const size_t c_bytes = static_cast<size_t>(kWarmN) * kWarmMLogical * sizeof(float16_t);
+  // C: 参考内核按 m = m_logical×bits 行×n 列写出（fp16）→ 缓冲按 m 行分配；
+  // 优化内核只累加 m_logical 行，拿到更大缓冲同样安全。
+  const size_t c_bytes =
+      static_cast<size_t>(kWarmN) * kWarmMLogical * kWarmBits * sizeof(uint16_t);
   std::vector<uint8_t> A(a_bytes, 0);
-  std::vector<uint8_t> scales(4096, 0);
+  // scales: 每逻辑行每 kG=4 组一个 fp16（= m × k/kG × 2 字节；比旧版 4096 更贴合参考语义，宽松兼容优化内核）
+  std::vector<uint8_t> scales(static_cast<size_t>(kWarmMLogical) * kWarmBits * (kWarmK / 4) * sizeof(uint16_t), 0);
   std::vector<uint8_t> C(c_bytes, 0);
 
   // Single-tile warm: full m=64 (multi-tile needs packed-weight row offsets from ggml).
