@@ -89,15 +89,33 @@ ApplicationManagerService  Installd   AccessibilityManagerService ...
 | **samgr 绑定 + 跨进程 IPC** | ❌ 需把 SA 转成 OH 子系统组件（GN 构建 + bundle.json + sepolicy）并**编入系统镜像**——载体工作，非算法工作 |
 | 可演示的替代形态 | 应用级：已交付 HAP（本提交）；应用内服务化近似：ServiceExtensionAbility（未实现，1–2 天，零售设备可用） |
 
-## 四、真机复核（待补）
+## 四、真机复核（2026-09-30 已完成）
 
-零售真机（HBN-AL00）插上后执行同一套探测，预期同为 Enforcing + 系统分区不可写：
+设备：HUAWEI Pura 70 Pro（HBN-AL00，HarmonyOS，API 24，arm64-v8a）
 
-```powershell
-hdc shell id; hdc shell getenforce
-hdc shell "test -w /system && echo W || echo R; ls /system/profile"
-hdc shell "hidumper -ls | head -30"
 ```
+$ hdc -t <serial> shell id
+uid=2000(shell) gid=2000(shell) groups=2000(shell),1006(file_manager),1007(log),1097(netsys_socket),3009(readproc) context=u:r:sh:s0
+
+$ hdc -t <serial> shell getenforce
+getenforce:  security_getenforce() failed:  Permission denied        ← 真机连 SELinux 状态都不可读
+
+$ hdc -t <serial> shell "which su; ls -l /system/bin/su"
+ls: /system/bin/su: No such file or directory
+
+$ hdc -t <serial> shell "test -w /system && echo SYSTEM_WRITABLE || echo SYSTEM_READONLY;
+                         ls -ld /system; ls /system/profile; ls /system/etc/init"
+SYSTEM_READONLY
+ls: /system: Permission denied
+ls: /system/profile: Permission denied
+ls: /system/etc/init: Permission denied
+
+$ hdc -t <serial> target mount
+[Fail][E007100] Operate need running under debug mode
+```
+
+**结论：真机与官方模拟器同结论，且更严**（模拟器可读 `getenforce` 得到 Enforcing；真机该调用直接拒绝）。
+零售版 HarmonyOS 的第三方系统服务注册在平台层面关闭，与代码完成度无关。
 
 ## 五、深度复查补充证据（2026-09-30 二次核查）
 

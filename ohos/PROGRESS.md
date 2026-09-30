@@ -350,3 +350,23 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 `docs/output/report/submission/03-LUT-SA翻斗花园-ohos-adapt.zip`
 
 产物目录：`ohos/build/` · `ohos/hello/build/` · `3rdparty/llama.cpp/build-ohos-check/`
+
+## 📱 真机交付版实测 + 系统服务边界复证 · 2026-09-30
+
+设备：HUAWEI Pura 70 Pro（HBN-AL00，API 24，arm64-v8a）；对象：交付版 HAP（原地更新安装成功）。
+
+| 项 | 实测 | 备注 |
+|---|---|---|
+| 模型加载 | **1.09 s**（冷启动；热重载 1.01 s） | 模拟器同模型 4.55 s |
+| 首轮 TTFT | 248.80 ms | 含 10 token 前缀处理 |
+| **二轮 TTFT（链式 KV）** | **1.15 ms** | 控制台 `reused 8 of 8`，降幅 216× |
+| 生成吞吐 | 20.39 tokens/s（首轮 256 token）· 17.55（二轮） | 采样开销 0.40 ms/token |
+| 峰值内存 | 1413.6 / 1415.5 MB | hidumper --mem 独立核验 Pss 1393 MB |
+| **内核自测 / 基准** | PASS（m128-k3200, NEON）· 200 次 **1.56 ms**（平均 **7.8 µs/次**） | 内核级证据 |
+| L2 调度 | 快速切回（<60 s）×3 保持引擎与 KV 链；后台停留 >60 s 触发释放（降载）；回前台自动重载 1.37 s | 日志实证 |
+| 模型装载 | 288 张量 / 29 元数据键；head_count_kv = 32（纯 MHA，无 GQA） | loader 日志 |
+| 功耗 | ❌ 未采集：sysfs 拒绝、BatteryService/ThermalService 无 dump | 建议 DevEco Profiler / 外接功耗仪 |
+
+**系统服务边界（真机复证）**：`id`=uid 2000 shell、无 su、`getenforce` **Permission denied**（比模拟器更严）、
+`/system` 与 `profile/init` 目录不可访问、`hdc target mount` → E007100（需 debug 镜像）。
+完整证据链见 `ohos/SA-BOUNDARY-EVIDENCE.md`（含模拟器与两套 SDK 的六条锁）。
