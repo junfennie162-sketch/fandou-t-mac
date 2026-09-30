@@ -407,3 +407,11 @@ vivo V2323A（iQOO Neo9 / SD 8 Gen 2 / Android 16）直接跑通：
 
 **速度实况（WSL i7，宿主同时在跑模拟器，偏保守）**：修复版 eval **18.66–20.37 tok/s**（-t 4 / -t 8）→ **不高于旧 fork 的 PC 基线 25.10**，
 故**本版不并入提交包**；后续优化项：内核调优（kcfg）+ 128 组量化变体（同一补丁已支持）。
+
+### 采样器升级（同日，输出质量修复）
+
+- **问题**：App 自研采样器只有 top-k + 温度（`repeat_penalty=1.0` 等于没开、`top_p` 仅打印未实现）→ 3B base 模型 256 token 长生成必然复读
+- **改动**（`napi_init.cpp`）：`SampleCfg`（top_k/top_p/temp/repeat_penalty=1.15/repeat_last_n=64）+ `sample_token()`（重复惩罚 → top-k → softmax → top-p 核采样 → 采样）+ 生成循环维护 recent 窗口 + 报告输出真实参数
+- **效果（模拟器 A/B，同默认提示）**：升级前 `…the city of Paris. It is the most visited city in the world attracts millions of tourist every year from every corner of the world and attracts millions of…`（复读）→ 升级后 `the city where all things French are made. From the bistros with crêpes and croissants, to the boutiques brimming with Chanel`（通顺零复读）
+- **交付同步**：HAP 重出（`d5798121…`）+ 源码包重生成（`61f73657…`）+ 证据 16/17 + 提交说明更新
+- **构建经验**：CLI 重打 HAP 必须 `--no-daemon` + `JAVA_HOME=D:\DevEco Studio\jbr`（守护进程残留会带 JDK8 环境 → `11014003 Init keystore failed`）
