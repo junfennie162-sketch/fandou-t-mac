@@ -98,7 +98,7 @@ ArkTS 原生界面 → NAPI 异步桥 → 静态链接 llama.cpp + LUT 内核的
 
 ### 6.2 系统服务级形态（预研，载体受限）
 
-**已完成**：SA 类（CreateSession / LoadModel / PrepareWorkspace / WarmKernel / InferTokenBatch / ReleaseSession 六入口 + 感知→QoS 策略接口）+ 注册描述（`profile.json`：LutSystemAbility / libtmac_sa.z.so / run-on startup；`lut_sa.cfg`：class core / on boot / **SA_ID=6901**）+ **qemu 全链路冒烟 PASS**（Create→Load→Prepare→Infer→Release + 前后台信号切换）。
+**已完成**：SA 类（CreateSession / LoadModel / PrepareWorkspace / WarmKernel / InferTokenBatch / ReleaseSession 六入口 + 感知→QoS 策略接口）+ 注册描述（`profile.json`：LutSystemAbility / libtmac_sa.z.so / run-on startup；`lut_sa.cfg`：class core / on boot / **SA_ID=6901**）+ **qemu 全链路冒烟 PASS**（Create→Load→Prepare→Infer→Release + 前后台信号切换）+ **系统组件脚手架齐备**（`ohos/sa/component/`：`bundle.json` 组件声明、`BUILD.gn`（`install_images=[system]`）、`lut_sa_ability.cpp` samgr 绑定（`REGISTER_SYSTEM_ABILITY_BY_ID(6901)` + `Publish`）、`ILutSa.idl` 对外接口、`sa_profile/` 与 `etc/init/` 配置、**SELinux `.te` 策略与 `file_contexts`**、集成与验证 README）——集成步骤已收敛为「放入 vendor 目录 → 注册子系统 → `build.sh --build-target lut_sa_package` → 刷机」。
 
 **部署载体缺口（实测六条锁）**：零售版 HarmonyOS **不允许第三方注册系统服务**——
 ① 非 root 且无 `su`（`uid=2000(shell)`）；② SELinux **Enforcing**（真机连 `getenforce` 都拒绝）；③ `/system` 只读、`/system/profile` 与 `/system/etc/init`（第三方 SA 注册描述与启动配置的必经目录）**Permission denied**；④ `/sys_prod` 对 shell 不可写；⑤ 官方工具 `hdc target mount` → **E007100 需 debug 镜像**；⑥ 两套 SDK（DevEco 26.0 / 独立 OH SDK）**均不含 samgr/SystemAbility 头文件**，且无 SA 管理工具。
