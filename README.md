@@ -12,18 +12,30 @@
 
 | 平台 | 设备/芯片 | 生成速度 | 加载 | 内核数值 |
 |---|---|---|---|---|
-| **鸿蒙真机** 🏆 | HUAWEI HBN-AL00 · 麒麟 · HarmonyOS 6.1.1 | **18.62 tok/s** | 1.96 s | ✅ isa 安检 |
+| **鸿蒙真机** 🏆 | HUAWEI HBN-AL00（Pura 70 Pro）· arm64 · 交付版 HAP | **22.00 tok/s** | **1.69 s** | ✅ isa 安检 |
 | 安卓真机 | vivo V2323A · SD 8 Gen 2 · Android 16 | 11.55 tok/s（持续 ~10.6） | 1.46 s | **NMSE 8.397e-05** |
 | 桌面 | i7-14650HX · WSL · 4 线程 | 25.10 tok/s | 8.2 s | NMSE 8.765e-05 |
 | 桌面对手盘 | 同机 llama.cpp Q4_0（4.63 BPW / 1.79 GiB） | 15.94 tok/s | 18.7 s | — |
 | 桌面对手盘 | 同机 llama.cpp f16（16 BPW / 6.19 GiB） | 4.41 tok/s | 67.9 s | — |
 | 鸿蒙模拟器 | x86_64 · 同模型 A/B | LUT-SA 11.7 vs Q4_0 5.5 → **2.1×** | 1.4~3.7 s | — |
 
+> **鸿蒙真机·交付版补充指标**（复赛实测）：二轮首字延迟 **TTFT 1.32 ms**（链式 KV 复用 6/6、前缀处理 0.00 ms）· 峰值内存 **1395.1 MB** · 内核基准 200 次 **1.56 ms（7.8 µs/次）** · 安装/启动/渲染三闸门 + 离线验签全部通过。
+
 **三个杀手级结论**：
 
-1. **手机上的 LUT-SA（18.62）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
+1. **手机上的 LUT-SA（22.00）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
 2. 同一静态二进制 + 同一模型**横跨 鸿蒙 / 安卓 / qemu 三环境零改动运行**（2026-09-28 实证）
 3. 冷数据下 LUT-SA 与 Q4_0/Q8_0 每字节带宽持平 → 加速全部来自 **2.44 BPW 位宽优势**（无争议机理解释）
+
+## 🆕 复赛新增（2026-09 落地）
+
+| 能力 | 结论（同设备、单变量） | 入口 |
+|---|---|---|
+| **链式 KV 记忆调度** | 跨轮匹配最长公共前缀 + 分歧裁剪：二轮 TTFT **240 ms → 1.32 ms**、前缀处理归零；追加式提问部分复用 **6 of 13** | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+| **L2 前后台感知调度** | 切后台归还 **1.30 GB**（Pss 1370→71 MB）、回前台自动预热重载 1.37 s；60 s 滞回护住 KV 链；**对照组（关调度）0 释放** | 同上 |
+| **采样器工程化** | 补齐重复惩罚（1.15 / last_n 64）+ 真 top-p 0.95，修掉长文复读退化（同提示 A/B 有据） | 同上 |
+| **构建优化（纯 CLI）** | 剔除 DevEco 调试态注入的 ASan 插桩：同机同模型 **10.5 → 25.01 tok/s（2.4×）**；`hvigorw` 一键可复现 | [`ohos/hap/README.md`](ohos/hap/README.md) |
+| **OpenHarmony 标准系统载体线** | SA 组件编入 OH 7.0 源码树（`vendor/ohemu/lutsa`）；构建链踩坑 **15 条**全部定位并修复（含 hb `--jobs` 空实现、LFS 指针、SDK 后处理、上游缺陷绕过） | [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
 
 <p align="center">
   <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="鸿蒙真机桌面：LUT-SA 已安装" />
@@ -113,9 +125,9 @@ fandou-t-mac/
 |---|---|---|
 | 1 | 抽取 LUT Kernel 为 Native 静态/动态库 | ✅ 双 ABI 静态库（x86_64 / arm64-v8a），`ohos/staging-{x64,arm64}/` |
 | 2 | DevEco Native 模块，打通最小推理调用 | ✅ HAP App（ArkTS + NAPI），模拟器与真机均跑通 |
-| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ `libtmac_sa.so` + sa_smoke（qemu 全链路）；最终交付以 HAP 应用形态——零售真机 SELinux 限制 CLI/SA 通道（见 FULL-REPORT §6.1） |
-| 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比 + 内核级微基准 |
-| 5 | 固化本平台 tokens/s 等数据 | ✅ 真机 18.62 tok/s 实测归档（截图 + 原始输出） |
+| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ `libtmac_sa.so` + 六入口（Create/Load/Prepare/Warm/Infer/Release）+ 感知 QoS 策略；组件/注册描述/SELinux 策略齐备，并按 OH 真实头文件与 IDL **编译零错误**。系统载体线（编入 OH 标准系统镜像 + QEMU 点亮）进行中：零售真机受 SELinux 与签名限制（FULL-REPORT §6.1），正确载体为 OpenHarmony 标准系统镜像，构建配方与 15 条踩坑见 [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
+| 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比 + 内核级微基准（200 次 7.1/7.8 µs） |
+| 5 | 固化本平台 tokens/s 等数据 | ✅ 交付版真机 **22.00 tok/s / 加载 1.69 s / 二轮 TTFT 1.32 ms / 峰值 1395.1 MB** 实测归档（截图 + 控制台原始报告，22 项证据） |
 
 移植全程（13 处上游/集成 bug 修复、五阶段验证方法学、诚实性声明）：**[`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)**
 
@@ -127,7 +139,9 @@ fandou-t-mac/
 
 工程实现分三层：计算层适配 T-MAC LUT Kernel 至 ARM 架构，处理访存模式与 LUT 表布局；服务层按 SAMgr 注册 LUT SystemAbility，对外暴露统一加速接口，应用按需获取 proxy；策略层将行为信号映射为优先级、预取与节流策略，可在演示场景中直观呈现。
 
-公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。**本队已完成自主复现与实测**：鸿蒙模拟器同模型 A/B（T-MAC 2.1× 于 Q4_0）、qemu-arm64 功能验证（内核 NMSE 8.4e-05）、华为零售真机端到端 18.62 tok/s、安卓真机 11.55 tok/s——详见 [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)。
+公开评测数据表明，相对 llama.cpp 反量化基线，T-MAC 在多种边缘 CPU 上吞吐具备稳定优势。**本队已完成自主复现与实测**：鸿蒙模拟器同模型 A/B（T-MAC 2.1× 于 Q4_0）、qemu-arm64 功能验证（内核 NMSE 8.4e-05）、华为零售真机端到端 **22.00 tok/s**、安卓真机 11.55 tok/s——详见 [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md)。
+
+复赛阶段进一步把系统侧能力做实：**链式 KV 记忆调度**（重复提问首字延迟 240 ms → 1.32 ms）、**前后台感知调度**（后台归还 1.30 GB，对照组零释放）、**采样质量工程化**（修掉长文复读），并完成 OpenHarmony 标准系统载体线的构建攻关（15 条踩坑修复，见 [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md)）。
 
 作品意义在于将 LUT 计算范式产品化为系统级服务，降低端侧大模型部署门槛，为隐私本地推理、低功耗生成等场景提供基础支撑。
 
@@ -172,7 +186,7 @@ fandou-t-mac/
 |---|---|
 | 团队名称 | 翻斗花园 |
 | 所属机构 | 中北大学 |
-| 参赛赛道 | 模型与算子赛道 |
+| 参赛赛道 | 鸿蒙高校创新赛 · 方向四「操作系统智能创新」 |
 | 队长 | 聂君奋 |
 | 队员 | 范腾达、郑李惠杰 |
 | 报名时间 | 2026-07-17 |
