@@ -5,30 +5,52 @@
 > **目标形态**：做成 OpenHarmony / HarmonyOS 的**系统服务**（SystemAbility，SA_ID 6901）——推理能力注册进系统服务框架、开机由 init 拉起、任意应用经 SAMgr 取 proxy 调用，而不是某个 App 的内部功能。
 > **当前状态**：应用级形态已交付（HAP，真机实测见下表）；系统级形态已在 OpenHarmony 7.0 源码树中编译通过（9 源文件 → `libtmac_sa.z.so` + 注册表 + init 配置 + SELinux 策略），标准系统镜像构建推进中 → [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md)。
 
-<p align="center">
-  <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
-</p>
-
 ---
 
-## 🏆 成绩总览（全平台实测 · 同一 BitNet-b1.58-3B · 2.44 BPW · 966 MB）
+## 📊 实测数据（同一模型 · 同一内核）
 
-| 平台 | 设备/芯片 | 生成速度 | 加载 | 内核数值 |
+**模型**：BitNet-b1.58-3B 三值权重，**2.44 BPW / 986 MB**
+**内核**：LUT-SA 查表内核（x86_64 AVX2 与 arm64 NEON 双架构，自测 PASS；对照官方 NumPy 参考 NMSE 8.4e-05）
+
+### A. 本项目的实现（LUT-SA）
+
+| 载体 | 设备 / 芯片 | 生成速度 | 模型加载 | 数值校验 |
 |---|---|---|---|---|
-| **鸿蒙真机** 🏆 | HUAWEI HBN-AL00（Pura 70 Pro）· arm64 · 交付版 HAP | **22.00 tok/s** | **1.69 s** | ✅ isa 安检 |
-| 安卓真机 | vivo V2323A · SD 8 Gen 2 · Android 16 | 11.55 tok/s（持续 ~10.6） | 1.46 s | **NMSE 8.397e-05** |
+| 鸿蒙真机 | HUAWEI HBN-AL00（Pura 70 Pro）· arm64 | **22.00 tok/s** | **1.69 s** | ISA 安检通过 |
+| 安卓真机 | vivo V2323A · 骁龙 8 Gen 2 · Android 16 | 11.55 tok/s（持续 ~10.6） | 1.46 s | **NMSE 8.397e-05** |
 | 桌面 | i7-14650HX · WSL · 4 线程 | 25.10 tok/s | 8.2 s | NMSE 8.765e-05 |
-| 桌面对手盘 | 同机 llama.cpp Q4_0（4.63 BPW / 1.79 GiB） | 15.94 tok/s | 18.7 s | — |
-| 桌面对手盘 | 同机 llama.cpp f16（16 BPW / 6.19 GiB） | 4.41 tok/s | 67.9 s | — |
-| 鸿蒙模拟器 | x86_64 · 同模型 A/B | LUT-SA 11.7 vs Q4_0 5.5 → **2.1×** | 1.4~3.7 s | — |
+| 鸿蒙模拟器 | x86_64 · 4 vCPU | 11.7 tok/s | 1.4~3.7 s | — |
 
-> **鸿蒙真机·交付版补充指标**（真机实测）：二轮首字延迟 **TTFT 1.32 ms**（链式 KV 复用 6/6、前缀处理 0.00 ms）· 峰值内存 **1395.1 MB** · 内核基准 200 次 **1.56 ms（7.8 µs/次）** · 安装/启动/渲染三闸门 + 离线验签全部通过。
+> 鸿蒙真机（交付版 HAP）补充：二轮首字延迟 **TTFT 1.32 ms**（链式 KV 复用 6/6、前缀处理 0.00 ms）· 峰值内存 **1395.1 MB** · 内核基准 200 次 **1.56 ms（7.8 µs/次）** · 安装/启动/渲染三闸门 + 离线验签通过。
+> 模拟器数字受宿主机负载影响很大：同配置实测区间约 **10.2 ~ 25.0 tok/s**；跨平台结论一律以真机为准。
 
-**三个杀手级结论**：
+### B. 对照组（基线）：同机 llama.cpp 的"反量化"路径
 
-1. **手机上的 LUT-SA（22.00）超过桌面 CPU 上的 Q4_0（15.94）** —— 端侧低比特让手机达到桌面级吞吐
-2. 同一静态二进制 + 同一模型**横跨 鸿蒙 / 安卓 / qemu 三环境零改动运行**（2026-09-28 实证）
-3. 冷数据下 LUT-SA 与 Q4_0/Q8_0 每字节带宽持平 → 加速全部来自 **2.44 BPW 位宽优势**（无争议机理解释）
+**比的是什么**：拿**同一个源模型**，在**同一台机器**上（桌面 i7-14650HX、4 线程、同提示词与生成长度），分别用两条计算路径跑，比生成吞吐：
+
+| 路径 | 做法 |
+|---|---|
+| **llama.cpp（基线）** | 先把低比特权重**反量化回高精度**，再做浮点乘加 —— 生态里最常用的做法 |
+| **LUT-SA（本项目）** | 权重比特**直接作为查表下标**，一次查表 + 一次整数累加，不反量化 |
+
+| 对照项 | 量化方式 | 权重位宽 | 模型体积 | 生成速度 | 加载 |
+|---|---|---|---|---|---|
+| llama.cpp | Q4_0（社区最常用的量化档） | ~4.63 bit | 1.79 GiB | 15.94 tok/s | 18.7 s |
+| llama.cpp | f16（不量化，精度上限参照） | 16 bit | 6.19 GiB | 4.41 tok/s | 67.9 s |
+| **LUT-SA** | 三值 + LUT 查表 | **2.44 bit** | **986 MB** | **25.10 tok/s** | **8.2 s** |
+
+**同机结论**：2.44 bit 的 LUT-SA 比 4.63 bit 的 Q4_0 快 **1.57×**、比 16 bit 的 f16 快 **5.7×**；体积分别是它的 **1/1.9** 与 **1/6.6**。
+
+> **口径说明**：Q4_0 的精度高于本实现（4.63 bit vs 2.44 bit），所以这是一次"体积 / 算力 vs 精度"的权衡对比，不是同精度对比；同精度对照见 [`tests/lut-verify/`](tests/lut-verify/)。
+> 此前表格里写的"桌面对手盘"**就是指本节 B 组的这两行**——即"对照组 / 基线"的意思，现已按上面的定义写明。
+
+### C. 三个结论
+
+1. **手机上的 LUT-SA（22.00 tok/s）超过桌面 CPU 上的 llama.cpp Q4_0（15.94 tok/s）**——端侧低比特让手机达到桌面级吞吐
+2. 同一个静态二进制 + 同一份模型，**横跨 鸿蒙 / 安卓 / qemu 三环境零改动运行**
+3. 冷数据下 LUT-SA 与 Q4_0/Q8_0 的**每字节带宽持平** → 加速全部来自 **2.44 BPW 的位宽优势**
+
+> 鸿蒙模拟器上的同设备 A/B：LUT-SA **11.7 tok/s** vs llama.cpp Q4_0 **5.5 tok/s** → **2.1×**（同模型、同设备、同一会话）。
 
 ## 🆕 最新进展（2026-09 落地）
 
@@ -39,11 +61,6 @@
 | **采样器工程化** | 补齐重复惩罚（1.15 / last_n 64）+ 真 top-p 0.95，修掉长文复读退化（同提示 A/B 有据） | 同上 |
 | **构建优化（纯 CLI）** | 剔除 DevEco 调试态注入的 ASan 插桩：同机同模型 **10.5 → 25.01 tok/s（2.4×）**；`hvigorw` 一键可复现 | [`ohos/hap/README.md`](ohos/hap/README.md) |
 | **OpenHarmony 标准系统载体线** | SA 组件编入 OH 7.0 源码树（`vendor/ohemu/lutsa`）；构建链踩坑 **15 条**全部定位并修复（含 hb `--jobs` 空实现、LFS 指针、SDK 后处理、上游缺陷绕过） | [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
-
-<p align="center">
-  <img src="ohos/screenshots/device/device-home-icon.jpg" width="260" alt="鸿蒙真机桌面：LUT-SA 已安装" />
-  <img src="ohos/screenshots/device/device-console-02.png" width="260" alt="App 屏幕控制台（真机实测会话）" />
-</p>
 
 ---
 
@@ -91,27 +108,49 @@ fandou-t-mac/
 
 ## 系统架构
 
-四层垂直单向依赖：L1 应用层 → L2 感知与调度 → L3 系统服务层（用户态 SystemAbility）→ L4 计算核心（LUT-SA 二开 LUT Kernel）。右侧并列「对照与验证」，与 llama.cpp 反量化基线对照。
+四层垂直单向依赖（文字版）：
 
-<p align="center">
-  <img src="assets/images/readme/architecture-phase1.png" width="85%" alt="LUT-SA 系统架构图" />
-</p>
+```
+L1 应用层        ArkUI 应用（对话 / 控制台 / 模型三页）· 以及任意调用方
+      │  NAPI（应用级形态）        │  SAMgr proxy / IPC（系统级形态）
+      ▼                            ▼
+L2 感知与调度    前后台状态、内存压力信号 → QoS 档位、60 s 滞回保护记忆链
+      ▼
+L3 系统服务层    LUT SystemAbility（SA_ID 6901）：CreateSession / LoadModel /
+                 PrepareWorkspace / WarmKernel / InferTokenBatch / ReleaseSession
+      ▼
+L4 计算核心      LUT 查表内核（m128-k3200，2.44 BPW，x86_64 AVX2 + arm64 NEON）
+```
 
-> 源文件：`assets/images/readme/architecture-phase1.drawio` · 设计说明：`assets/images/readme/architecture-phase1.md`
+两条调用路径：
+
+- **应用级形态（当前已交付）**：L1 应用 ──NAPI──▶ L4 计算核心（推理在应用进程内）
+- **系统级形态（目标）**：L1 任意应用 ──SAMgr 取 proxy（IPC）──▶ L3 SA ──▶ L4 计算核心（能力在系统侧，调用者在应用侧）
+
+对照与验证：与 llama.cpp 反量化基线对照（见上节 B 组）。
 
 ## 调用时序
 
-五条 lifeline：Demo App → SAMgr → LUT SA → Native Lib → LUT Kernel。一次完整 Generate 走 1 到 5 步：CreateSession → InitBuffers / LoadLUT → Generate → InferTokenBatch → mpGEMM / LUT lookup。右侧 TTFT 标尺覆盖 CreateSession 完成 → 首 token 返回。
+一次生成的完整链路（文字版）：
 
-<p align="center">
-  <img src="assets/images/readme/sequence-phase1.png" width="85%" alt="LUT-SA 调用时序图" />
-</p>
+```
+调用方（应用 / 测试程序）
+  │ ① CreateSession            建立会话与工作区
+  │ ② LoadModel                模型进内存（真机 1.69 s，含张量内核变换）
+  │ ③ PrepareWorkspace         LUT 表与瓦片池就位
+  │ ④ WarmKernel               预热查表内核
+  │ ⑤ InferTokenBatch × N      逐批推理；每个 token 经 threadsafe function 回吐调用方
+  │ ⑥ ReleaseSession           释放会话
+  ▼
+TTFT 计量区间：CreateSession 完成 → 首 token 返回
+             （首轮真机 248.80 ms；二轮命中前缀复用后 1.32 ms）
+```
 
-> 源文件：`assets/images/readme/sequence-phase1.drawio` · 设计说明：`assets/images/readme/sequence-phase1.md`
+链路节点：`调用方 → SAMgr → LUT SA → Native 库 → LUT 内核`（应用级形态下第 2、3 跳由 NAPI 桥替代）。
 
 ## 上游开源项目基线与致谢（参考）
 
-> 本队已在鸿蒙模拟器 / qemu-arm64 / 零售真机 / 安卓真机完成自有实测（见顶表），以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
+> 本项目已在鸿蒙模拟器 / qemu-arm64 / 零售真机 / 安卓真机完成自有实测（见上表）；以下为上游 T-MAC 官方数据，仅作跨平台参照。单位 tokens / sec。
 
 | 模型 | 设备 | 线程 | llama.cpp | T-MAC | 约倍速 |
 |---|---|---|---|---|---|
@@ -209,15 +248,9 @@ LUT-SA 以开源 T-MAC（EuroSys 2025）比特级查找表范式为计算引擎�
 <details>
 <summary>点击展开上游 T-MAC 项目正文</summary>
 
-<h3 align="center">
-    <img src="assets/demo.gif">
-    <p><a href=https://huggingface.co/1bitLLM/bitnet_b1_58-3B>BitNet</a> on M2-Ultra with T-MAC (LUT-based) vs llama.cpp (dequantization-based)</p>
-</h3>
+> 上游演示（BitNet on M2-Ultra：T-MAC vs llama.cpp）见 [microsoft/T-MAC](https://github.com/microsoft/T-MAC) 仓库首页。
 
-<h3 align="center">
-    <img src="assets/e2e_surface7_bitnet_phi.png">
-    <p>BitNet and Phi-3.5 tokens/s with # of CPU cores on Surface Laptop 7</p>
-</h3>
+> 上游曲线（Surface Laptop 7：BitNet / Phi-3.5 随核数变化的 tokens/s）见其仓库 `assets/` 目录。
 
 ### What T-MAC does
 
@@ -225,10 +258,7 @@ A lookup-table based kernel library for mixed-precision matrix multiplication on
 
 On Surface Laptop 7, 3B BitNet hits 20 tokens/s on a single core and 48 tokens/s on four cores (4~5x llama.cpp). Raspberry Pi 5 still manages 11 tokens/s.
 
-<h3 align="center">
-    <img src="assets/e2e_threads.png">
-    <p>T-MAC vs llama.cpp, threads vs tokens/s</p>
-</h3>
+> 上游曲线（T-MAC vs llama.cpp：线程数 vs tokens/s）见其仓库 `assets/` 目录。
 
 [Full profile data](docs/profiling_data.md) covers Surface Laptop 7, M2-Ultra, Jetson AGX Orin, Raspberry Pi 5, Surface Book 3.
 
