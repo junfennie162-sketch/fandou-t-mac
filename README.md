@@ -180,12 +180,11 @@ LUT-SA 以开源 T-MAC（EuroSys 2025）比特级查找表范式为计算引擎�
 
 > 历史报告全文：[`docs/output/report/phase1-test-report.md`](docs/output/report/phase1-test-report.md)
 
-## 作者与贡献
+## 项目与维护
 
 | 项 | 内容 |
 |---|---|
-| 项目组 | 翻斗花园 |
-| 所属机构 | 中北大学 |
+| 项目 | **LUT-SA**（应用名「鸿蒙玲珑核」） |
 | 维护者 | 聂君奋 |
 | 贡献者 | 范腾达、郑李惠杰 |
 
