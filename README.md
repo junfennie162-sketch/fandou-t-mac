@@ -2,6 +2,9 @@
 
 > **LUT-SA**（应用名「鸿蒙玲珑核」）：比特级查找表（LUT）驱动的低比特 LLM 端侧推理，落地 **HarmonyOS / 安卓 / 桌面 Linux** 三平台。上游开源出处见文末致谢。
 
+> **目标形态**：做成 OpenHarmony / HarmonyOS 的**系统服务**（SystemAbility，SA_ID 6901）——推理能力注册进系统服务框架、开机由 init 拉起、任意应用经 SAMgr 取 proxy 调用，而不是某个 App 的内部功能。
+> **当前状态**：应用级形态已交付（HAP，真机实测见下表）；系统级形态已在 OpenHarmony 7.0 源码树中编译通过（9 源文件 → `libtmac_sa.z.so` + 注册表 + init 配置 + SELinux 策略），标准系统镜像构建推进中 → [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md)。
+
 <p align="center">
   <img src="assets/poster/poster-phase1.png" width="85%" alt="LUT-SA 系统海报" />
 </p>
