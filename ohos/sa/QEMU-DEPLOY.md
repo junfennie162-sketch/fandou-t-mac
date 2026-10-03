@@ -141,6 +141,11 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 
 > **真内核接入后的实测判据**：`llvm-nm -D libtmac_sa.z.so | grep t1_int8` 应出 6 个符号；`SelfTest` 返回 `ErrCode=0` 且串里带"调优内核 + 耗时"；客户端调用汇总"失败项 0"。
 
+| **FIX-50** | 往自建 OH 镜像里装 HAP（端测落地的验证路径） | `bm install -p xxx.hap` 报 `error: install permission denied.` / `code:9568266 [MSG_ERR_INSTALL_PERMISSION_DENIED]`；BMS 日志：`VerifyCreateStreamInstallerPermission:918 install permission denied` + `ATM: PermissionName(ohos.permission.ALLOW_USE_BM) is not exist.` | ① 源码里 `bundle_installer_host.cpp:932-937` 的放行条件是 **`developerMode==true` 且 调用方持有 `ohos.permission.ALLOW_USE_BM`**（我们 developerMode 已是 true，差的是权限；真机上 `hdc shell bm install` 能用是因为 shell 用户被授予了它）；② 「把 HAP 拷到 `/system/app/<包名>/` 就当预装」**不生效**——预装要走产品构建时的预装清单，不是开机扫目录 | 两条可行路线：**A.** 用真机/DevEco 模拟器安装（IDE 自动签名 + 正常安装链路，最直接）；**B.** 重建镜像时把 HAP 加进产品预装清单，或给 BMS 打补丁跳过该校验（成本约 30–40 分钟构建+重打包） |
+| FIX-50b | 顺带验证通的：**HAP 签名链** | 命令行 `SignHap` 报 `Init keystore failed`（本机 sign 工具的 JDK 比建 keystore 的旧） | 用 SDK 自带的 OH 测试链在命令行签名即可，**不依赖 IDE**：`hap-sign-tool.jar sign-profile`（`UnsgnedReleasedProfileTemplate.json`，**bundle-name 要改成自己的**，有效期拉长）→ `sign-app`。**坑**：`-appCertFile` 的叶子证书**不能**用 `keytool -exportcert` 导（那是自签的），要用模板 `bundle-info.development-certificate` 里内嵌的那张，再接 `openharmony application ca` + `root ca` 拼成链 | 脚本见 `ohsign/`（`do_sign.sh` / `build_and_sign.sh`），`verify-app` 输出 `Verify success` |
+
+> **ArkTS/HAP 阶段的通用判据**：`hvigor ERROR: BUILD FAILED` 只说明"某个系统应用"没编过，真因永远在 `out/x86_64_virt/error.log` 里
+
 > **ArkTS/HAP 阶段的通用判据**：`hvigor ERROR: BUILD FAILED` 只说明"某个系统应用"没编过，真因永远在 `out/x86_64_virt/error.log` 里
 > 的 `ERROR Code: <5 位>` 行（如 `10311006` = Kit 校验、`10505001` = 编译器找不到名字）。`entry` 模块的 "N ArkTS Linter Error"
 > 是**警告**，不阻断构（`entry` 模块 111 条 linter 警告仍 BUILD SUCCESSFUL）。

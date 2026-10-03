@@ -76,6 +76,11 @@ struct Index {
     } catch (e) {
       this.loadInfo = `native 模块加载失败: ${e}`;
     }
+    // 开机自证（免点击）：启动时自动连一次引擎扩展并跑自检，结果写 hilog，
+    // 便于在没有 hdc / 没有 UI 交互的环境（如 QEMU 镜像）里用串口取证。
+    this.extCall('connect').then(() => {
+      this.extCall('selftest');
+    });
     // The app sandbox is the only place this process may read the model from on HarmonyOS
     // (/data/local/tmp is blocked by SELinux). chmod it so `hdc file send` can push the file in.
     const fd = this.filesDir();
@@ -130,6 +135,7 @@ struct Index {
         const r: string = await this.extClient.connect();
         this.extStatus = `连接：${r}`;
         this.extOk = true;
+        hilog.info(0x0000, 'LUTSA_EXTDEMO', 'EXT-CONNECT: %{public}s', r);
         return;
       }
       if (mode === 'disconnect') {
@@ -146,6 +152,10 @@ struct Index {
 [基准] ${bm}`;
       this.extStatus = st.includes('PASS') ? '✅ 跨进程自检通过（引擎在独立进程）' : '❌ 跨进程自检失败';
       this.extOk = st.includes('PASS');
+      // 三行是关键证据：版本串 / 自检结果 / 基准结果（免 UI 也能从 hilog 取证）
+      hilog.info(0x0000, 'LUTSA_EXTDEMO', 'EXT-VERSION: %{public}s', ver);
+      hilog.info(0x0000, 'LUTSA_EXTDEMO', 'EXT-SELFTEST: %{public}s', st);
+      hilog.info(0x0000, 'LUTSA_EXTDEMO', 'EXT-BENCH: %{public}s', bm);
       this.appendLog('跨进程调用(ServiceExtensionAbility)', this.extResult);
     } catch (e) {
       this.extStatus = `跨进程调用异常：${e}`;
