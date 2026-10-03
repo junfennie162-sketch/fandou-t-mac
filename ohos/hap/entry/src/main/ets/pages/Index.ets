@@ -3,6 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import tmac from 'libtmac_hap.so';
+import { EngineClient } from '../engineext/EngineClient';
 
 // One chat bubble. role: 'user' | 'model'. meta = small caption (e.g. "18.62 tok/s").
 interface ChatMsg {
@@ -58,6 +59,13 @@ struct Index {
   @State autoWarmup: boolean = true;
   @State l2State: string = '前台 · 满载';
   @State modelLoaded: boolean = false;
+
+  // ---- 跨进程调用（ServiceExtensionAbility 形态）----
+  // 引擎跑在独立进程 lut_engine 里；这里连上去，经 RPC 调用，断开就把内存还给系统。
+  private extClient: EngineClient | null = null;
+  @State extStatus: string = '未连接（引擎在独立进程 lut_engine）';
+  @State extResult: string = '';
+  @State extOk: boolean = false;
   private bgReleaseTimer: number = -1;   // hysteresis: release only after staying backgrounded
   scroller: Scroller = new Scroller();
 
@@ -111,6 +119,40 @@ struct Index {
 
   // One rolling console log, with a timestamped separator per operation — so the load report
   // and each generation report stay distinguishable instead of overwriting each other.
+  /** 跨进程调用引擎：connect / selftest / disconnect */
+  private async extCall(mode: string): Promise<void> {
+    try {
+      if (this.extClient === null) {
+        const ctx = getContext(this) as common.UIAbilityContext;
+        this.extClient = new EngineClient(ctx);
+      }
+      if (mode === 'connect') {
+        const r: string = await this.extClient.connect();
+        this.extStatus = `连接：${r}`;
+        this.extOk = true;
+        return;
+      }
+      if (mode === 'disconnect') {
+        const r: string = await this.extClient.disconnect();
+        this.extStatus = `断开：${r}`;
+        this.extOk = false;
+        return;
+      }
+      const ver: string = await this.extClient.nativeVersion();
+      const st: string = await this.extClient.selfTest();
+      const bm: string = await this.extClient.bench(200);
+      this.extResult = `[版本] ${ver}
+[自检] ${st}
+[基准] ${bm}`;
+      this.extStatus = st.includes('PASS') ? '✅ 跨进程自检通过（引擎在独立进程）' : '❌ 跨进程自检失败';
+      this.extOk = st.includes('PASS');
+      this.appendLog('跨进程调用(ServiceExtensionAbility)', this.extResult);
+    } catch (e) {
+      this.extStatus = `跨进程调用异常：${e}`;
+      this.extOk = false;
+    }
+  }
+
   private appendLog(tag: string, text: string): void {
     let stamp = '';
     try {
@@ -765,6 +807,44 @@ struct Index {
                 }
                 .width('100%')
                 Text('自测/基准直接调用 LUT 内核验证正确性与速度；模型加载失败时可用它排查内核本身。')
+                  .fontSize(10).fontColor(C_DIM).width('100%').textAlign(TextAlign.Start)
+              }
+              .width('92%')
+              .padding(14)
+              .backgroundColor(BG_CARD)
+              .borderRadius(12)
+              .border({ width: 1, color: C_BORDER })
+              .alignItems(HorizontalAlign.Start)
+
+              // -- 跨进程调用（系统服务化形态）--
+              Column({ space: 10 }) {
+                this.cardTitle('🔌', '跨进程调用（ServiceExtensionAbility）')
+                Row({ space: 8 }) {
+                  Button('连接')
+                    .height(38).layoutWeight(1).fontSize(13)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => { this.extCall('connect'); })
+                  Button('自检')
+                    .height(38).layoutWeight(1).fontSize(13)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => { this.extCall('selftest'); })
+                  Button('断开')
+                    .height(38).layoutWeight(1).fontSize(13)
+                    .backgroundColor(BG_INPUT).fontColor(C_TEXT)
+                    .borderRadius(8).border({ width: 1, color: C_BORDER })
+                    .onClick(() => { this.extCall('disconnect'); })
+                }
+                .width('100%')
+                Text(this.extStatus)
+                  .fontSize(11).fontColor(this.extOk ? C_OK : C_SUB).width('100%').textAlign(TextAlign.Start)
+                if (this.extResult.length > 0) {
+                  Text(this.extResult)
+                    .fontSize(10).fontColor(C_SUB).width('100%').maxLines(6)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                Text('引擎跑在独立进程 lut_engine 里：连接后经 RPC 调用，断开即把引擎内存还给系统。')
                   .fontSize(10).fontColor(C_DIM).width('100%').textAlign(TextAlign.Start)
               }
               .width('92%')

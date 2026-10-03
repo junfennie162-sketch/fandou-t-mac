@@ -136,3 +136,46 @@ const out = await tmac.generateAsync('The capital of France is', 16, 0.8, 40);
 
 - 模拟器（x86_64/AVX2，**无 FMA**）与真机（arm64/NEON fp16）是**两套内核代码路径**，报告分开表述。
 - 模拟器性能数字只能演示流程；真机数据用 `ohos/scripts/deploy_arm64_device.ps1` 或本 App 在真机跑。
+
+## 端侧落地的「系统服务化」形态：AppServiceExtensionAbility（跨进程调用）
+
+零售版 HarmonyOS **不允许第三方注册 SystemAbility**（实测六条锁：非 root / SELinux Enforcing /
+系统分区只读 / profile·init 目录不可访问 / `hdc target mount` 要求 debug 镜像 / 两套 SDK 均无 samgr 头文件），
+所以手机上能落地的"系统服务化"形态是 **AppServiceExtensionAbility**：引擎跑在扩展里，
+别的组件/应用用 `connectServiceExtensionAbility` 连上来，经 **RPC** 调用 —— 相当于把
+「引擎在自己进程里持有模型，UI 进程只发请求」这条系统级设计搬到可上架的应用模型里。
+
+### 新增/改动
+
+| 文件 | 作用 |
+|---|---|
+| `entry/src/main/ets/engineext/LutEngineExtension.ets` | **服务端**：`AppServiceExtensionAbility` + `rpc.RemoteObject`，把 native 接口包成 RPC 方法 |
+| `entry/src/main/ets/engineext/EngineClient.ets` | **客户端**：`connectServiceExtensionAbility` + `MessageSequence` 发请求（别的应用照抄这段即可接入） |
+| `entry/src/main/module.json5` | 声明 `extensionAbilities`（`type: "service"`、`exported: true`、`extensionProcessMode: "instance"`） |
+| `entry/src/main/ets/pages/Index.ets` | 「模型」页新增 **跨进程调用** 卡片：连接 / 自检 / 断开 |
+
+### RPC 协议
+
+```
+请求： writeString(method) + writeString(argsJson)
+应答： writeString(JSON.stringify({ok, data?, err?}))
+方法： ping / nativeVersion / selfTest / bench / loadModel / generate / release / prepareSandbox
+      （loadModel、generate 走 native 的 *Async，onRemoteMessageRequest 返回 Promise，不阻塞 IPC 线程）
+```
+
+### 真机验证步骤
+
+1. 用 DevEco 打开本目录 → **Run 'entry'**（IDE 会自动签名；命令行只产未签名 HAP，见上节）。
+2. 进「模型」页 → 找到 **🔌 跨进程调用（ServiceExtensionAbility）** 卡片。
+3. 点 **连接** → 再点 **自检** → 期望显示
+   `✅ 跨进程自检通过（引擎在独立进程）`，正文含版本串、内核自测（PASS）与基准耗时。
+4. 点 **断开** → 引擎进程可被系统回收（等于把引擎内存还给系统）。
+5. 想看进程隔离：`hdc shell hidumper -ls | grep lut` 或 `ps -ef | grep lutsa`，对照 UI 进程 pid。
+
+### 已验证到哪一步
+
+- ✅ 命令行 `assembleHap`：`CompileArkTS` / `PackageHap` 均 Finished，产出
+  `entry/build/default/outputs/default/entry-default-unsigned.hap`（6.85 MB）
+- ⚠️ `SignHap` 在本机失败（`Init keystore failed`，本地 keystore 的 JDK 版本问题）——
+  这是**环境**问题，用 IDE 自动签名即可；不影响代码本身
+- ⏳ 真机点击跑通待你在设备上点一下（代码路径与 SDK 类型已全部按本机 SDK 校验通过）

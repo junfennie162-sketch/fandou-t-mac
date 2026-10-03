@@ -12,6 +12,19 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "extensionAbilities": [
+      {
+        // 引擎的「系统服务化」形态：独立进程（process）+ 可被别的应用连接（exported）
+        "name": "LutEngineExtension",
+        "srcEntry": "./ets/engineext/LutEngineExtension.ets",
+        "description": "$string:module_desc",
+        "type": "service",
+        "exported": true,
+        // 独立进程示例（本 SDK 的 schema 对 service 类型不允许 process/isolationProcess 字段，
+        // 两个分支的字段交集里只有 extensionProcessMode 可用；取值 instance = 每实例独立进程）
+        "extensionProcessMode": "instance"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
