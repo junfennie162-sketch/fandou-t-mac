@@ -68,7 +68,7 @@ inline int8_t ClampI8(float v) {
 
 }  // namespace
 
-int preprocessor_int8(int m, int k, int n, int bits, const void *B, void *lut_scales,
+int ref_preprocessor_int8(int m, int k, int n, int bits, const void *B, void *lut_scales,
                       void *lut_biases, void *qlut) {
   (void)m;
   (void)lut_biases;   // 参考内核不引入每组偏置项（优化内核另有语义）
@@ -97,7 +97,7 @@ int preprocessor_int8(int m, int k, int n, int bits, const void *B, void *lut_sc
   return 0;
 }
 
-int qgemm_lut_int8(int m, int k, int n, int bits, const void *A, const void *qlut,
+int ref_qgemm_lut_int8(int m, int k, int n, int bits, const void *A, const void *qlut,
                    const void *scales, const void *lut_scales, const void *lut_biases, void *C) {
   (void)lut_scales;
   (void)lut_biases;
@@ -163,12 +163,12 @@ bool RefKernelSelfCheck(std::string &detail) {
   }
   uint16_t out[kM * kN] = {};
 
-  if (preprocessor_int8(kM, kK, kN, kBits, act, lut_scales, lut_biases, qlut) != 0) {
-    detail = "FAIL: preprocessor_int8 (ref)";
+  if (ref_preprocessor_int8(kM, kK, kN, kBits, act, lut_scales, lut_biases, qlut) != 0) {
+    detail = "FAIL: ref_preprocessor_int8 (ref)";
     return false;
   }
-  if (qgemm_lut_int8(kM, kK, kN, kBits, A, qlut, scales, lut_scales, lut_biases, out) != 0) {
-    detail = "FAIL: qgemm_lut_int8 (ref)";
+  if (ref_qgemm_lut_int8(kM, kK, kN, kBits, A, qlut, scales, lut_scales, lut_biases, out) != 0) {
+    detail = "FAIL: ref_qgemm_lut_int8 (ref)";
     return false;
   }
   const float got = HalfToFloat(out[0]);

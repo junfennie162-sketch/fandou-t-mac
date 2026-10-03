@@ -1,0 +1,50 @@
+#####LUT-EV-START#####
+Sat Oct  3 22:19:59 CST [   43.503440][    T1] [pid=1][Init][WARNING][init_signal_handler.c:73]Child process lut_evidence(pid 132) exit with code : 0
+2026
+--- [0] SE[   43.503450][    T1] [pid=1][Init][WARNING][init_signal_handler.c:90]Service warning lut_evidence, SIGCHLD received, pid:132 uid:0 status:0.
+Linux 状态与进程上下文�[   43.504713][    T1] [pid=1][Init][INFO][init_common_service.c:922]ServiceReap info lut_evidence pid 132.
+�诊断为什么[   43.506428][    T1] [pid=1][LoopEvent][WARNING][le_epoll.c:122]timeout:201258
+ get 被拒）--[   43.507581][    T1] [pid=1][LoopEvent][WARNING][le_epoll.c:122]timeout:201257
+-
+enforce=0
+se[   43.508473][    T1] [pid=1][LoopEvent][WARNING][le_epoll.c:122]timeout:201256
+lf context: u:r:[   43.509342][    T1] [pid=1][LoopEvent][WARNING][le_epoll.c:122]timeout:201255
+init:s0
+/system/bin/lut_evidence.sh[37]: awk: inaccessible or not found
+--- [1] 客户端经 samgr 调用 SA 6901（IPC）---
+=====LUTSA-CLIENT-START=====
+  client pid=1898 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f93eed9ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 167.1 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=7.9 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 167.1 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [2] ps ---
+root           132     1 0 22:19:18 ?     00:00:00 sh /system/bin/lut_evidence.sh
+system         141     1 0 22:19:18 ?     00:00:00 lut_sa
+root          1902   132 0 22:19:58 ?     00:00:00 grep -i lut
+--- [3] 装机文件 ---
+-rwxr-xr-x 1 root root 25384 2026-10-03 22:18 /system/bin/lut_sa_client
+-rw-r--r-- 1 root root 98600 2026-10-03 22:18 /system/lib64/libtmac_sa.z.so
+-rw-r--r-- 1 root root   276 2026-10-03 16:13 /system/profile/lut_sa.json
+--- [4] service_contexts 里的 6901 ---
+6901				   u:object_r:sa_lut_sa_service:s0
+--- [5a] hilog 里的 [LutSa]（SA 自己的日志）---
+--- [5b] hilog 里的 SA_CLIENT/Selinux ---
+10-03 22:19:34.831   154   186 E C05a03/Selinux: avc:  denied  { get } for service=401 sid=u:r:dhardware:s0 scontext=u:r:dhardware:s0 tcontext=u:object_r:sa_foundation_bms:s0 tclass=samgr_class permissive=1
+10-03 22:19:35.149  1834  1836 W C01810/SA_CLIENT: OnLoadSaSucInner SA:1212 spend 0ms
+10-03 22:19:35.585   154   861 E C05a03/Selinux: avc:  denied  { get } for service=3303 sid=u:r:hiview:s0 scontext=u:r:hiview:s0 tcontext=u:object_r:sa_powermgr_thermal_service:s0 tclass=samgr_class permissive=1
+10-03 22:19:35.763   790  1666 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 22:19:35.964   788   912 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 22:19:36.179  1698  1736 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 22:19:37.207   788   912 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 22:19:38.018  1471  1636 E C01810/SA_CLIENT: LoadSystemAbility SA:4201 timeout
+10-03 22:19:38.019  1471  1629 I C01810/SA_CLIENT: OnLoadSaFailInner SA:4201_999
+10-03 22:19:38.019  1471  1629 I C01810/SA_CLIENT: LoadSystemAbility on load SA:4201 failed!
+10-03 22:19:38.019  1471  1629 W C01810/SA_CLIENT: OnLoadSaFailInner SA:4201_999 spend 0ms
+10-03 22:19:39.376   574  1863 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+#####LUT-EV-END#####

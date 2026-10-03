@@ -1,6 +1,6 @@
 #include "tile_compute.h"
 
-#include "lut_kernel_ref.h"
+#include "t-mac/kernels.h"   // ★ 真 · 调优内核（AVX2/NEON 分派器）
 
 namespace tmac_sa {
 

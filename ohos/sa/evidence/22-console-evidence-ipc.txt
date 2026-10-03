@@ -1,0 +1,42 @@
+#####LUT-EV-START#####
+Sat Oct  3 21:35:11 CST 2026
+--- [0] SELinux 状态与进程上下文（诊断为什么 get 被拒）---
+enforce=0
+self context: u:r:init:s0
+/system/bin/lut_evidence.sh[35]: awk: inaccessible or not found
+--- [1] 客户端经 samgr 调用 SA 6901（IPC）---
+=====LUTSA-CLIENT-START=====
+  client pid=2052 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7ff0e5cfccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=22
+  [GetMetrics] ErrCode=0  -> peak_rss=7.7 MB, session=1, sa_id=6901
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 1 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [2] ps ---
+root           132     1 0 21:34:30 ?     00:00:00 sh /system/bin/lut_evidence.sh
+system         143     1 0 21:34:30 ?     00:00:00 lut_sa
+root          2056   132 0 21:35:10 ?     00:00:00 grep -i lut
+--- [3] 装机文件 ---
+-rwxr-xr-x 1 root root 25384 2026-10-03 20:45 /system/bin/lut_sa_client
+-rw-r--r-- 1 root root 85312 2026-10-03 20:45 /system/lib64/libtmac_sa.z.so
+-rw-r--r-- 1 root root   276 2026-10-03 16:13 /system/profile/lut_sa.json
+--- [4] service_contexts 里的 6901 ---
+6901				   u:object_r:sa_lut_sa_service:s0
+--- [5] hilog 里 SA/客户端相关 ---
+10-03 21:34:47.745   155   781 E C05a03/Selinux: avc:  denied  { get } for service=401 sid=u:r:dhardware:s0 scontext=u:r:dhardware:s0 tcontext=u:object_r:sa_foundation_bms:s0 tclass=samgr_class permissive=1
+10-03 21:34:48.435  1502  1528 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 21:34:48.732  1681  1726 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 21:34:49.644  1502  1528 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 21:34:51.707  1614  1964 E C01810/SA_CLIENT: LoadSystemAbility SA:4201 timeout
+10-03 21:34:51.707  1614  1967 I C01810/SA_CLIENT: OnLoadSaFailInner SA:4201_999
+10-03 21:34:51.707  1614  1967 I C01810/SA_CLIENT: LoadSystemAbility on load SA:4201 failed!
+10-03 21:34:51.707  1614  1967 W C01810/SA_CLIENT: OnLoadSaFailInner SA:4201_999 spend 0ms
+10-03 21:34:52.099   580  1269 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 21:34:52.880  1614  1626 W C01810/SA_CLIENT: OnLoadSaSucInner SA:5204 spend 0ms
+10-03 21:34:59.651  1502  2022 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+10-03 21:35:01.060  1844  2023 E C01810/SA_CLIENT: GetSaWrap SA:1909 not start
+#####LUT-EV-END#####

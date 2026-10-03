@@ -1,0 +1,14 @@
+# LUT-SA 的访问规则（system：域之间的许可）
+#
+# 客户端侧：我们的取证客户端（由 init 拉起的一次性服务，域为 init）需要能 get 到本 SA。
+# 参照现有写法，例如：
+#   allow init sa_sandbox_manager_service:samgr_class { get };
+#   allow serial_service sa_foundation_bms:samgr_class { get };
+allow init sa_lut_sa_service:samgr_class { get };
+
+# 服务自身：把 SA 注册进 samgr（add）。我们的 SA 进程 secon=compiler_service，
+# 但实测注册链路里 callingSid 会退化成 kernel，所以这里对常见域都给上 add，
+# 避免"能加载库但登记不上"这种半死状态。
+allow compiler_service sa_lut_sa_service:samgr_class { get add };
+allow init sa_lut_sa_service:samgr_class { add };
+allow samgr sa_lut_sa_service:samgr_class { get add };

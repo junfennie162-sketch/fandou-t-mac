@@ -1,0 +1,5 @@
+--- [5] ps ---
+root           132     1 0 17:09:33 ?     00:00:00 sh /system/bin/lut_evidence.sh
+system         137     1 0 17:09:33 ?     00:00:00 lut_sa
+root           977   132 0 17:10:14 ?     00:00:00 grep -i lut
+--- [6] 关键文件 ---

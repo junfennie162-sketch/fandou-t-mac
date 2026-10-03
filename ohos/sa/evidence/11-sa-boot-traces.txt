@@ -1,0 +1,16 @@
+[    3.036228][    T1] [pid=1][Init][INFO][init_common_service.c:711]ServiceStart starting:lut_sa
+[    3.036396][    T1] [pid=1][Init][INFO][init_common_service.c:737]ServiceStart started info lut_sa(pid 141 uid 1000)
+[    3.039935][  T141] [pid=141][Init][INFO][init_service.c:291]ServiceExec lut_sa
+[    3.052516][  T141] SAFWK: operator() Set process name to lut_sa
+[    3.253716][  T141] SAMGR: SA:6901 OpenSo 0ms
+[    3.257408][  T160] SAMGR: AddSystemAbilityInner selinux permission denied! SA:6901,callSid:kernel
+[    3.258909][  T191] SAFWK: Publish SA:6901 result:1,spend:2ms
+[    3.260295][  T191] SAFWK: Start OnStart-SA:6901 finished, spend:4 ms
+[    3.261396][  T191] SAFWK: StartSystemAbilityTask lut_sa SA:6901 init finished, 209 ms
+--- [2] hidumper -s 6901 ---
+--- [3] hilog Lut/LutSa/6901 ---
+10-03 17:32:22.052   974   974 I C02d20/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 6901 , calllingUid=0, calllingPid=974, ppid:132.
+system         141     1 0 17:31:40 ?     00:00:00 lut_sa
+-rw-r--r-- 1 root root   276 2026-10-03 16:13 /system/profile/lut_sa.json
+    "process": "lut_sa",
+            "name": 6901,

@@ -10,18 +10,18 @@
 
 // 与 t-mac 引擎 kernels.h 同名的自由函数（全局命名空间，签名保持一致）
 //
-// preprocessor_int8: 依据 int8 激活值 B 预计算 LUT 表（qlut）与每组缩放/偏置
+// ref_preprocessor_int8: 依据 int8 激活值 B 预计算 LUT 表（qlut）与每组缩放/偏置
 //   m = 逻辑行数 × bits（位切分后的行数），k = K，n = N
 //   B: float16[N*K]（或 U16 半精度位模式）
 //   lut_scales/lut_biases: 每组（act_group 个权重）一组 fp16 缩放/偏置
 //   qlut: [n][k/kG][2^kG] 的 int8 乘积表
-// qgemm_lut_int8: 用 LUT 做 2/4bit 权重的反量化 GEMM
+// ref_qgemm_lut_int8: 用 LUT 做 2/4bit 权重的反量化 GEMM
 //   A: 打包权重码（每行 ceil(k*bits/8) 字节，LSB 优先）
 //   scales: 每组（kG=4）一个 fp16 缩放
 //   C: 输出（按 fp16 位模式存储，m*n 个）
-int preprocessor_int8(int m, int k, int n, int bits, const void *B, void *lut_scales,
+int ref_preprocessor_int8(int m, int k, int n, int bits, const void *B, void *lut_scales,
                       void *lut_biases, void *qlut);
-int qgemm_lut_int8(int m, int k, int n, int bits, const void *A, const void *qlut,
+int ref_qgemm_lut_int8(int m, int k, int n, int bits, const void *A, const void *qlut,
                    const void *scales, const void *lut_scales, const void *lut_biases, void *C);
 
 namespace tmac_sa {

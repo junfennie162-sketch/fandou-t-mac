@@ -1,0 +1,9 @@
+[    2.038941][    T1] [pid=1][PLUGIN][INFO][selinux_adp.c:53]LoadSelinuxPolicy 
+[    3.290461][  T143] [pid=143][Init][INFO][init_service.c:291]ServiceExec lut_sa
+[    3.498506][  T161] SAMGR: insert SA:6901_6
+self context: u:r:init:s0
+=====LUTSA-CLIENT-START=====
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=22
+  [GetMetrics] ErrCode=0  -> peak_rss=7.7 MB, session=1, sa_id=6901
+=====LUTSA-CLIENT-END (rc=0)=====

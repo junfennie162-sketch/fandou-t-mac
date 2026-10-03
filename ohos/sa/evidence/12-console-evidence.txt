@@ -1,0 +1,33 @@
+=====LUT-EVIDENCE-START=====
+Sat Oct  3 17:32:22 CST 2026
+--- [0] hidumper 自诊断 ---
+-rwxr-xr-x 1 root shell 53552 2026-10-03 13:21 /system/bin/hidumper
+hidumper -h exit=3 bytes=0
+--- [1] hidumper -ls 全量抓文件 ---
+exit=3 bytes=0
+--- [1b] 里面 grep lut ---
+grep: /data/local/tmp/h1.txt: Invalid argument
+--- [2] hidumper -s 6901 ---
+exit=3 bytes=0
+--- [3] hilog Lut/LutSa/6901 ---
+10-03 17:32:22.052   974   974 I C02d20/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 6901 , calllingUid=0, calllingPid=974, ppid:132.
+--- [4] ps ---
+root           132     1 0 17:31:40 ?     00:00:00 sh /system/bin/lut_evidence.sh
+system         141     1 0 17:31:40 ?     00:00:00 lut_sa
+root           983   132 0 17:32:21 ?     00:00:00 grep -i lut
+--- [5] SA profile / 库 ---
+-rw-r--r-- 1 root root 85312 2026-10-03 17:08 /system/lib64/libtmac_sa.z.so
+-rw-r--r-- 1 root root   276 2026-10-03 16:13 /system/profile/lut_sa.json
+{
+    "process": "lut_sa",
+    "systemability": [
+        {
+            "name": 6901,
+            "libpath": "libtmac_sa.z.so",
+            "run-on-create": true,
+            "distributed": false,
+            "dump-level": 1,
+            "auto-restart": true
+        }
+    ]
+}=====LUT-EVIDENCE-END=====

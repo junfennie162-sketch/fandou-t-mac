@@ -1,4 +1,4 @@
-// t-mac/tmac_gemm_wrapper.h —— 便携参考内核的「接口占位」
+// t-mac/tmac_gemm_wrapper.h —— 引擎接口头（现指向真 · 调优内核）
 //
 // 说明：本文件与 t-mac 引擎的同名头文件**路径一致**，用于在没有引擎源码/预编译库的
 // 目标（如 QEMU x86_64 标准系统镜像）上编译 LUT-SA 业务层；只提供业务层实际用到的
@@ -8,7 +8,7 @@
 // 参考内核不参与链接 —— 见 ohos/sa/QEMU-DEPLOY.md。
 #pragma once
 
-#include "lut_kernel_ref.h"   // 参考内核自由函数声明（与引擎 kernels.h 同签名）
+#include "t-mac/kernels.h"     // ★ 真 · 调优内核分派器（deploy/tuned/<目标>/kernels.h）
 
 #include <cstddef>
 #include <cstdint>

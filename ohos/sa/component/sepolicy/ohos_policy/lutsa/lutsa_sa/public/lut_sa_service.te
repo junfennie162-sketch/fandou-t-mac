@@ -1,0 +1,9 @@
+# LUT-SA 的 SA 类型声明（public：类型名对其它模块可见）
+#
+# 为什么必须放在这里：OH 的 SA 访问控制 = service_contexts 里
+#   <SA_ID> u:object_r:<sa_xxx_service>:s0
+# 加上策略里的
+#   allow <调用方域> <sa_xxx_service>:samgr_class { get };
+# 我们原来的 .te 放在组件自己的 sepolicy/ 目录下，**根本不在策略编译路径里**，
+# 等于没有策略 → 任何客户端 GetSystemAbility(6901) 都被 samgr 判 ERR_PERMISSION_DENIED。
+type sa_lut_sa_service, sa_service_attr;

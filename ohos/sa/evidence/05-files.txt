@@ -1,0 +1,5 @@
+--- [6] 关键文件 ---
+-r-x------ 1 root root   348 2026-10-03 15:27 /system/etc/init/lut_sa.cfg
+-rw-r--r-- 1 root root 85312 2026-10-03 17:08 /system/lib64/libtmac_sa.z.so
+-rw-r--r-- 1 root root   276 2026-10-03 16:13 /system/profile/lut_sa.json
+=====LUT-EVIDENCE-END=====

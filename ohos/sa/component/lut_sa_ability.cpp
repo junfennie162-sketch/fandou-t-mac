@@ -7,6 +7,7 @@
 #include "lut_kernel_ref.h"
 
 #include <cstdio>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 
@@ -21,6 +22,9 @@ namespace {
 constexpr int32_t kLutSaId = 6901;
 constexpr uint64_t kInvalidSession = 0;
 uint64_t g_session = kInvalidSession;   // 简化：单会话；多会话表见 session_workspace
+// 最近一次 SelfTest 的详情：stub 在 ErrCode!=0 时不回传结果串，
+// 而本 SA 的 hilog 在 guest 里抓不到 → 借 GetMetrics（能通）把详情带出去
+std::string g_lastSelfTest = "(selftest not run yet)";
 }  // namespace
 
 void LutSystemAbility::OnStart() {
@@ -97,8 +101,9 @@ ErrCode LutSystemAbility::GetMetrics(std::string &result) {
         fclose(st);
     }
     char buf[192];
-    snprintf(buf, sizeof(buf), "peak_rss=%.1f MB, session=%llu, sa_id=%d",
-             static_cast<double>(peak_kb) / 1024.0, static_cast<unsigned long long>(g_session), kLutSaId);
+    snprintf(buf, sizeof(buf), "peak_rss=%.1f MB, session=%llu, sa_id=%d, selftest: %s",
+             static_cast<double>(peak_kb) / 1024.0, static_cast<unsigned long long>(g_session), kLutSaId,
+             g_lastSelfTest.c_str());
     result = buf;
     return ERR_OK;
 }
@@ -111,12 +116,22 @@ ErrCode LutSystemAbility::SelfTest(std::string &result) {
             return ERR_INVALID_VALUE;
         }
     }
+    const auto t0 = std::chrono::steady_clock::now();
     const ::tmac_sa::Status st = ::tmac_sa::WarmKernel(g_session, 4);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double warm_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     std::string ref_detail;
     const bool ref_ok = ::tmac_sa::RefKernelSelfCheck(ref_detail);
     const bool warm_ok = (st == ::tmac_sa::Status::kOk);
-    result = std::string(warm_ok ? "PASS: LUT kernel warm-up (m128-k3200) ok" : "FAIL: WarmKernel") +
-             " | " + ref_detail;
+    char warm_msg[160];
+    snprintf(warm_msg, sizeof(warm_msg),
+             "%s (m128-k3200 b2, 调优内核, %.1f us)",
+             warm_ok ? "PASS: LUT kernel warm-up" : "FAIL: WarmKernel", warm_us);
+    result = std::string(warm_msg) + " | " + ref_detail;
+    // stub 在 ErrCode!=0 时不会把结果串回传，客户端那边只能看到错误码 →
+    // 这里同步写一份 hilog，便于串口/hilog 取证通道看到到底是哪一项没过
+    g_lastSelfTest = result;
+    HILOG_INFO(LOG_CORE, "[LutSa] SelfTest: %{public}s", result.c_str());
     return (warm_ok && ref_ok) ? ERR_OK : ERR_INVALID_VALUE;
 }
 

@@ -96,9 +96,9 @@ Status WarmKernel(uint64_t session_id, int n_threads_override) {
     if (!s || !s->ws) {
       return Status::kNoSession;
     }
-    if (!s->loaded) {
-      return Status::kNotLoaded;
-    }
+    // 暖机只热身"内核 + 工作区"，与是否已加载模型无关；
+    // 原来这里要求 s->loaded，导致 SA 自检（未加载模型时跑内核自检）永远失败。
+    // 推理路径（InferTokenBatch）会自己检查 loaded，这里的门不必留着。
     if (!s->ws->EnsureWorkspace(kWarmK, kWarmN)) {
       return Status::kNoWorkspace;
     }

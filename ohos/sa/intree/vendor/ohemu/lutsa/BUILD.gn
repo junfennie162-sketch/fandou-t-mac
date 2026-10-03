@@ -1,9 +1,12 @@
 # LUT-SA SystemAbility —— 以「vendor/ohemu/lutsa」组件形态并入 OpenHarmony 标准系统
 #
 # 产物：
-#   /system/lib64/libtmac_sa.z.so   （SA 进程宿主库：sa_main 按 profile 加载）
-#   /system/profile/lut_sa.json     （SA 注册表：SA_ID=6901 → libtmac_sa.z.so）
-#   /system/etc/init/lut_sa.cfg     （init 启动项：exec /system/bin/sa_main /system/profile/lut_sa.json）
+#   /system/lib64/libtmac_sa.z.so    （SA 进程宿主库：sa_main 按 profile 加载）
+#   /system/bin/lut_sa_client        （客户端：经 samgr 跨 IPC 调用 6901，用于自证可用）
+#   /system/profile/lut_sa.json      （SA 注册表：SA_ID=6901 → libtmac_sa.z.so）
+#   /system/etc/init/lut_sa.cfg      （init 启动项：exec /system/bin/sa_main /system/profile/lut_sa.json）
+#   /system/etc/init/lut_evidence.cfg + /system/bin/lut_evidence.sh
+#                                    （开机一次性取证：把 SA 调用结果打到串口 ttyS0）
 #
 # 说明：业务内核（会话/工作区/瓦片计算/QoS）为自包含软件实现，不依赖预编译引擎，
 #       因此可在任意架构（x86_64 QEMU / arm64 真机）上编进系统；引擎接入见 README。
@@ -17,11 +20,29 @@ ohos_shared_library("lut_sa") {
     "src/tile_compute.cpp",
     "src/tile_pool.cpp",
     "src/qos_policy.cpp",
-    "src/lut_kernel_ref.cpp",        # 便携参考 LUT 内核（标量；与 t-mac 优化内核同接口）
+    "src/lut_kernel_ref.cpp",        # 便携参考内核：现在只作「算法自检锚点」（入口已改名 ref_*）
     "idl/lut_sa_proxy.cpp",          # ILutSa 生成物（IPC 代理）
     "idl/lut_sa_stub.cpp",           # ILutSa 生成物（IPC 桩）
   ]
   include_dirs = [ "include", "idl" ]
+
+  # ★ 真 · 调优 LUT 内核（来自仓库 deploy/tuned/<目标>/kernels.cc，按目标架构选一份）
+  #   x86_64 → AVX2 版本；arm64 → NEON 版本。分派器与参考内核同签名，
+  #   业务层通过 include/t-mac/kernels.h 调用，暖机形状 m=128 k=3200 b2 正好命中专用实现。
+  # 关掉两个警告：t-mac 的 kernels.cc 是代码生成的，里面的 *_C_shape 变量只在 assert() 里用，
+  # 而 release 构建带 -DNDEBUG 会把 assert 编成空语句 → 变量变成"未使用"，被 -Werror 拦下。
+  if (target_cpu == "x86_64") {
+    sources += [ "src/kernels_tuned.cpp" ]
+    cflags_cc = [ "-mavx2", "-Wno-unused-variable", "-Wno-unused-but-set-variable" ]
+  } else if (target_cpu == "arm64") {
+    sources += [ "src/kernels_tuned_arm64.cpp" ]
+    cflags_cc = [ "-Wno-unused-variable", "-Wno-unused-but-set-variable" ]
+  }
+
+  # FIX-41: lut_sa_ability.h/.cpp 整体被 #ifdef TMAC_SA_SAMGR_BINDING 包着；
+  # 不定义这个宏，SA 绑定（REGISTER_SYSTEM_ABILITY_BY_ID / OnStart→Publish）就整段不参与编译，
+  # 结果 .so 能加载但 samgr 里没有 6901，hidumper 也看不到。原来漏了这个 defines。
+  defines = [ "TMAC_SA_SAMGR_BINDING" ]
 
   external_deps = [
     "safwk:system_ability_fwk",
@@ -31,24 +52,66 @@ ohos_shared_library("lut_sa") {
     "hilog:libhilog",
   ]
 
-  output_name = "libtmac_sa.z"
+  # FIX-38: output_name 写 "libtmac_sa.z" 会被 OH 再补一层变成 libtmac_sa.z.z.so，
+  # 与 sa_profile 里写的 libtmac_sa.z.so 对不上 → SA 永远加载不到。这里只写基名。
+  output_name = "libtmac_sa"
   install_enable = true
   install_images = [ "system" ]
   part_name = "lutsa"
   subsystem_name = "ohemu"
 }
 
-ohos_prebuilt_etc("lut_sa_profile") {
-  source = "sa_profile/lut_sa.json"
-  relative_install_dir = "profile"
+# 客户端：另一个进程经 samgr 拿到 6901 并逐项调用 ILutSa（IPC 可用性的硬证据）
+ohos_executable("lut_sa_client") {
+  sources = [
+    "src/lut_sa_client.cpp",
+    "idl/lut_sa_proxy.cpp",          # 客户端侧只需要 proxy（不需要 stub）
+  ]
+  include_dirs = [ "include", "idl" ]
+  external_deps = [
+    "samgr:samgr_proxy",
+    "ipc:ipc_core",
+    "c_utils:utils",
+    "hilog:libhilog",
+  ]
+  output_name = "lut_sa_client"
+  install_enable = true
   install_images = [ "system" ]
   part_name = "lutsa"
   subsystem_name = "ohemu"
 }
 
+# FIX-38/39: SA 注册表必须走官方 ohos_sa_profile 模板才会进 /system/profile/；
+# 用 ohos_prebuilt_etc + relative_install_dir="profile" 会落到 /system/etc/profile/。
+# 注意该模板在 part_name 已给定时不读 subsystem_name，多写会 GN 报 "Assignment had no effect"。
+ohos_sa_profile("lut_sa_profile") {
+  sources = [ "sa_profile/lut_sa.json" ]
+  part_name = "lutsa"
+}
+
+# FIX-38: relative_install_dir 是相对 /system/etc（不是 /system），写 "etc/init" 会变成
+# /system/etc/etc/init/，init 根本读不到。正确写 "init"。
 ohos_prebuilt_etc("lut_sa_init_cfg") {
   source = "etc/init/lut_sa.cfg"
-  relative_install_dir = "etc/init"
+  relative_install_dir = "init"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+# 开机取证：本环境 hidumper 自身不可用（exit=3）、hdc 的 hdcd 被 watchdog 杀，
+# 所以用「一次性服务把结果打到串口 ttyS0」作为取证通道，脚本与 cfg 一起装机。
+ohos_prebuilt_etc("lut_evidence_cfg") {
+  source = "etc/init/lut_evidence.cfg"
+  relative_install_dir = "init"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+ohos_prebuilt_etc("lut_evidence_sh") {
+  source = "evidence/lut_evidence.sh"
+  relative_install_dir = "bin"
   install_images = [ "system" ]
   part_name = "lutsa"
   subsystem_name = "ohemu"
@@ -57,7 +120,10 @@ ohos_prebuilt_etc("lut_sa_init_cfg") {
 group("lut_sa_package") {
   deps = [
     ":lut_sa",
+    ":lut_sa_client",
     ":lut_sa_profile",
     ":lut_sa_init_cfg",
+    ":lut_evidence_cfg",
+    ":lut_evidence_sh",
   ]
 }
