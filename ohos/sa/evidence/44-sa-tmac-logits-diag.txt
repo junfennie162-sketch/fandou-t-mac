@@ -1,0 +1,70 @@
+===== LUT-SA SystemAbility · S4-2 诊断：t-mac 模型的输出为什么退化 =====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt）；诊断走引擎壳的 Trace → /data/lut_sa/rt_stderr.txt
+抓取: 2026-10-05 04:41:57
+
+结论：**不是 tokenizer、不是采样，而是 t-mac 数值路径产生全 NaN**
+  - t-mac 模型：prompt token 与文本都正确（`<s> The capital of France is`），但 after_prompt_decode
+    的 logits **min=nan max=nan，32002/32002 全是 NaN** → 每步 argmax 都取同一个 id → 输出恒定（24 字节控制符）
+  - 对照 Qwen：logits min=-14.58 max=17.49、NaN 0 个，top-1 = " Paris"（语义完全正确）
+  → 说明诊断通道可信、ggml 通用路径正常，问题定位在 t-mac 的 LUT 数值路径
+
+===== t-mac 2bit 模型（bitnet-3b-tmac.gguf, vocab 32002） =====
+  [shim] load: llama_load_model_from_file /data/local/tmp/model.gguf
+  [shim] load: model ok
+  [shim] diag: prompt n_tok=6 ids=[1 450 7483 310 3444 338 ] text="<s> The capital of France is"
+  [shim] diag: after_prompt_decode min=nan max=nan mean=0.0000 nan_or_inf=32002 n_vocab=32002 argmax=2 top: [id=2 logit=nan piece="</s>"] [id=4 logit=nan piece="?"] [id=0 logit=nan piece="<unk>"] [id=1 logit=nan piece="<s>"] [id=3 logit=nan piece="?"]
+  [shim] diag: step 0 argmax=23 piece_len=1 piece="?"
+  [shim] diag: step 1 argmax=23 piece_len=1 piece="?"
+  [shim] diag: step 2 argmax=23 piece_len=1 piece="?"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=6 ids=[1 450 7483 310 3444 338 ] text="<s> The capital of France is"
+  [shim] diag: after_prompt_decode min=nan max=nan mean=0.0000 nan_or_inf=32002 n_vocab=32002 argmax=2 top: [id=2 logit=nan piece="</s>"] [id=4 logit=nan piece="?"] [id=0 logit=nan piece="<unk>"] [id=1 logit=nan piece="<s>"] [id=3 logit=nan piece="?"]
+  [shim] diag: step 0 argmax=23 piece_len=1 piece="?"
+  [shim] diag: step 1 argmax=23 piece_len=1 piece="?"
+  [shim] diag: step 2 argmax=23 piece_len=1 piece="?"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 ="
+  [shim] diag: after_prompt_decode min=nan max=nan mean=0.0000 nan_or_inf=32002 n_vocab=32002 argmax=2 top: [id=2 logit=nan piece="</s>"] [id=4 logit=nan piece="?"] [id=0 logit=nan piece="<unk>"] [id=1 logit=nan piece="<s>"] [id=3 logit=nan piece="?"]
+  [shim] diag: step 0 argmax=0 piece_len=0 piece=""
+  [shim] diag: step 1 argmax=0 piece_len=0 piece=""
+  [shim] diag: step 2 argmax=0 piece_len=0 piece=""
+  [shim] gen: done 16 tokens
+
+===== 对照：Qwen2.5-0.5B q4_k_m（vocab 151936） =====
+  [shim] load: llama_load_model_from_file /data/local/tmp/qwen.gguf
+  [shim] load: model ok
+  [shim] diag: prompt n_tok=5 ids=[785 6722 315 9625 374 ] text="The capital of France is"
+  [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logi
+  [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __"
+  [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?"
+  [shim] diag: step 2 argmax=32 piece_len=1 piece="A"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=5 ids=[785 6722 315 9625 374 ] text="The capital of France is"
+  [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logi
+  [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __"
+  [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?"
+  [shim] diag: step 2 argmax=32 piece_len=1 piece="A"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 ="
+  [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"]
+  [shim] diag: step 0 argmax=220 piece_len=1 piece=" "
+  [shim] diag: step 1 argmax=19 piece_len=1 piece="4"
+  [shim] diag: step 2 argmax=488 piece_len=2 piece=" +"
+  [shim] gen: done 16 tokens
+
+--- 客户端侧（同一轮）---
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0 (9491 ms)
+  [Generate#1(sampling)] ErrCode=0  -> 
+  [Generate#2(同 prompt 复现)] ErrCode=0  -> 
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0
+  [non-constant] 换 prompt 输出不同: no
+  ---- 调用汇总：失败项 1 ----
+
+--- 现场线索（下一轮要验的 dtype 契约）---
+kernels.cc(deploy) 里 x86 分支 typedef float float_type（4B），而同文件 tbl_float_reset 带一条手工补丁注释：
+  "x86 fix: float_type is float(4B) on non-NEON builds but the target buffers are _Float16(2B);
+   the old sizeof(float_type) memset overflowed the stack"  → memset 改成了 sizeof(_Float16)
+运行时 wrapper 则按 sizeof(tmac_float_type) 分配 scales/lut_scales 缓冲（x86 下 = float 4B）
+→ 三者（模型里 scales 的实际布局、运行时缓冲分配、内核读取类型）之间疑似不一致 → 下一轮做
+  「flip dtype + 冷启动看 logits 是否变 sane」的对照实验（见 PLAN.md §三 Now）

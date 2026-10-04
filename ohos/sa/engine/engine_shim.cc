@@ -113,6 +113,81 @@ llama_token SampleNext(float* logits, int n_vocab, double temp, int top_k,
   return static_cast<llama_token>(idx[0]);
 }
 
+// S4-2 诊断：把 logits 的分布与 top-k 打出来（走 Trace，落 SA 的 stderr 文件）。
+// 目的：区分"输出退化"的三种可能 —— (a) 全 NaN/全等 → 数值路径坏；(b) 正常但 argmax 是特殊 token
+// → tokenizer/词表问题；(c) 正常且 top-k 语义合理 → 采样/映射问题。
+void DiagLogits(const char* tag, float* lg, int n_vocab, int k, const llama_model* model) {
+  if (lg == nullptr) {
+    Trace(std::string("diag: ") + tag + " logits=null");
+    return;
+  }
+  float mn = lg[0];
+  float mx = lg[0];
+  double sum = 0.0;
+  int bad = 0;
+  for (int i = 0; i < n_vocab; ++i) {
+    const float v = lg[i];
+    if (std::isnan(v) || std::isinf(v)) {
+      ++bad;
+      continue;
+    }
+    if (v < mn) {
+      mn = v;
+    }
+    if (v > mx) {
+      mx = v;
+    }
+    sum += v;
+  }
+  std::vector<int> idx(static_cast<size_t>(n_vocab));
+  for (int i = 0; i < n_vocab; ++i) {
+    idx[static_cast<size_t>(i)] = i;
+  }
+  std::partial_sort(idx.begin(), idx.begin() + k, idx.end(),
+                    [lg](int a, int b) { return lg[a] > lg[b]; });
+
+  char head[208];
+  std::snprintf(head, sizeof(head),
+                "diag: %s min=%.4f max=%.4f mean=%.4f nan_or_inf=%d n_vocab=%d argmax=%d top:",
+                tag, mn, mx, static_cast<double>(sum) / n_vocab, bad, n_vocab, idx[0]);
+  std::string s = head;
+  for (int i = 0; i < k; ++i) {
+    char one[96];
+    std::snprintf(one, sizeof(one), " [id=%d logit=%.4f piece=", idx[static_cast<size_t>(i)],
+                  lg[idx[static_cast<size_t>(i)]]);
+    s += one;
+    char pc[48];
+    const int np = llama_token_to_piece(model, idx[static_cast<size_t>(i)], pc, sizeof(pc), 0, true);
+    s += '"';
+    for (int j = 0; j < np; ++j) {
+      const unsigned char c = static_cast<unsigned char>(pc[j]);
+      s += (c >= 32 && c < 127) ? static_cast<char>(c) : '?';
+    }
+    s += "\"]";
+  }
+  Trace(s);
+}
+
+// 打印 prompt 的 token id 与文本（tokenizer 是否正常的最直接证据）
+void DiagTokens(const std::vector<llama_token>& tokens, int n_tok, const llama_model* model) {
+  std::string s = "diag: prompt n_tok=" + std::to_string(n_tok) + " ids=[";
+  for (int i = 0; i < n_tok && i < 16; ++i) {
+    s += std::to_string(tokens[static_cast<size_t>(i)]);
+    s += " ";
+  }
+  s += "] text=\"";
+  for (int i = 0; i < n_tok && i < 16; ++i) {
+    char pc[64];
+    const int np = llama_token_to_piece(model, tokens[static_cast<size_t>(i)], pc, sizeof(pc), 0, true);
+    for (int j = 0; j < np; ++j) {
+      const unsigned char c = static_cast<unsigned char>(pc[j]);
+      s += (c >= 32 && c < 127) ? static_cast<char>(c) : '?';
+    }
+  }
+  s += "\"";
+  Trace(s);
+}
+
 }  // namespace
 
 extern "C" LutEngine* lut_engine_load(const char* model_path, int n_threads, int n_ctx, char* err,
@@ -263,6 +338,7 @@ extern "C" int lut_engine_generate(LutEngine* e, const char* prompt, int n_predi
       return 1;
     }
     tokens.resize(static_cast<size_t>(n_tok));
+    DiagTokens(tokens, n_tok, model);
 
     // 每次调用清 KV：同一 prompt 的结果可复现（链式 KV 前缀复用见 README「下一档」）
     llama_kv_cache_clear(ctx);
@@ -271,6 +347,7 @@ extern "C" int lut_engine_generate(LutEngine* e, const char* prompt, int n_predi
       SetErr(err, err_cap, "prompt decode failed");
       return 1;
     }
+    DiagLogits("after_prompt_decode", llama_get_logits(ctx), n_vocab, 5, model);
     Trace("gen: sampling");
 
     // 逐 token 生成：logits 取最后一个 token 那行（logits_all=false 时缓冲只有这一行）
@@ -287,10 +364,22 @@ extern "C" int lut_engine_generate(LutEngine* e, const char* prompt, int n_predi
       }
       llama_token id = SampleNext(logits, n_vocab, temp, top_k, recent, rng);
       if (id == eos) {
+        if (i < 3) {
+          Trace("diag: step " + std::to_string(i) + " argmax=" + std::to_string(id) + " = EOS，提前结束");
+        }
         break;
       }
       char piece[256];
       const int np = llama_token_to_piece(model, id, piece, sizeof(piece), 0, false);
+      if (i < 3) {
+        std::string ps;
+        for (int j = 0; j < np; ++j) {
+          const unsigned char c = static_cast<unsigned char>(piece[j]);
+          ps += (c >= 32 && c < 127) ? static_cast<char>(c) : '?';
+        }
+        Trace("diag: step " + std::to_string(i) + " argmax=" + std::to_string(id) +
+              " piece_len=" + std::to_string(np) + " piece=\"" + ps + "\"");
+      }
       if (np > 0) {
         text.append(piece, static_cast<size_t>(np));
       }

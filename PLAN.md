@@ -67,7 +67,7 @@
 | **S1** | STA-1 稳定性：6/6 轮冷启动全绿 | ✅ | `evidence/40-sa-stability-6rounds.txt` |
 | **S2** | STA-2 接口鲁棒性：`--stress` bad=0 | ✅ | `evidence/41-sa-robustness-sta2.txt` |
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
-| **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | 🚧 卡点已解（模型能加载，182 张量全查到 kcfg）；剩「输出退化」 | `evidence/43-sa-tmac-kcfg-path-fix.txt` + FIX-59/60 |
+| **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | 🚧 加载已通（182 张量全查到 kcfg）；剩「数值全 NaN」已定性，做 dtype 对照实验 | `evidence/43`（加载）+ `evidence/44`（NaN 定性）+ FIX-59/60/62 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ⏳ | 谁能调/哪一档可验证 |
 | **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | ⏳ | "打开设置"端到端跑通 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
@@ -78,26 +78,29 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S4-2 · 查清 t-mac 模型「输出退化」的原因（logits 不对）。**
-  - **已完成（上一轮，别重复劳动）**：模型**能加载**了 —— `LoadModel` ErrCode=0 / 5.6 s，182 个张量全部查到有效
-    kcfg（`bm=256/128, kfactor=8, lut_scales_size=1, n_tile_num=25/135`），`peak_rss=1160 MB`，
-    同 prompt 两次输出逐字符一致。两个真因：FIX-59（准入检查漏乘 ×bits —— 我们自己的 bug：键名是 `M×bits`）
-    与 FIX-60（kcfg 路径的宏展开：`STR/QUOTE` 要求宏是**裸 token**，我们定义成带引号 → 展开出多两个引号的字符串
-    → INIReader 0 段落 → 查表全 miss；修法是编译期裸 token + 运行时 `setenv` 兜底）。
-  - **现象**：`Generate` 返回 24 个 `0x14`（`^T`）字节，**换 prompt 也一样** → 每步 argmax 取同一个 id，
-    说明 logits 退化（或 sampling/映射环节异常）。证据：`evidence/43-sa-tmac-kcfg-path-fix.txt`。
-  - **本轮按这个顺序查（每步都能独立判定）**：
-    1. 引擎壳里加一次性诊断（走 `Trace`，落 `/data/lut_sa/rt_stderr.txt`）：prompt decode 之后打印
-       logits 的 `min/max/mean/NaN 计数` 与 **top-5 (id, logit)**，再打印前 3 步的 argmax id。
-       一眼可分辨：(a) 全 NaN/全等 → 数值路径坏；(b) 正常但 argmax 恒为某个特殊 token → tokenizer/词表问题；
-       (c) 正常且 top-5 合理 → 采样/映射问题。
-    2. 用**同样三行诊断**跑 Qwen2.5-0.5B（已知能出文本）做对照，先证明诊断本身可信。
-    3. 若指向 LUT 数值路径：拿**同一批权重**与参考实现对照（SA 内已有 `lut_kernel_ref.cpp` 的 `ref_*`；
-       桌面侧 `deploy/benchmark.cc` 是现成对照程序，`D:/ohos-models/verdict*.log` 有历史对照数据）。
-    4. 若指向权重/scale：回模型转换侧（`D:/ohos-models/patch_*.py`、`conv*.log`、`rebuild*.log`）。
-  - **不要**为了让"出点字"去改采样参数（那是绕过问题，不是修问题）。
-  - 成功的判据：`Generate` 对不同 prompt 给出**不同且可读**的文本（`non-constant: yes`），
-    且同 prompt 仍逐字符可复现（`determinism: yes`）。
+- **S4-3 · dtype 对照实验：让 t-mac 的 LUT 数值路径不再全 NaN。**
+  - **已定性（上一轮，别重复）**：`LoadModel` ErrCode=0（182 张量全查到 kcfg，`peak_rss=1160 MB`），
+    但 `after_prompt_decode` 的 logits **全 NaN**（32002/32002），每步 argmax 取同一个 id → 恒定输出；
+    对照 Qwen 同路径正常（`top-1=" Paris"`）→ 问题在 t-mac 的 **LUT 数值路径**（FIX-62）。
+    三条 dtype 契约线索：① 部署内核 x86 分支 `typedef float float_type`(4B)；
+    ② 同文件 `tbl_float_reset` 的手工补丁注释说"目标缓冲区是 `_Float16`(2B)"；
+    ③ 运行时按 `sizeof(tmac_float_type)`（我们 fork 的 `ggml-tmac.h` 在 x86 下 = `float`）分配 scales 缓冲。
+  - **本轮按这个顺序做（一次只动一个变量，每步都要能判定）**：
+    1. **先立地面真值（30 分钟内能出结果的就做）**：桌面侧那套 t-mac 集成在
+       `D:/ohos-models/llama-202504/ggml/src/ggml-cpu/tmac/lut_mul_mat.cpp`（见 `rebuild11.log`），
+       `D:/ohos-models/verdict*.log` 是它的模型加载/对照记录。用它跑同一份 `bitnet-3b-tmac.gguf`：
+       若桌面也 NaN → 是**模型/生成侧**的问题（不是我们移植的）；若桌面正常 → 记录它用的 dtype 组合。
+    2. **实验 A（最小改动）**：把 x86 的浮点契约统一到 fp16 —— 运行时 `tmac_float_type`（`ggml-tmac.h` 的
+       x86 分支）与**生成内核**里 x86 分支的 `typedef float float_type;` 都改成 `float16_t`；
+       生成内核是代码生成物，改动走 `intree/install_into_tree.sh` 的**安装期 sed 补丁**（写清理由，别改仓库里的生成物）。
+       重编引擎 → 冷启动 → 看 `diag: after_prompt_decode` 的 NaN 计数与 top-5。
+    3. **实验 B（换模型）**：直接试 `D:/ohos-models/bitnet-3b-tmac-arm64.gguf`（另一份转换产物），
+       看是否 sane —— 能区分"模型里 scales 布局"与"我们的内核 dtype"哪个不对。
+    4. **实验 C（回生成侧）**：若 A/B 都不行，用 `deploy/compile.py`（`-d ohos_x64 -ags -1`，需 TVM/conda）
+       重新生成内核与 kcfg，或把 `llama-202504` 那套 t-mac 集成（`lut_mul_mat.cpp`）的布局搬过来对齐。
+  - **判据**：`diag: after_prompt_decode` 的 `nan_or_inf=0` 且 top-5 出现语义合理 token；
+    `Generate` 对 `2 + 2 =` 给出不同且可读的续写（`non-constant: yes`），同 prompt 仍可复现。
+  - **纪律**：不许改采样参数糊过去；每个 dtype 补丁都要进 FIX 账本（现象→真因→修法）；实验失败也要留证据文件。
 
 **Next（排队）**
 
@@ -111,8 +114,8 @@
 
 - 引擎加载一份"张量形状与内核不匹配"的模型时，`ggml-tmac` 的 `LOG(FATAL)` 抛出的异常在某些路径上
   仍会 `std::terminate`（跨 C 栈帧）→ 已用准入检查在**加载前**拦住这一类；根治见 S4。
-- **t-mac 模型数值退化（S4-2，正在查）**：模型能加载、能跑完 182 个张量的 LUT 转换，但生成结果是恒定控制字节
-  （24×`0x14`）→ logits 退化；在用「top-5 诊断 + Qwen 对照」定位是数值路径还是权重/scale 问题。
+- **t-mac 数值路径全 NaN（S4-3，正在做 dtype 对照实验）**：FIX-62 已定性为"LUT 数值路径"（logits 32002/32002 NaN），
+  三条 dtype 契约线索已列出；下一步实验 A/B/C 见 §三 Now。
 - 串口在高负载下会丢行/断行 → 判据尽量取 guest 内文件（`/data/lut_sa/*`、`/data/local/tmp/lut_evidence.txt`），
   停机后从 userdata 镜像里捞。
 - 本机没有整机，HarmonyOS 侧只能在模拟器验证；OH 侧只有 QEMU x86_64（arm64 有 staging 但未实测）。
