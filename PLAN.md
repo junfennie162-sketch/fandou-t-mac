@@ -67,7 +67,7 @@
 | **S1** | STA-1 稳定性：6/6 轮冷启动全绿 | ✅ | `evidence/40-sa-stability-6rounds.txt` |
 | **S2** | STA-2 接口鲁棒性：`--stress` bad=0 | ✅ | `evidence/41-sa-robustness-sta2.txt` |
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
-| **S4** | **t-mac 2bit 模型可用**：按模型真实形状重新生成 LUT 内核 + kcfg | ⏳ 进行中（下一件） | 见 §三 |
+| **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | 🚧 卡点已解（模型能加载，182 张量全查到 kcfg）；剩「输出退化」 | `evidence/43-sa-tmac-kcfg-path-fix.txt` + FIX-59/60 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ⏳ | 谁能调/哪一档可验证 |
 | **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | ⏳ | "打开设置"端到端跑通 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
@@ -78,32 +78,26 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S4 · 为 `bitnet-3b-tmac.gguf` 生成匹配的 LUT 内核与形状表。**
-  - **已探明的事实（2026-10-05 侦察，别重复劳动）**：
-    - 模型里 182 个张量是 t-mac LUT 类型，**形状只有三种**：`[3200,3200]`（attn q/k/v/o）、
-      `[3200,8640]`（ffn_gate/up）、`[8640,3200]`（ffn_down）→ 即 (m,k) = `(3200,3200)` / `(8640,3200)` / `(3200,8640)`。
-    - **所有模型变体形状完全相同**（`-202504` / `-202504-v1` / `-ags64` / `-arm64` 只差 LUT 类型号 **37/40/41**，
-      分别对应不同 activation-group 方案，即 `-ags -1` 与 `-ags 64`）→ **换模型文件解决不了**，必须按形状生成内核。
-    - 现有 `deploy/tuned/ohos-x64-bitnet-3b/{kcfg.ini,kernels.cc}` 只覆盖**融合后**的形状
-      `m17280_k3200`(2×8640) / `m6400_k3200` / `m6400_k8640`(2×3200) → 与本 gguf 不符（那是**另一个模型配置**的产物），
-      准入检查因此在 36 ms 内拒绝加载（这是**正确**行为，不是 bug）。
-    - **生成器与配方都在**：入口 `deploy/compile.py`（`-m <preset>` 或 `-md <model_dir>`、`-d ohos_x64`、`-o <outdir>`、
-      `-gc -da -nt 1 -tb`、`-ags -1|64`、`-gs 128`、可选 `-t` 调优）；现成配方见
-      `D:/ohos-models/gen_kernels.sh` 与 `gen_kernels_ags64.sh`（依赖三样：conda env `tvm-build`、`~/tvm-src`、
-      `OHOS_NDK_CC` 指向 NDK 的 clang++）。本机还有 `D:/ohos-models/tvm-src`（585 MB）与转换/调优日志。
-  - **本轮按这个顺序做（每步都能独立判定成功/失败）**：
-    1. 先确认环境在不在：WSL 里 `ls ~/miniconda3/envs/tvm-build`、`ls ~/tvm-src/build`、
-       `ls ~/ohos-linux-sdk/native/llvm/bin/clang++`；缺哪个就**把缺什么写进本板 Blocked 段**（这本身就是可判定结果）。
-    2. 读 `python/t_mac/` 里 `get_preset_models()` 的实现，确认 `-md <model_dir>` 需要什么形态的输入
-       （能否直接吃 gguf；不能就按形状造一个最小配置或找对应 preset）。
-    3. 用与类型号 37 对应的一支（`-ags -1`）生成到**新目录** `deploy/tuned/ohos-x64-bitnet-3b-shapes/`
-       （**不改旧目录**）。生成可能很慢（TVM 编译 + 可选调优），一轮做不完就把进度写进 Blocked 段交接给下一轮。
-    4. 生成成功后：把 `intree/install_into_tree.sh` 的 `TMAC_KER=` 指向新目录 → 强制重编引擎
-       （`LUTSA_FORCE_ENGINE=1 build_engine.sh`）→ `nm` 确认出现新形状的 `qgemm_lut_t1_int8_*` 符号。
-    5. 下一轮冷启动验证：`LoadModel(bitnet)` ErrCode=0 + `Generate` 出文本 + 同 prompt 可复现 +
-       `GetMetrics` 里 `engine=ready`；证据落 `evidence/43-*.txt`。
-  - **退路**（若第 1/2 步判定工具链不可用）：手工给 `kcfg.ini` 补 `m3200_k3200` / `m8640_k3200` / `m3200_k8640`
-    三条（参数照抄最接近的条目），让分派器走通用回退路径，并**如实标注"未调优路径"**（性能数字不得冒充调优结果）。
+- **S4-2 · 查清 t-mac 模型「输出退化」的原因（logits 不对）。**
+  - **已完成（上一轮，别重复劳动）**：模型**能加载**了 —— `LoadModel` ErrCode=0 / 5.6 s，182 个张量全部查到有效
+    kcfg（`bm=256/128, kfactor=8, lut_scales_size=1, n_tile_num=25/135`），`peak_rss=1160 MB`，
+    同 prompt 两次输出逐字符一致。两个真因：FIX-59（准入检查漏乘 ×bits —— 我们自己的 bug：键名是 `M×bits`）
+    与 FIX-60（kcfg 路径的宏展开：`STR/QUOTE` 要求宏是**裸 token**，我们定义成带引号 → 展开出多两个引号的字符串
+    → INIReader 0 段落 → 查表全 miss；修法是编译期裸 token + 运行时 `setenv` 兜底）。
+  - **现象**：`Generate` 返回 24 个 `0x14`（`^T`）字节，**换 prompt 也一样** → 每步 argmax 取同一个 id，
+    说明 logits 退化（或 sampling/映射环节异常）。证据：`evidence/43-sa-tmac-kcfg-path-fix.txt`。
+  - **本轮按这个顺序查（每步都能独立判定）**：
+    1. 引擎壳里加一次性诊断（走 `Trace`，落 `/data/lut_sa/rt_stderr.txt`）：prompt decode 之后打印
+       logits 的 `min/max/mean/NaN 计数` 与 **top-5 (id, logit)**，再打印前 3 步的 argmax id。
+       一眼可分辨：(a) 全 NaN/全等 → 数值路径坏；(b) 正常但 argmax 恒为某个特殊 token → tokenizer/词表问题；
+       (c) 正常且 top-5 合理 → 采样/映射问题。
+    2. 用**同样三行诊断**跑 Qwen2.5-0.5B（已知能出文本）做对照，先证明诊断本身可信。
+    3. 若指向 LUT 数值路径：拿**同一批权重**与参考实现对照（SA 内已有 `lut_kernel_ref.cpp` 的 `ref_*`；
+       桌面侧 `deploy/benchmark.cc` 是现成对照程序，`D:/ohos-models/verdict*.log` 有历史对照数据）。
+    4. 若指向权重/scale：回模型转换侧（`D:/ohos-models/patch_*.py`、`conv*.log`、`rebuild*.log`）。
+  - **不要**为了让"出点字"去改采样参数（那是绕过问题，不是修问题）。
+  - 成功的判据：`Generate` 对不同 prompt 给出**不同且可读**的文本（`non-constant: yes`），
+    且同 prompt 仍逐字符可复现（`determinism: yes`）。
 
 **Next（排队）**
 
@@ -117,6 +111,8 @@
 
 - 引擎加载一份"张量形状与内核不匹配"的模型时，`ggml-tmac` 的 `LOG(FATAL)` 抛出的异常在某些路径上
   仍会 `std::terminate`（跨 C 栈帧）→ 已用准入检查在**加载前**拦住这一类；根治见 S4。
+- **t-mac 模型数值退化（S4-2，正在查）**：模型能加载、能跑完 182 个张量的 LUT 转换，但生成结果是恒定控制字节
+  （24×`0x14`）→ logits 退化；在用「top-5 诊断 + Qwen 对照」定位是数值路径还是权重/scale 问题。
 - 串口在高负载下会丢行/断行 → 判据尽量取 guest 内文件（`/data/lut_sa/*`、`/data/local/tmp/lut_evidence.txt`），
   停机后从 userdata 镜像里捞。
 - 本机没有整机，HarmonyOS 侧只能在模拟器验证；OH 侧只有 QEMU x86_64（arm64 有 staging 但未实测）。

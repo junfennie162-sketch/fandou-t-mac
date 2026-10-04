@@ -15,6 +15,7 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -98,18 +99,36 @@ void SkipValue(Reader& r, uint32_t type) {
   r.Skip(FixedValueSize(type));
 }
 
-// 从 kcfg.ini 里读已知形状：[qgemm_lut_t1_int8_m<M>_k<K>_n1_b2] 段落
-std::set<std::pair<uint64_t, uint64_t>> LoadKnownShapes(const char* kcfg_path) {
-  std::set<std::pair<uint64_t, uint64_t>> out;
+// ggml 类型号 → bits（镜像 ggml-tmac.cpp 的 is_type_supported + ggml_tmac_get_type_bits；
+// 类型号取自本 fork 的 ggml.h 枚举：F32=0 F16=1 … TQ2_0=35 I1=36 I2=37 I3=38 I4=39）
+int TypeBits(uint32_t t) {
+  switch (t) {
+    case 2: return 4;   // Q4_0
+    case 34: return 2;  // TQ1_0
+    case 35: return 2;  // TQ2_0
+    case 36: return 1;  // I1
+    case 37: return 2;  // I2
+    case 38: return 3;  // I3
+    case 39: return 4;  // I4
+    default: return 0;  // 其余类型 t-mac 不接管
+  }
+}
+
+// 从 kcfg.ini 里读已知形状：段落名形如 qgemm_lut_t<nt>_int8_m<M>_k<K>_n<N>_b<B>。
+// ★ 关键：生成器（deploy/compile.py: `M = M * bits`）与运行时（tmac_gemm_wrapper.h 的
+//   get_template_name：`M * bits`）**都用 M×bits 做键**，所以这里也必须按 M×bits 比对
+//   （踩过：只看 M 会把本该能用的模型判成"无对应内核"而拒绝加载）
+std::set<std::tuple<uint64_t, uint64_t, uint64_t>> LoadKnownShapes(const char* kcfg_path) {
+  std::set<std::tuple<uint64_t, uint64_t, uint64_t>> out;
   FILE* f = std::fopen(kcfg_path, "r");
   if (f == nullptr) {
     return out;
   }
   char line[256];
   while (std::fgets(line, sizeof(line), f) != nullptr) {
-    unsigned long long m = 0, k = 0;
-    if (std::sscanf(line, "[qgemm_lut_t1_int8_m%llu_k%llu_n1_b2]", &m, &k) == 2) {
-      out.insert({m, k});
+    unsigned long long m = 0, k = 0, n = 0, b = 0;
+    if (std::sscanf(line, "[qgemm_lut_t%*u_int8_m%llu_k%llu_n%llu_b%llu]", &m, &k, &n, &b) == 4) {
+      out.insert({m, k, b});
     }
   }
   std::fclose(f);
@@ -164,23 +183,27 @@ extern "C" int lut_engine_admission_check(const char* model_path, const char* kc
     const uint32_t type = r.U32();
     (void) r.U64();                 // offset
 
-    // 只关心 t-mac 的 LUT 类型。类型号由引擎侧提供（ggml_tmac_get_type_bits），
-    // 这里用"已知的 t-mac 专家类型号"判断：本 fork 里 2bit LUT = 37
-    if (type != 37 || n_dims < 2) {
+    // 只关心 t-mac 接管的类型（Q4_0/TQ1_0/TQ2_0/I1..I4）
+    const int bits = TypeBits(type);
+    if (bits == 0 || n_dims < 2) {
       continue;
     }
     ++n_tmac;
     const uint64_t k = dims[0];
     const uint64_t m = dims[1];
-    if (known.count({m, k}) != 0) {
+    // 与生成器/运行时一致：键里的 M 是「逻辑 M × bits」
+    if (known.count({static_cast<uint64_t>(m) * static_cast<uint64_t>(bits), k,
+                     static_cast<uint64_t>(bits)}) != 0) {
       continue;
     }
     if (IsWarnOnlyTensor(name)) {
       continue;  // 与 ggml-tmac 一致：词表/输出层只警告
     }
-    char buf[160];
-    std::snprintf(buf, sizeof(buf), "%s(m=%llu,k=%llu)", name.c_str(),
-                  static_cast<unsigned long long>(m), static_cast<unsigned long long>(k));
+    char buf[192];
+    std::snprintf(buf, sizeof(buf), "%s(m=%llu,k=%llu,b=%d→键 m%llu_k%llu_b%d)", name.c_str(),
+                  static_cast<unsigned long long>(m), static_cast<unsigned long long>(k), bits,
+                  static_cast<unsigned long long>(m) * static_cast<unsigned long long>(bits),
+                  static_cast<unsigned long long>(k), bits);
     if (missing.size() < 6) {
       missing.push_back(buf);
     }
@@ -197,13 +220,15 @@ extern "C" int lut_engine_admission_check(const char* model_path, const char* kc
     }
     list += missing[i];
   }
-  char shapes[256];
+  char shapes[320];
   shapes[0] = '\0';
   size_t used = 0;
   for (const auto& s : known) {
-    char one[48];
-    const int n = std::snprintf(one, sizeof(one), "m%llu_k%llu ", static_cast<unsigned long long>(s.first),
-                                static_cast<unsigned long long>(s.second));
+    char one[64];
+    const int n = std::snprintf(one, sizeof(one), "m%llu_k%llu_b%llu ",
+                                static_cast<unsigned long long>(std::get<0>(s)),
+                                static_cast<unsigned long long>(std::get<1>(s)),
+                                static_cast<unsigned long long>(std::get<2>(s)));
     if (n <= 0 || used + static_cast<size_t>(n) + 1 >= sizeof(shapes)) {
       break;
     }

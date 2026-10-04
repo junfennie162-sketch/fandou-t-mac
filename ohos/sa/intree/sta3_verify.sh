@@ -1,10 +1,11 @@
 #!/bin/bash
-# sta3_verify.sh —— STA-3 一键验证（在 WSL 里跑；宿主机侧脚本）
+# sta3_verify.sh —— S4/STA-3 一键验证（在 WSL 里跑；宿主机侧脚本，仓库里的镜像）
 #
 # 链条：同步组件+编引擎 → 编 SA/客户端 → 注入 system.img/userdata.img（含模型与 kcfg）
-#      → 冷启动 QEMU → 取串口证据 → 停机后从镜像里捞运行期日志 → 打包 evidence/42-*.txt
+#      → 冷启动 QEMU → 取串口证据 → 停机后从镜像里捞运行期日志 → 打包 evidence
 #
-# 用法: wsl -d ohbuild -u root -- bash <此文件路径>   （需先跑过一次产品构建）
+# 用法: MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<证据路径> bash <此文件>'
+#       （需先跑过一次产品构建；证据路径默认 evidence/42-*.txt）
 
 #!/bin/bash
 # STA-3：把 llama.cpp 静态链进 SA（真 LoadModel / 真 Generate），模型入 userdata 镜像，冷启动取证
@@ -129,7 +130,7 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
 
 echo
 echo "=== 7. 打包仓库证据：evidence/42-sa-real-inference-sta3.txt ==="
-EV=/mnt/c/Users/NJF/Desktop/t-mac/fandou-t-mac-main/ohos/sa/evidence/42-sa-real-inference-sta3.txt
+EV=${EVOUT:-/mnt/c/Users/NJF/Desktop/t-mac/fandou-t-mac-main/ohos/sa/evidence/42-sa-real-inference-sta3.txt}
 mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   {
     echo "===== LUT-SA SystemAbility 真推理（STA-3）====="
@@ -151,7 +152,7 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
     sed -n '/\[6\] 接口鲁棒性/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -16
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
-    cat /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null | head -40
+    tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null
   } > "$EV" 2>&1
   umount /mnt/ud2
   echo "  已写 $EV ($(wc -l < "$EV") 行)"

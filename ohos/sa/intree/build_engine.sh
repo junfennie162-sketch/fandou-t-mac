@@ -42,10 +42,13 @@ case "$ARCH" in
   *) echo "❌ 未知 ARCH=$ARCH"; exit 1;;
 esac
 
-# 增量：源码/内核/壳/本脚本（flags 也在脚本里！）都没变就跳过
+# 增量：源码/内核/壳/t-mac 头/本脚本（flags 也在脚本里！）都没变就跳过
 # （引擎 14 个 TU，含 24k 行的 ggml.c，重编要好几分钟）
+# ★ t-mac 头必须进哈希：dmlc shim 的补丁（FATAL→抛异常、WARNING/DLOG→可见）改的是头文件，
+#   漏了它就会"改了头但引擎没重编"，现场看不到新日志（踩过一轮）
 HASH=$( { cat "$L"/src/*.cpp "$L"/src/*.h "$L"/ggml/src/*.c "$L"/ggml/src/*.cpp \
-             "$L"/tmac/lib/kernels.cc "$L"/engine/*.cc "$0"; } 2>/dev/null | md5sum | cut -d' ' -f1)
+             "$L"/tmac/lib/kernels.cc "$L"/engine/*.cc \
+             "$L"/tmac/include/t-mac/*.h "$L"/tmac/include/dmlc/*.h "$0"; } 2>/dev/null | md5sum | cut -d' ' -f1)
 if [ -f "$OUT" ] && [ -f "$DST/prebuilt/.engine.hash" ] \
    && [ "$HASH" = "$(cat "$DST/prebuilt/.engine.hash")" ] && [ "${LUTSA_FORCE_ENGINE:-0}" != "1" ]; then
   echo "  引擎源码未变（$HASH）→ 跳过重编（要强制重编：LUTSA_FORCE_ENGINE=1）"
@@ -58,7 +61,11 @@ COMMON="-target $TARGET --sysroot=$SYSROOT -O2 -DNDEBUG -fPIC -fno-omit-frame-po
 COMMON="$COMMON -D__MUSL__ -D_LIBCPP_HAS_MUSL_LIBC -D_XOPEN_SOURCE=600 -DNDEBUG"
 COMMON="$COMMON -DGGML_BUILD -DGGML_SHARED -DLLAMA_BUILD -DLLAMA_SHARED"
 COMMON="$COMMON -DGGML_USE_LLAMAFILE -DGGML_USE_TMAC -DGGML_SCHED_MAX_COPIES=4"
-COMMON="$COMMON -DTMAC_KCFG_FILE=\\\"/system/etc/lut_sa/kcfg.ini\\\""
+# ★ TMAC_KCFG_FILE 必须是**裸 token**（不带引号）：包装器用 STR()/QUOTE() 双重展开把它变成字符串字面量。
+#   若这里自带引号，展开结果是 "\"/system/...\""（字符串里多出两个引号字符）→ 打开的是不存在的文件名
+#   → INIReader 解析出 0 个段落 → 所有形状查表全 miss → ggml-tmac LOG(FATAL)。
+#   实测：blk.0.attn_q.weight 查 m6400_k3200 返回 bm=0。DevEco 那次成功构建也是裸 token 写法。
+COMMON="$COMMON -DTMAC_KCFG_FILE=/system/etc/lut_sa/kcfg.ini"
 COMMON="$COMMON -I$L/include -I$L/ggml/include -I$L/ggml/src -I$L/tmac/include"
 COMMON="$COMMON -fvisibility=hidden -fvisibility-inlines-hidden $SIMD"
 # 第三方源码：警告照打但不致命（不同 clang 小版本对 llama.cpp 的告警面不同）

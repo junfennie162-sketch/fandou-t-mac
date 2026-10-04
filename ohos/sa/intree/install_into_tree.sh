@@ -88,20 +88,39 @@ python3 - "$L/tmac/include/dmlc/logging.h" <<'PY'
 import sys
 p = sys.argv[1]
 s = open(p, encoding='utf-8').read()
-if 'TMAC_SA_GRACEFUL_FATAL' not in s:
-    s = s.replace('#include <sstream>',
-                  '#include <sstream>\n#include <stdexcept>  // TMAC_SA_GRACEFUL_FATAL')
-    s = s.replace('      std::abort();',
-                  '      // TMAC_SA_GRACEFUL_FATAL：\n'
-                  '      // 系统能力里不能让第三方库的 FATAL 直接 abort 掉进程 → 抛异常，\n'
-                  '      // 由 engine_shim 的 catch 转成"加载失败 + 原因"，SA 继续服务\n'
-                  '      throw std::runtime_error("dmlc LOG(FATAL): " + stream_.str());')
-    s = s.replace('#define LOG_WARNING ::dmlc::shim_detail::NullStream()',
-                  '#define LOG_WARNING ::dmlc::shim_detail::LogMessage(__FILE__, __LINE__, false)')
+orig = s
+# 注意：这里**逐条**替换，不要用"整块只在首次生效"的守卫 —— 踩过：加了新替换项后
+# 因为文件里已有旧标记，整块被跳过，新替换项永远不生效（DLOG 那条就这么被吞了一轮）
+subs = [
+    # FATAL 不再 abort：系统能力里不能让第三方库的 FATAL 打死进程 → 抛异常，
+    # 由 engine_shim 的 catch 转成"加载失败 + 原因"，SA 继续服务
+    ('      std::abort();',
+     '      // TMAC_SA_GRACEFUL_FATAL：抛异常而不是 abort（由引擎壳 catch）\n'
+     '      throw std::runtime_error("dmlc LOG(FATAL): " + stream_.str());'),
+    ('#include <sstream>',
+     '#include <sstream>\n#include <stdexcept>  // TMAC_SA_GRACEFUL_FATAL'),
+    # WARNING / DLOG 从 NullStream 改为可见：ggml-tmac 在 transform 前会 DLOG 出
+    # "正在转换哪个张量 + 查到的 kcfg"，是定位"哪个张量查表失败"的唯一线索
+    ('#define LOG_WARNING ::dmlc::shim_detail::NullStream()',
+     '#define LOG_WARNING ::dmlc::shim_detail::LogMessage(__FILE__, __LINE__, false)'),
+    ('#define DLOG(severity) LOG_INFO',
+     '#define DLOG(severity) ::dmlc::shim_detail::LogMessage(__FILE__, __LINE__, false)'),
+    # ★ 关键：shim 的 LogMessage 析构函数**只在 fatal_ 时才输出**，所以上面把 WARNING/DLOG
+    #   映射成 LogMessage 也没用（消息照样被吞）。改成一律打印，WARNING/DLOG 才真的可见
+    ('  ~LogMessage() {\n    if (fatal_) {\n      std::cerr << stream_.str() << std::endl;',
+     '  ~LogMessage() {\n    std::cerr << stream_.str() << std::endl;  // TMAC_SA_VISIBLE\n'
+     '    if (fatal_) {'),
+]
+applied = []
+for old, new in subs:
+    if old in s:
+        s = s.replace(old, new)
+        applied.append(old.strip()[:40])
+if s != orig:
     open(p, 'w', encoding='utf-8').write(s)
-    print('  dmlc shim 已改：LOG(FATAL) → 抛异常（不再 abort）；LOG(WARNING) → 可见（原来是 NullStream）')
+    print('  dmlc shim 已改 %d 处：%s' % (len(applied), ' / '.join(applied)))
 else:
-    print('  dmlc shim 已是改过的版本')
+    print('  dmlc shim 已是目标状态（FATAL→抛异常、WARNING/DLOG 可见）')
 PY
 if [ -f "$TMAC_KER/kernels.cc" ]; then
   cp "$TMAC_KER/kernels.cc" "$L/tmac/lib/kernels.cc"

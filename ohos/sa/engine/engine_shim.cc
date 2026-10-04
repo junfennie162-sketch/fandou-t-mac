@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <mutex>
@@ -121,6 +122,14 @@ extern "C" LutEngine* lut_engine_load(const char* model_path, int n_threads, int
     return nullptr;
   }
   try {
+    // t-mac 的 kcfg 路径解析有个上游宏坑：GGML 侧用默认构造（kcfg 路径留空）→
+    // get_kcfg_file("") **优先读环境变量 TMAC_KCFG_FILE**，否则回落到编译期的
+    // STR(TMAC_KCFG_FILE)；而 STR/QUOTE 双重展开要求宏是"裸 token"，历史上我们把它定义成
+    // 带引号的字符串 → 展开后字符串里多出两个引号 → 文件打不开 → INIReader 0 个段落
+    // → 所有形状查表 miss（实测 blk.0.attn_q.weight 查 m6400_k3200 得到 bm=0）→ LOG(FATAL)。
+    // 这里直接设环境变量（优先级最高）彻底绕开；编译期宏已同步改成裸 token。
+    setenv("TMAC_KCFG_FILE", "/system/etc/lut_sa/kcfg.ini", 1);
+
     // 准入检查：形状表对不上就直接拒绝，别让 ggml-tmac 的 LOG(FATAL) 把 SA 进程打掉
     {
       char why[512] = {0};
@@ -133,6 +142,33 @@ extern "C" LutEngine* lut_engine_load(const char* model_path, int n_threads, int
     Trace("load: backend_init");
     llama_backend_init();  // 幂等
     llama_log_set(LogCapture, nullptr);
+
+    // 诊断：把引擎实际读到的 kcfg 段落名打出来（段名对不上时，查表必然失败）
+    {
+      FILE* kf = std::fopen("/system/etc/lut_sa/kcfg.ini", "r");
+      int secs = 0;
+      std::string names;
+      if (kf != nullptr) {
+        char l[256];
+        while (std::fgets(l, sizeof(l), kf) != nullptr) {
+          if (l[0] == '[') {
+            ++secs;
+            if (secs <= 4) {
+              std::string one(l);
+              while (!one.empty() && (one.back() == '\n' || one.back() == '\r')) {
+                one.pop_back();
+              }
+              names += one;
+              names += " ";
+            }
+          }
+        }
+        std::fclose(kf);
+      }
+      char kbuf[480];
+      std::snprintf(kbuf, sizeof(kbuf), "load: kcfg sections=%d [%s]", secs, names.c_str());
+      Trace(kbuf);
+    }
 
     llama_model_params mp = llama_model_default_params();
     mp.use_mmap = true;  // 966 MB 权重走 mmap：不必一次性读进堆，页缓存按需装填
