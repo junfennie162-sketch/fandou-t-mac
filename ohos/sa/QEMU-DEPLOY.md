@@ -237,8 +237,29 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
   （`quota: model<=1MB (quota: model 966 MB > limit 1 MB …)`）
 - 并发这块目前**天然串行**（单引擎 + 一把锁，调用方排队），所以"并发配额"暂不需要；
   会话数配额要等多会话（共享权重、各自 context）落地才有意义 → 进 PLAN 的 Next
-- 判据（下一轮冷启动取证，`evidence/48-*`）：`[8a]` 上限 1MB + 966MB 模型 → 拒绝且 SA 存活；
-  `[8b]` 删配置 → 重新 `ErrCode=0`
+**实测结论（`evidence/48-sa-quota.txt`，QEMU 冷启动）**：两条判据全过 ✓
+- `[8a]` `model_mb=1` + 966MB 模型 → **`LoadModel ErrCode=22 (0 ms)`**（瞬时拒绝，一个字节都没读进来），
+  SA 存活（随后 `SelfTest ErrCode=0`、`GetMetrics ErrCode=0`）
+- `[8b]` 删掉 `quota.txt` → **`LoadModel ErrCode=0 (325 ms)`**（模型在页缓存里，所以很快）→ 恢复
+- `GetMetrics` 里的配额行两种状态都可见：`quota: model<=1MB (quota: model 965 MB > limit 1 MB (文件 …))` /
+  `quota: model<=1MB (quota: ok)`
+- 无回退：同轮 t-mac 模型 `LoadModel ErrCode=0 (6793 ms)`、`determinism/non-constant` 都 yes、
+  `[7a/7b/7c]` 仍全过、`robustness summary: bad=0`
+- 小瑕疵（不影响判据）：`g_lastQuotaNote` 初值是 `(未判定)`，拼出来会多一层括号 —— 后续顺手清一下
+
+### S6 侦察（系统级执行器的靶子与接口，2026-10-05）
+
+- **靶子现成**：本镜像 `/system/app/` 里有 `com.ohos.settings.*`、`com.ohos.camera`、`com.ohos.contacts`、
+  `com.ohos.distributedmusicplayer`、`com.example.distributedcalc` 等可启动应用 → **"打开设置"可以直接当端到端判据**。
+- **接口**：`foundation/ability/ability_runtime/interfaces/inner_api/ability_manager/include/ability_manager_client.h`，
+  内检 kit 目标 `"${ability_runtime_innerkits_path}/ability_manager:ability_manager"`（external_deps 写法待确认，
+  grep 现有组件即可）；`libabilityms.z.so` 是否在镜像里要单独确认。
+- **S6-1 范围（第一增量）**：SA 增加 `ExecuteAction(action, arg, out)`，先只支持 `start_ability`
+  （`Want{bundleName, abilityName}` → `AbilityManagerClient::StartAbility`），并且
+  ① 只允许 Tier-A/白名单调用方；② 目标 bundle 必须在 `/data/lut_sa/actions_allow.txt` 里（默认预置 `com.ohos.settings`）
+  → 动作执行从第一天就带白名单边界。
+- **风险**：给 SA 链上 ability 内检 kit 可能带出一大串依赖（编译期才知道）。若链不上，回退方案要如实写清
+  （例如把"执行动作"落到一个系统应用侧，而不是 SA 自己执行），不许假装通过。
 
 ### 往「系统能力级」还差什么（按优先级）
 

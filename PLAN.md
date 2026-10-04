@@ -68,8 +68,8 @@
 | **S2** | STA-2 接口鲁棒性：`--stress` bad=0 | ✅ | `evidence/41-sa-robustness-sta2.txt` |
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
-| **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | 🚧 S5-1 调用方准入 ✅ 实测（evidence/47）；S5-2 配额已落地（静态编译通过），待冷启动验证 | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | ⏳ | "打开设置"端到端跑通 |
+| **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | ⏳ 侦察已完成（靶子与接口见账本「S6 侦察」节） | S6-1：`ExecuteAction(start_ability)` + 动作白名单 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,17 +78,21 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S5-2 冷启动验证 + S5 收口（evidence/48）**
-  1. 跑 `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/48-sa-quota.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-     （取证脚本已加 `[8]` 两小步；本轮已把配额代码编进库，静态编译通过、库 2,035,880 字节）
-  2. 判据：`[8a]` 上限 1MB + 966MB 模型 → `LoadModel ErrCode=22` 且 SA 存活（后续 `SelfTest` 仍 0）；
-     `[8b]` 删 `/data/lut_sa/quota.txt` → 重新 `ErrCode=0`；并确认 `GetMetrics` 里有 `quota: model<=1MB (…)`
-     与 `[7a/7b/7c]` 仍全过、`robustness bad=0`、t-mac 模型 `LoadModel` 0。
-  3. 收口：把「第三方接入示例」写成文档（`ohos/sa/INTEGRATION.md`）：一个系统集成方怎么调 6901 ——
-     取 proxy（samgr）→ 权限/准入要求（uid 档位 + 白名单 + 配额）→ 六个方法的最小用法与错误码含义 →
-     `TMAC_KER_OVERRIDE`/`allow_uids.txt`/`quota.txt` 三个运维旋钮。**不要**写成"应用商店里的第三方 App 能直接调"
-     （平台边界：三方不能注册 SA、也不保证能拿到系统 SA 的 IDL proxy —— 见账本平台边界那节）。
-  4. 做完这两件，S5 收口 → 下一档进 S6（系统级执行器：自然语言意图 → 结构化动作 → 启动 Ability）。
+- **S6-1：让 SA 也能「执行系统级动作」——先做结构化动作 `start_ability`（不碰自然语言）**
+  1. 先确认能力集探测：`ability_manager_client.h` 的内检 kit external_deps 写法（`grep -rn '"ability_runtime:ability_manager"' /src/ohos | head`）、
+     以及镜像里有没有 `libabilityms.z.so` / 对应的 client 库（`ls /src/ohos/out/x86_64_virt/packages/phone/images/../system/lib64 | grep -iE "abilityms|ability_manager"`，
+     或挂 system.img 看）。
+  2. IDL 加一个方法 `ExecuteAction([in] String action, [in] String arg, [out] String result)`：
+     - `action="start_ability"` + `arg="<bundleName>/<abilityName>"`（`abilityName` 可空 → 走 entry）
+     - 准入：复用 `InferAllowed`（Tier-A/白名单）；**再加动作白名单** `/data/lut_sa/actions_allow.txt`
+       （每行一个 bundle；默认预置 `com.ohos.settings`），不在表里 → 201
+     - 结果串返回 AMS 的真实 ErrCode 与描述（"动作有没有真执行"要能被调用方看见）
+  3. 客户端加 `--action start_ability com.ohos.settings` 模式；取证脚本加 `[9]` 两小步：
+     白名单内 → 返回 AMS 结果；白名单外（如 `com.ohos.camera`）→ 201 拒绝。
+  4. 判据：`[9a]` 允许的 bundle → ErrCode 与 AMS 返回一致（0 或 AMS 的明确错误码，都要如实记录）；
+     `[9b]` 未授权的 bundle → **201**；SA 存活、`[1]/[7]/[8]` 无回退。
+  5. 风险与回退（写进账本，不许糊）：给 SA 链 ability 内检 kit 可能带出一堆依赖；链不上就如实记录并给替代路径
+     （把动作执行放到系统应用侧，SA 只做"意图→动作"的产出），**不要**用 `system()` 之类旁路糊过去。
 
 **Next（排队）**
 
