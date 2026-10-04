@@ -66,6 +66,7 @@ ohos_shared_library("lut_sa") {
     "ipc:ipc_core",
     "c_utils:utils",
     "hilog:libhilog",
+    "ability_base:want",   # S6-1b 路线A：只要 Want 类型（先量它会不会拉 arkcompiler）
     # S6-1 的 AMS 直链**暂时去掉**：实测它的依赖闭包会把 arkcompiler 整个拖进来（FIX-64），
     # 换路径（Raw IPC 直调 AMS / 执行放到应用侧）后再按需加回，避免 SA 无谓地背上 JS 运行时
   ]

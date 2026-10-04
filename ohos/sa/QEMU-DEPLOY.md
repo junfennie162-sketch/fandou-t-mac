@@ -268,6 +268,9 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 '` 变成字符串里**真换行** → `error: missing terminating ' character` | 用 python 往代码里插 `'
 '` 这类**带反斜杠的字面量**时，转义层级（heredoc → python 字符串 → C++）很容易少一层 | 插带转义的字面量时用 `chr(10)/chr(13)` 显式构造，或插完 `sed -n` 打出来核对；本轮就是靠 `cat -A` 看出来的 |
 
+| **FIX-66** | 给 SA 加 ability 侧依赖时连踩三坑（**都记下，换 OH 版本还会遇到**） | ① `depend part ability_base, need set part deps info to .../bundle.json`（改了 bundle.json 仍报）；② `no member named 'SetAbilityName' in 'OHOS::AAFwk::Want'`；③ `unknown type name 'Want'; did you mean 'AAFwk::Want'` | ① 部件依赖检查器读的是**预加载阶段生成的** `out/preloader/<target>/compile_standard_whitelist.json` + `build_configs/parts_info/parts_deps.json`，**增量构建不会因 bundle.json 改动而重生成**；② 这个 OH 版本的 `Want` 用 `SetElementName(bundle, ability)`（`SetAbilityName` 已移除，`SetBundle` 还在）；③ `Want` 在 `OHOS::AAFwk` 命名空间下 | ① `bundle.json` 里正式声明 `ability_base`（**源侧正确**，全量构建后自动生效）＋当前增量构建临时把 `//vendor/ohemu/lutsa:lut_sa` 加进 `compile_standard_whitelist.json` 的 `external_deps_bundle_add` 名单（OH 自带的放行机制）；② 用 `SetElementName(bundle, ability)`，只给 bundle 时用 `SetBundle`；③ 写 `AAFwk::Want` |
+| FIX-66b | 「Raw IPC 直调 AMS」的协议三件套（抄下来备用） | 需要不链内检 kit 就调 AMS（FIX-64 的绕法） | —— | **SA id `180`**、descriptor `u"ohos.aafwk.AbilityManager"`、`AbilityManagerInterfaceCode::START_ABILITY = 1001`；parcel 顺序 `WriteInterfaceToken → WriteParcelable(&want) → WriteInt32(userId) → WriteInt32(requestCode) → WriteUint64(specifiedFullTokenId)`，reply 读一个 `Int32`（抄自 `services/abilitymgr/src/ability_manager_proxy.cpp`）。**依赖很轻**：只加 `"ability_base:want"` 时干跑 28 个动作、**0 个 arkcompiler**（对比 FIX-64 的 `ability_manager` 会拉整个 ArkTS 运行时） |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

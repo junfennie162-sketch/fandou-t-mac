@@ -24,6 +24,13 @@
 #ifdef LUTSA_WITH_AMS
 #include "ability_manager_client.h"
 #include "want.h"
+#else
+// S6-1b 路线A：只 include Want（来自 ability_base，依赖很轻）—— 不碰 ability_manager 内检头
+#include "want.h"
+#include "iservice_registry.h"
+#include "if_system_ability_manager.h"
+#include "message_parcel.h"
+#include "iremote_object.h"
 #endif
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
 
@@ -150,6 +157,19 @@ long long LoadQuotaModelMb() {
 // S6-1 动作白名单：/data/lut_sa/actions_allow.txt（每行一个 bundle；存在且非空 → 只允许表内目标）
 //   默认预置 com.ohos.settings（"打开设置"是本环境的端到端靶子，镜像里确实有这个应用）
 const char* kActionsAllowFile = "/data/lut_sa/actions_allow.txt";
+
+// ---------------------------------------------------------------------------
+// S6-1b 路线A：**自己给 AMS 发 IPC**（不链 ability 内检 kit —— 它的依赖闭包会拖进 arkcompiler，FIX-64）。
+// 协议常量与 parcel 顺序**抄自 OH 源码**（换 OH 版本时要回来核对）：
+//   SA id       : ABILITY_MGR_SERVICE_ID = 180
+//   descriptor  : u"ohos.aafwk.AbilityManager"（ability_manager_interface.h DECLARE_INTERFACE_DESCRIPTOR）
+//   code        : AbilityManagerInterfaceCode::START_ABILITY = 1001
+//   parcel      : WriteInterfaceToken → WriteParcelable(&want) → WriteInt32(userId) → WriteInt32(requestCode)
+//                 → WriteUint64(specifiedFullTokenId)，reply 一个 Int32 返回码
+//                 （抄自 services/abilitymgr/src/ability_manager_proxy.cpp 的 StartAbility）
+constexpr int32_t kAmsSaId = 180;
+constexpr uint32_t kAmsStartAbilityCode = 1001;
+const char16_t kAmsDescriptor[] = u"ohos.aafwk.AbilityManager";
 std::string g_lastActionNote = "(未执行)";
 
 void LoadActionsAllow(std::vector<std::string>& out, bool* whitelist_mode) {
@@ -400,7 +420,7 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
     }
 
 #ifdef LUTSA_WITH_AMS
-    Want want;
+    AAFwk::Want want;   // Want 在 OHOS::AAFwk 命名空间下
     want.SetBundle(bundle);
     if (!ability.empty()) {
         want.SetAbilityName(ability);
@@ -414,12 +434,49 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
     // 如实回传 AMS 的结果：受理=0；AMS 拒绝就把它的错误码原样带给调用方（不美化）
     return ams == 0 ? ERR_OK : ERR_INVALID_VALUE;
 #else
-    // 策略这半边是通的（准入 + 动作白名单都过了），但执行链路还没接上 → **如实报失败**，
-    // 不许假装"已执行"（FIX-64 的收尾在下一轮：Raw IPC 直调 AMS 或把执行放到应用侧）
-    result = "policy-ok: start_ability " + arg +
-             "（执行链路未启用：AMS 内检依赖闭包过大，见 FIX-64 / PLAN 的 S6-1b）";
+    // 路线A：Raw IPC 直调 AMS（策略已在上面通过：准入 + 动作白名单）
+    sptr<ISystemAbilityManager> samgr =
+        SystemAbilityManagerClient::GetInstance().GetSystemAbilityManager();
+    sptr<IRemoteObject> ams = (samgr != nullptr) ? samgr->GetSystemAbility(kAmsSaId) : nullptr;
+    if (ams == nullptr) {
+        result = "start_ability " + arg + " -> 拿不到 AMS(SA 180)（samgr 未就绪或 AMS 未启动）";
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+
+    AAFwk::Want want;   // Want 在 OHOS::AAFwk 命名空间下
+    if (!ability.empty()) {
+        want.SetElementName(bundle, ability);   // 这个 OH 版本没有 SetAbilityName；用 SetElementName
+    } else {
+        want.SetBundle(bundle);                 // 只给 bundle → 让 AMS 解析入口 Ability
+    }
+    MessageParcel data;
+    MessageParcel reply;
+    MessageOption opt(MessageOption::TF_SYNC);
+    if (!data.WriteInterfaceToken(kAmsDescriptor) || !data.WriteParcelable(&want) ||
+        !data.WriteInt32(-1) /*userId: -1 = 默认用户*/ || !data.WriteInt32(0) /*requestCode*/ ||
+        !data.WriteUint64(0) /*specifiedFullTokenId*/) {
+        result = "start_ability " + arg + " -> parcel 写入失败（协议与 OH 版本不符？见 FIX-66）";
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+    const int32_t ret = ams->SendRequest(kAmsStartAbilityCode, data, reply, opt);
+    if (ret != 0) {
+        char b[192];
+        snprintf(b, sizeof(b), "start_ability %s -> SendRequest ret=%d（AMS 侧无响应/被拦）", arg.c_str(),
+                 static_cast<int>(ret));
+        result = b;
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+    const int32_t amsErr = reply.ReadInt32();
+    char b[256];
+    snprintf(b, sizeof(b), "start_ability %s -> AMS ErrCode=%d%s", arg.c_str(),
+             static_cast<int>(amsErr), amsErr == 0 ? "（已受理）" : "（AMS 拒绝/失败，见 AMS 日志）");
+    result = b;
     g_lastActionNote = result;
-    return ERR_INVALID_VALUE;
+    // 如实回传 AMS 的返回码：受理=0；拒绝原样带回（不美化）
+    return amsErr == 0 ? ERR_OK : ERR_INVALID_VALUE;
 #endif
 }
 

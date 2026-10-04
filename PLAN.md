@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 S6-1 的**策略半边已落地并静态编译通过**（准入 + 动作白名单 + 客户端 + 取证 [9]）；执行链路被 FIX-64 挡住（AMS 内检依赖闭包拖进 arkcompiler） | S6-1b：Raw IPC 直调 AMS 或执行放应用侧 |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 **路线A 已实现并静态编译通过**（Raw IPC 直调 AMS：`ability_base:want` 轻依赖 + 协议常量照抄，库 2,045,816 字节）；执行结果待冷启动验证 | 见 §三 Now |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,25 +78,23 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b：把"执行"这半边接上（两条路选一条，先做便宜的）**
-  - **上一轮已完成（别重做）**：IDL 的 `ExecuteAction(action, arg, result)`、准入（`InferAllowed`）、
-    动作白名单 `/data/lut_sa/actions_allow.txt`（默认只放 `com.ohos.settings`）、结果回传与
-    `last_action` 诊断字段、客户端 `--action start_ability <arg>`、取证脚本 `[9]` 三小步 —— **都已静态编译通过**
-    （库 2,042,376 字节）。AMS 直链被 `#ifdef LUTSA_WITH_AMS` 隔开，未启用时如实返回失败。
-  - **本轮路线 A（首选，最省）**：**不链 ability 内检 kit，自己发 IPC 给 AMS**：
-    1. 先量依赖：只加 `"ability_base:want"`（**不加** `ability_runtime:ability_manager`）→ 看 `ninja` 会不会又去编 arkcompiler
-       （判据：`ps` 里不出现 `arkcompiler/runtime_core`）。若不拉，`Want` 就能用，序列化照 OH 源码抄。
-    2. 从 OH 源码读出 AMS 的对外协议三件套：`ABILITY_MGR_SERVICE_ID`（SA id）、
-       `IAbilityManager` 的 `descriptor`、`START_ABILITY` 的 transaction code（在
-       `foundation/ability/ability_runtime/services/abilitymgr/include/ability_manager_interface.h` 或
-       `interfaces/inner_api/ability_manager/include/ability_manager_interface.h` 里）→ 硬编码进我们的实现并注明出处。
-    3. 实现：`GetSystemAbilityManager()->GetSystemAbility(ABILITY_MGR_SERVICE_ID)` → `remote->SendRequest(code, data, reply)`
-       （parcel 里按 AMS 的 StartAbility 顺序写：`Want`(Marshalling) + requestCode + callerToken…**逐个字段照源码抄**）。
-    4. 判据（`[9a]`）：动作白名单允许 `com.ohos.settings` 时，结果串里出现 **AMS 的真实返回**；
-       若 AMS 拒绝，把它的 ErrCode 原样带回（**别美化**）。`[9b]` 未授权 bundle → 201；`[9c]` 删表恢复。
-  - **路线 B（A 失败时）**：执行放应用侧 —— SA 只产出结构化动作 JSON（`{"action":"start_ability","bundle":…}`），
-    由 HAP（有完整 ability kit）执行并把结果回报。这条路分层更干净，但要先有个"接单"的应用组件。
-  - **纪律**：两条路都要**如实回传"到底执行了没有"**；不许用 `system()`/`exec` 之类旁路绕过 AMS。
+- **S6-1b 冷启动验证：把"真去执行"跑出证据（evidence/49）**
+  - **已实现（别重做）**：`ExecuteAction` 的**路线A**（Raw IPC 直调 AMS）已进库并静态编译通过：
+    只依赖 `"ability_base:want"`（干跑 28 个动作、0 个 arkcompiler ✓），SA id 180 / descriptor
+    `ohos.aafwk.AbilityManager` / code 1001 / parcel 顺序照抄 `ability_manager_proxy.cpp`，AMS 返回码
+    **原样回传**（`GetMetrics` 的 `last_action` 段可见）。
+  - **本轮就一件**：跑
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/49-sa-action-exec.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（三条 + 一个风险项）**：
+    1. `[9a]` 白名单允许 `com.ohos.settings` → 结果串里出现 **AMS 的真实返回**（`AMS ErrCode=…`）；
+       若 AMS 拒绝（例如它要求系统 app 权限），**把它的码原样记下**——那也是有价值的结论，
+       下一轮据此决定"补权限"还是"改走应用侧（路线B）"。
+    2. `[9b]` 未授权 bundle（`com.ohos.camera`）→ **201**（策略拒绝）。
+    3. `[9c]` 删掉动作白名单 → 回到默认（只放 settings）仍 受理；`[1]/[7]/[8]` 与 `robustness bad=0` 无回退。
+    4. **风险项（先看这个）**：新库多了 `NEEDED libwant.z.so`，镜像里它在 `/system/lib64/platformsdk/` 下 ——
+       若 SA 因为加载不到它而起不来（表现：`GetSystemAbility(6901)` 失败 / ps 里没有 lut_sa），
+       就把它也注入 `/system/lib64/`（或确认 loader 搜索路径），并在账本记 FIX-67。
+  - 若 1 判定 AMS 因权限拒绝：**下一轮走路线B**（SA 产出动作 JSON，由 HAP 侧执行）——计划的 Next 里已有。
 
 **Next（排队）**
 

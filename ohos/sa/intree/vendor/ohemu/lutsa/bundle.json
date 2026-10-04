@@ -19,7 +19,8 @@
         "samgr",
         "ipc",
         "c_utils",
-        "hilog"
+        "hilog",
+        "ability_base"
       ],
       "third_party": []
     },
