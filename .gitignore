@@ -179,3 +179,4 @@ local.properties
 .clangd
 .clang-tidy
 .clang-format
+ohos/sa/**/*.bak-*
