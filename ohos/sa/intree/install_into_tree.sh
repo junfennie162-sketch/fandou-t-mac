@@ -59,7 +59,18 @@ if [ "$(uname -m)" = "aarch64" ]; then
   TMAC_KER="$REPO_ROOT/deploy/tuned/aarch64-hf-bitnet-3b"
 else
   TMAC_INC="$REPO_ROOT/ohos/staging-x64/t-mac/include"
-  TMAC_KER="$REPO_ROOT/deploy/tuned/ohos-x64-bitnet-3b"
+  # ★ LUT 内核 + 形状表用 staging-x64 这一对（kfactor=16 / lut_scales_size=135,50）：
+  #   2026-10-05 实测（evidence/45）——同一份 bitnet-3b-tmac.gguf，用这对参数时
+  #   logits 正常、Generate 出真实文本且可复现（失败项 0）；改用 deploy/tuned/ohos-x64-bitnet-3b
+  #   那对（kfactor=8 / lut_scales_size=1）会**全 NaN**（evidence/44）。
+  #   两者 key 名相同、只有参数不同，所以"看起来能查到"但数值全错 —— 这类问题只有跑数值才现形。
+  TMAC_KER="$REPO_ROOT/ohos/staging-x64/t-mac/lib"
+fi
+# 实验旋钮：临时换一套 LUT 内核/形状表（比如试 staging 那份 kfactor=16 的）
+#   TMAC_KER_OVERRIDE=<dir with kernels.cc + kcfg.ini + kernels.h>
+if [ -n "${TMAC_KER_OVERRIDE:-}" ]; then
+  TMAC_KER="$TMAC_KER_OVERRIDE"
+  echo "  ⚠ 用 TMAC_KER_OVERRIDE 指定的内核目录: $TMAC_KER"
 fi
 L=$DST/llama
 rm -rf "$L"

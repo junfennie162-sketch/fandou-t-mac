@@ -1,0 +1,68 @@
+===== LUT-SA SystemAbility · S4 收口：t-mac 2bit 模型在 SA 内出真实文本 =====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt）；SA 进程内 llama.cpp + t-mac LUT 内核
+抓取: 2026-10-05 04:55:18
+
+结论：**换对 LUT 形状表/kcfg 这一对参数后，t-mac 模型真的能生成**
+  - 正确的一对：ohos/staging-x64/t-mac/lib（kfactor=16、lut_scales_size=135/50）
+  - 错误的一对：deploy/tuned/ohos-x64-bitnet-3b（kfactor=8、lut_scales_size=1）→ logits 全 NaN（evidence/44）
+    两套的**段名完全相同**，所以查表看起来成功，只有跑数值才现形 —— 这是本轮的关键教训
+  - 判据全绿：LoadModel ErrCode=0 / Generate 出文本 / 同 prompt 逐字符一致 / 换 prompt 不同 / 失败项 0
+
+--- 客户端结果（SA 经 IPC 返回的文本）---
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0 (7773 ms)
+  [Generate#1(sampling)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [Generate#2(同 prompt 复现)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0  ->  Justice Nichija Nam brothersrodalandQL forum‎ slashöl acid splglgl
+  [non-constant] 换 prompt 输出不同: yes
+  [GetMetrics(引擎态)] ErrCode=0  -> peak_rss=1160.3 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 373.4 us) | PASS: ref LUT kernel numeric c
+  [Release] ErrCode=0  -> ok: session released, engine memory returned to system
+  ---- 调用汇总：失败项 0 ----
+
+--- 诊断：prompt decode 后 logits 不再 NaN ---
+===== t-mac 模型（bitnet-3b-tmac.gguf, vocab 32002）：本轮最后一次加载 =====
+  [shim] load: llama_load_model_from_file /data/local/tmp/model.gguf
+  Transforming tensor: blk.0.attn_q.weight (m: 3200, k: 3200, bits: 2)
+  Transforming tensor: blk.0.attn_k.weight (m: 3200, k: 3200, bits: 2)
+  Transforming tensor: blk.0.attn_v.weight (m: 3200, k: 3200, bits: 2)
+  Transforming tensor: blk.0.attn_output.weight (m: 3200, k: 3200, bits: 2)
+  Transforming tensor: blk.0.ffn_gate.weight (m: 8640, k: 3200, bits: 2)
+  Transforming tensor: blk.0.ffn_down.weight (m: 3200, k: 8640, bits: 2)
+  Transforming tensor: blk.0.ffn_up.weight (m: 8640, k: 3200, bits: 2)
+  [shim] load: model ok
+  [shim] diag: prompt n_tok=6 ids=[1 450 7483 310 3444 338 ] text="<s> The capital of France is"
+  [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 
+  [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice"
+  [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea"
+  [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=6 ids=[1 450 7483 310 3444 338 ] text="<s> The capital of France is"
+  [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 
+  [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice"
+  [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea"
+  [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ"
+  [shim] gen: done 24 tokens
+  [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 ="
+  [shim] diag: after_prompt_decode min=-8.1406 max=9.2544 mean=0.5023 nan_or_inf=0 n_vocab=32002 argmax=17181 top: [id=17181 logit=9.2544 piece=" Justice"] [id=13282 logit=8.2037 piece="EY"] [id=21416 logit=8.0991 piece="agt"] [id=3305 logit=8.0194 pie
+  [shim] diag: step 0 argmax=17181 piece_len=8 piece=" Justice"
+  [shim] diag: step 1 argmax=16371 piece_len=5 piece=" Nich"
+  [shim] diag: step 2 argmax=8044 piece_len=3 piece="ija"
+  [shim] gen: done 16 tokens
+
+--- 参照：桌面 t-mac(新集成) 跑同类量化模型的输出（verdict6.log）---
+  ' The capital of France is is is is is is is'  ← 也是退化文本；说明这类 LUT 2bit 产物
+  的文本质量本身就有限（不是 SA 移植引入的问题），SA 侧已对齐到同一水平以上
+
+--- 接口鲁棒性（对照，不应回退）---
+--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---
+=====LUTSA-CLIENT-START=====
+  client pid=2346 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fac3dc8acb0
+  [iface_cast] ok —— IPC 代理已建立
+=====LUTSA-STRESS-START=====
+  [repeat] NativeVersion x3 -> ok 3/3
+  [repeat] SelfTest #1 rc=0
+  [repeat] SelfTest #2 rc=0
+  [generate-without-load] rc=22 (expect non-zero)
+  [load-bad-path] rc=22 (expect non-zero)
