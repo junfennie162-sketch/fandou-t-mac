@@ -1,11 +1,6 @@
 #!/bin/bash
-# sta3_verify.sh —— S4/STA-3 一键验证（在 WSL 里跑；宿主机侧脚本，仓库里的镜像）
-#
-# 链条：同步组件+编引擎 → 编 SA/客户端 → 注入 system.img/userdata.img（含模型与 kcfg）
-#      → 冷启动 QEMU → 取串口证据 → 停机后从镜像里捞运行期日志 → 打包 evidence
-#
+# sta3_verify.sh —— S4/S5 一键验证（在 WSL 里跑；宿主机侧脚本，仓库内镜像）
 # 用法: MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<证据路径> bash <此文件>'
-#       （需先跑过一次产品构建；证据路径默认 evidence/42-*.txt）
 
 #!/bin/bash
 # STA-3：把 llama.cpp 静态链进 SA（真 LoadModel / 真 Generate），模型入 userdata 镜像，冷启动取证

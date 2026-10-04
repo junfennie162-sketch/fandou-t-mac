@@ -13,9 +13,11 @@
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <vector>
 
 #include "hilog/log.h"
+#include "ipc_skeleton.h"   // S5-1：取调用方 uid/tokenId
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
 
 namespace OHOS {
@@ -29,6 +31,87 @@ uint64_t g_session = kInvalidSession;   // 简化：单会话；多会话表见 
 // 最近一次 SelfTest 的详情：stub 在 ErrCode!=0 时不回传结果串，
 // 而本 SA 的 hilog 在 guest 里抓不到 → 借 GetMetrics（能通）把详情带出去
 std::string g_lastSelfTest = "(selftest not run yet)";
+
+// ---------------------------------------------------------------------------
+// S5-1 调用方身份与准入（谁能调、调到哪一档）
+//
+// 档位设计（先把"地基"立住，后面再细化）：
+//   Tier-A 系统/特权 uid（root 0 / system 1000 / shell 2000 / OH 内部服务 uid < 10000）
+//          → 全部方法可用（只读 + 推理）
+//   Tier-B 其余（典型是第三方应用 uid ≥ 10000）
+//          → 默认只允许只读方法（NativeVersion / GetMetrics）；LoadModel / Generate /
+//            SelfTest / Release 这些"要占内存、要算力"的方法返回 201 ERR_PERMISSION_DENIED
+//   ▸ 运维/实验开关：/data/lut_sa/allow_uids.txt 存在且非空 → **白名单模式**，只认表里的 uid
+//     （这样在没有第二个 uid 可用的 QEMU 环境里也能验证"拒绝"这条路：把 root 排除即可）
+//
+// 真实部署的下一步（写进 PLAN）：注册一个 ohos.permission.LUT_SA_INFER（system_grant）给系统应用，
+// Tier-B 走"应用申请权限 + 配额"的路子；这里先用 uid + 白名单把门立起来，语义与拒绝码先固定下来。
+constexpr int32_t kErrPermissionDenied = 201;  // OH: ERR_PERMISSION_DENIED
+const char* kAllowUidsFile = "/data/lut_sa/allow_uids.txt";
+std::string g_lastCaller = "(none)";
+int g_allow_count = -1;   // -1 = 默认档位模式，>=0 = 白名单模式（表内条数）
+
+bool IsPrivilegedUid(uint32_t uid) {
+    return uid == 0 || uid == 1000 || uid == 2000 || uid < 10000;
+}
+
+// 读白名单；返回 true 表示"白名单模式生效"
+bool LoadAllowList(std::vector<uint32_t>& out) {
+    FILE* f = fopen(kAllowUidsFile, "r");
+    if (f == nullptr) {
+        return false;
+    }
+    char line[64];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        char* end = nullptr;
+        const unsigned long v = strtoul(line, &end, 10);
+        if (end != line) {
+            out.push_back(static_cast<uint32_t>(v));
+        }
+    }
+    fclose(f);
+    return !out.empty();
+}
+
+// 记录调用方 + 判定是否允许"推理类"方法
+bool InferAllowed(const char* method) {
+    const uint32_t uid = static_cast<uint32_t>(IPCSkeleton::GetCallingUid());
+    const uint64_t token = static_cast<uint64_t>(IPCSkeleton::GetCallingTokenID());
+    char buf[128];
+    snprintf(buf, sizeof(buf), "uid=%u token=%llu last_method=%s", uid,
+             static_cast<unsigned long long>(token), method);
+    g_lastCaller = buf;
+
+    std::vector<uint32_t> allow;
+    if (LoadAllowList(allow)) {
+        g_allow_count = static_cast<int>(allow.size());
+        for (uint32_t u : allow) {
+            if (u == uid) {
+                return true;
+            }
+        }
+        HILOG_ERROR(LOG_CORE, "[LutSa] %{public}s denied: %{public}s (whitelist mode, %{public}d uids)",
+                    method, g_lastCaller.c_str(), g_allow_count);
+        return false;
+    }
+    g_allow_count = -1;
+    if (!IsPrivilegedUid(uid)) {
+        HILOG_ERROR(LOG_CORE, "[LutSa] %{public}s denied: %{public}s (default tiers)", method,
+                    g_lastCaller.c_str());
+        return false;
+    }
+    return true;
+}
+
+std::string PolicyDesc() {
+    char b[96];
+    if (g_allow_count >= 0) {
+        snprintf(b, sizeof(b), "whitelist(%d uids in %s)", g_allow_count, kAllowUidsFile);
+    } else {
+        snprintf(b, sizeof(b), "default-tiers(uid 0/1000/2000/<10000 allowed)");
+    }
+    return std::string(b);
+}
 }  // namespace
 
 void LutSystemAbility::OnStart() {
@@ -73,6 +156,9 @@ ErrCode LutSystemAbility::NativeVersion(std::string &result) {
 }
 
 ErrCode LutSystemAbility::LoadModel(const std::string &path, int32_t threads, int32_t nCtx) {
+    if (!InferAllowed("LoadModel")) {   // S5-1 准入
+        return kErrPermissionDenied;
+    }
     if (g_session == kInvalidSession) {
         const ::tmac_sa::Status st = ::tmac_sa::CreateSession(&g_session);
         if (st != ::tmac_sa::Status::kOk) {
@@ -96,6 +182,9 @@ ErrCode LutSystemAbility::LoadModel(const std::string &path, int32_t threads, in
 
 ErrCode LutSystemAbility::Generate(const std::string &prompt, int32_t nPredict, double temp,
                                    int32_t topK, std::string &result) {
+    if (!InferAllowed("Generate")) {    // S5-1 准入
+        return kErrPermissionDenied;
+    }
     if (g_session == kInvalidSession) {
         return ERR_INVALID_VALUE;
     }
@@ -133,11 +222,16 @@ ErrCode LutSystemAbility::GetMetrics(std::string &result) {
              static_cast<double>(peak_kb) / 1024.0, static_cast<unsigned long long>(g_session), kLutSaId,
              g_lastSelfTest.c_str());
     // STA-3：引擎状态（含 llama.cpp 日志尾巴）搭这条能通的通道带出去
-    result = std::string(buf) + " | " + ::tmac_sa::EngineInfo();
+    // S5-1：顺带把"最近一次调用方身份 + 当前准入策略"也带出去（只读方法，无需准入）
+    result = std::string(buf) + " | caller: " + g_lastCaller + " | policy: " + PolicyDesc() +
+             " | " + ::tmac_sa::EngineInfo();
     return ERR_OK;
 }
 
 ErrCode LutSystemAbility::SelfTest(std::string &result) {
+    if (!InferAllowed("SelfTest")) {    // S5-1 准入
+        return kErrPermissionDenied;
+    }
     if (g_session == kInvalidSession) {
         const ::tmac_sa::Status st = ::tmac_sa::CreateSession(&g_session);
         if (st != ::tmac_sa::Status::kOk) {
@@ -165,6 +259,9 @@ ErrCode LutSystemAbility::SelfTest(std::string &result) {
 }
 
 ErrCode LutSystemAbility::Release(std::string &result) {
+    if (!InferAllowed("Release")) {     // S5-1 准入
+        return kErrPermissionDenied;
+    }
     if (g_session != kInvalidSession) {
         (void) ::tmac_sa::ReleaseSession(g_session);
         g_session = kInvalidSession;

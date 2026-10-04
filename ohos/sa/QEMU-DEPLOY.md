@@ -202,6 +202,31 @@ LUTSA_FORCE_ENGINE=1 bash intree/build_engine.sh /src/ohos /src/ohos/vendor/ohem
 判据（`evidence/42-sa-real-inference-sta3.txt`）：`LoadModel` ErrCode=0 且引擎日志带出 `CPU buffer 462.96 MiB`；
 `Generate` 出文本且**同 prompt 两次一致 / 换 prompt 不同**；`GetMetrics` 带 `engine=ready`。
 
+### S5-1 调用方准入（「谁能调、调到哪一档」的第一版）
+
+设计（先把门立起来，语义与拒绝码固定下来，后面再细化）：
+
+| 档位 | 谁 | 能用什么 |
+|---|---|---|
+| **Tier-A** 系统/特权 | uid `0`(root) / `1000`(system) / `2000`(shell) / OH 内部服务（uid < 10000） | 全部方法（只读 + 推理） |
+| **Tier-B** 其余（典型是第三方应用，uid ≥ 10000） | 默认只允许**只读**方法：`NativeVersion` / `GetMetrics`；`LoadModel` / `Generate` / `SelfTest` / `Release` 返回 **`201 ERR_PERMISSION_DENIED`** |
+| 白名单覆盖（运维/实验） | 文件 `/data/lut_sa/allow_uids.txt` 存在且非空 | **白名单模式**：只认表里的 uid；用于线上定向授权，也用于在没有第二个 uid 的 QEMU 环境里验证"拒绝"这条路 |
+
+实现要点（`ohos/sa/component/lut_sa_ability.cpp`）：
+- `IPCSkeleton::GetCallingUid()` / `GetCallingTokenID()` 取调用方身份；每次调用把 `uid/token/last_method` 记进
+  全局 `g_lastCaller`，经 **`GetMetrics`**（只读通道）带出去 → 证据里能直接看到"谁调的、当时策略是什么"。
+- `InferAllowed()` 是唯一判定点：先看白名单文件（每次调用重读，改策略不用重启 SA），再落默认档位。
+- 拒绝路径给 `201`，并写 `HILOG_ERROR`（hilog 在本环境抓不到，所以主要还是靠 GetMetrics 那条通道）。
+
+**下一步（真实部署口径）**：注册 `ohos.permission.LUT_SA_INFER`（`system_grant`）给系统应用走权限申请；
+Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发）"。本版先把 uid 门与拒绝码定下来，
+配额与权限名进 S5-2。
+
+判据（下一轮冷启动取证，`evidence/47-*`）：
+- `[7a]` 默认档位 → `SelfTest ErrCode=0`、`失败项 0`
+- `[7b]` 白名单只放 uid 12345 → `SelfTest ErrCode=201`、`失败项 ≥1`（其余只读方法仍 0）
+- `[7c]` 删文件恢复 → 重新放行（证明策略**每次调用都重读**，不用重启 SA）
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

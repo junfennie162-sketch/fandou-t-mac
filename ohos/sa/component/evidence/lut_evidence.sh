@@ -76,6 +76,18 @@ mkdir -p /data/local/tmp 2>/dev/null
 
   echo "--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---"
   /system/bin/lut_sa_client --stress
+
+  echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
+  rm -f /data/lut_sa/allow_uids.txt 2>/dev/null
+  mkdir -p /data/lut_sa 2>/dev/null
+  echo "[7a] 默认档位（root 属特权 uid）→ 期望 SelfTest 放行、失败项 0"
+  /system/bin/lut_sa_client
+  echo "[7b] 写白名单只放 uid 12345（root 不在内）→ 期望 SelfTest 返回 201、失败项 ≥1"
+  echo "12345" > /data/lut_sa/allow_uids.txt
+  /system/bin/lut_sa_client
+  echo "[7c] 删掉白名单恢复默认档位 → 期望重新放行（证明策略每次调用都重读）"
+  rm -f /data/lut_sa/allow_uids.txt
+  /system/bin/lut_sa_client
   echo "#####LUT-EV-END#####"
 } > $F 2>&1
 
