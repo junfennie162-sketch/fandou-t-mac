@@ -6,10 +6,14 @@
 
 #include "lut_kernel_ref.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <sys/stat.h>
+#include <vector>
 
 #include "hilog/log.h"
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
@@ -28,6 +32,13 @@ std::string g_lastSelfTest = "(selftest not run yet)";
 }  // namespace
 
 void LutSystemAbility::OnStart() {
+    // 诊断通道（STA-3）：引擎的 GGML_ASSERT / LOG(FATAL) 都往 stderr 打，而 SA 进程的
+    // stderr 在 guest 里抓不到（hilog 里从来没有 [LutSa] 行）→ 落文件，由取证脚本/宿主机读走。
+    // 目录用 /data/lut_sa（注入镜像时建成 0777）：/data/local/tmp 对 system uid 只有 --x，
+    // SA 在里面根本建不了文件（踩过：文件压根没出现）。
+    (void) mkdir("/data/lut_sa", 0777);
+    (void) freopen("/data/lut_sa/rt_stderr.txt", "a", stderr);
+    (void) freopen("/data/lut_sa/rt_stdout.txt", "a", stdout);
     HILOG_INFO(LOG_CORE, "[LutSa] OnStart (SA_ID=%{public}d)", kLutSaId);
     const bool ok = Publish(this);   // 登记到 samgr：全系统可 LoadSystemAbility(6901)
     HILOG_INFO(LOG_CORE, "[LutSa] Publish: %{public}s", ok ? "ok" : "fail");
@@ -51,6 +62,7 @@ int32_t LutSystemAbility::OnSvcCmd(int32_t fd, const std::vector<std::u16string>
     dprintf(fd, "  mode      : %s\n", args.empty() ? "summary" : "detail");
     dprintf(fd, "  session   : %llu\n", static_cast<unsigned long long>(g_session));
     dprintf(fd, "  kernel    : m128-k3200 LUT (kcfg embedded), 2.44 bit/weight\n");
+    dprintf(fd, "  %s\n", ::tmac_sa::EngineInfo().c_str());
     dprintf(fd, "  lifecycle : OnStart=Publish -> samgr; OnStop=ReleaseSession\n");
     return 0;
 }
@@ -61,30 +73,46 @@ ErrCode LutSystemAbility::NativeVersion(std::string &result) {
 }
 
 ErrCode LutSystemAbility::LoadModel(const std::string &path, int32_t threads, int32_t nCtx) {
-    (void) threads;
-    (void) nCtx;
     if (g_session == kInvalidSession) {
         const ::tmac_sa::Status st = ::tmac_sa::CreateSession(&g_session);
         if (st != ::tmac_sa::Status::kOk) {
             return ERR_INVALID_VALUE;
         }
     }
-    const ::tmac_sa::Status st = ::tmac_sa::LoadModel(g_session, path);
-    return st == ::tmac_sa::Status::kOk ? ERR_OK : ERR_INVALID_VALUE;
+    // STA-3：threads / nCtx 不再吞掉，直接进引擎参数（<=0 时用 SessionConfig 的默认值）
+    const auto t0 = std::chrono::steady_clock::now();
+    const ::tmac_sa::Status st = ::tmac_sa::LoadModel(g_session, path, threads, nCtx);
+    const auto t1 = std::chrono::steady_clock::now();
+    if (st != ::tmac_sa::Status::kOk) {
+        HILOG_ERROR(LOG_CORE, "[LutSa] LoadModel fail(%{public}d): %{public}s",
+                    static_cast<int>(st), path.c_str());
+        return ERR_INVALID_VALUE;
+    }
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    HILOG_INFO(LOG_CORE, "[LutSa] LoadModel ok in %{public}.1f ms: %{public}s", ms,
+               ::tmac_sa::EngineInfo().c_str());
+    return ERR_OK;
 }
 
 ErrCode LutSystemAbility::Generate(const std::string &prompt, int32_t nPredict, double temp,
                                    int32_t topK, std::string &result) {
-    (void) nPredict;
-    (void) temp;
-    (void) topK;
     if (g_session == kInvalidSession) {
         return ERR_INVALID_VALUE;
     }
-    char buf[8192];
-    buf[0] = '\0';
-    const ::tmac_sa::Status st = ::tmac_sa::InferTokenBatch(g_session, prompt.c_str(), buf, sizeof(buf));
-    result = buf;
+    // 生成文本按 nPredict 估容量（每 token 最多几个字节，中文更宽），上限 256 KB：
+    // 原来固定 8 KB，长回复会被 snprintf 静默截断
+    const int want = nPredict > 0 ? nPredict : 24;
+    const size_t cap = std::min<size_t>(256 * 1024, 1024 + 64 * static_cast<size_t>(want));
+    std::vector<char> buf(cap, 0);
+    const auto t0 = std::chrono::steady_clock::now();
+    const ::tmac_sa::Status st =
+        ::tmac_sa::InferTokenBatch(g_session, prompt.c_str(), buf.data(), buf.size(), nPredict,
+                                   temp, topK);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    HILOG_INFO(LOG_CORE, "[LutSa] Generate %{public}.1f ms, %{public}zu bytes, status=%{public}d",
+               ms, std::strlen(buf.data()), static_cast<int>(st));
+    result.assign(buf.data());
     return st == ::tmac_sa::Status::kOk ? ERR_OK : ERR_INVALID_VALUE;
 }
 
@@ -104,7 +132,8 @@ ErrCode LutSystemAbility::GetMetrics(std::string &result) {
     snprintf(buf, sizeof(buf), "peak_rss=%.1f MB, session=%llu, sa_id=%d, selftest: %s",
              static_cast<double>(peak_kb) / 1024.0, static_cast<unsigned long long>(g_session), kLutSaId,
              g_lastSelfTest.c_str());
-    result = buf;
+    // STA-3：引擎状态（含 llama.cpp 日志尾巴）搭这条能通的通道带出去
+    result = std::string(buf) + " | " + ::tmac_sa::EngineInfo();
     return ERR_OK;
 }
 

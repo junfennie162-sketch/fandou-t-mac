@@ -5,6 +5,7 @@
 //
 // 用法：lut_sa_client [模型路径]    （不带参数时只做不需要模型的几项）
 // 输出：stdout（由开机取证服务重定向到文件再打到串口）
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -84,6 +85,10 @@ static int RunStress(sptr<ILutSa> proxy)
 }
 int main(int argc, char **argv)
 {
+    // stdout 重定向到文件时默认是块缓冲：客户端一旦卡在某个 IPC 调用上，已打印的行全留在缓冲区里
+    // （STA-3 踩过：文件里只剩 START，看不出卡在哪一步）→ 改行缓冲，每行都立刻落盘
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+    setvbuf(stderr, nullptr, _IOLBF, 0);
     const char *modelPath = (argc > 1) ? argv[1] : "";
 
     printf("=====LUTSA-CLIENT-START=====\n");
@@ -134,15 +139,43 @@ int main(int argc, char **argv)
 
     // 5) 需要模型路径的两项：有参数就带，没有就跳（无模型时预期返回错误码，但足以证明 IPC 通）
     if (modelPath[0] != '\0') {
+        const auto t0 = std::chrono::steady_clock::now();
         ErrCode e = proxy->LoadModel(modelPath, 4, 512);
-        printf("  [LoadModel(%s)] ErrCode=%d\n", modelPath, static_cast<int>(e));
+        const auto t1 = std::chrono::steady_clock::now();
+        printf("  [LoadModel(%s)] ErrCode=%d (%.0f ms)\n", modelPath, static_cast<int>(e),
+               std::chrono::duration<double, std::milli>(t1 - t0).count());
         if (e != 0) {
             fail += 1;
         }
+
+        // STA-3 真推理三连：
+        //  #1 采样（temp=0.8）+ #2 同 prompt 再来一次 → 文本必须完全一致（固定种子 + 每次清 KV）
+        //  #3 换 prompt + 贪心（temp=0）→ 文本必须不同（排除"返回常量串"这种假通过）
         r.clear();
-        ErrCode eg = proxy->Generate("The capital of France is", 8, 0.8, 40, r);
-        fail += Call("Generate", eg, r);
-        r.clear(); ErrCode er = proxy->Release(r); fail += Call("Release", er, r);
+        ErrCode eg = proxy->Generate("The capital of France is", 24, 0.8, 40, r);
+        fail += Call("Generate#1(sampling)", eg, r);
+        const std::string g1 = r;
+
+        r.clear();
+        ErrCode eg2 = proxy->Generate("The capital of France is", 24, 0.8, 40, r);
+        fail += Call("Generate#2(同 prompt 复现)", eg2, r);
+        const bool same = (!g1.empty() && g1 == r);
+        printf("  [determinism] 两次同 prompt 输出一致: %s\n", same ? "yes" : "no");
+        if (!same) {
+            fail += 1;
+        }
+
+        r.clear();
+        ErrCode eg3 = proxy->Generate("2 + 2 =", 16, 0.0, 40, r);
+        fail += Call("Generate#3(贪心/换 prompt)", eg3, r);
+        const bool differ = (!r.empty() && r != g1);
+        printf("  [non-constant] 换 prompt 输出不同: %s\n", differ ? "yes" : "no");
+        if (!differ) {
+            fail += 1;
+        }
+
+        r.clear(); ErrCode em = proxy->GetMetrics(r);  fail += Call("GetMetrics(引擎态)", em, r);
+        r.clear(); ErrCode er = proxy->Release(r);     fail += Call("Release", er, r);
     } else {
         printf("  [LoadModel/Generate/Release] 跳过（未给模型路径）\n");
     }

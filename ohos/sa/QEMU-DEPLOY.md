@@ -148,6 +148,12 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 
 | **FIX-51** | 端侧形态选择（**平台边界**） | HAP 装 HarmonyOS 模拟器报 `code:9568344 install parse profile prop check error`；BMS 真因 `ProcessBundleInfoByPrivilegeCapability: not allow use privilege extension` | **`AppServiceExtensionAbility` 是 privilege extension，第三方应用不允许声明**——想在应用侧做"独立进程 + 对外跨进程服务"，这条平台边界与"零售系统不让第三方注册 SA"同源 | 已从 `module.json5` 注释掉该扩展；端侧改用**应用进程内跑引擎**（自测/基准自动执行写 hilog），或后续用 `childProcessManager` 起独立子进程。**判据**：模拟器上 `hdc install` 成功 + `hilog` 出现 `KERNEL-SELFTEST ... PASS` |
 | FIX-52 | build-profile 版本号格式（API ≥ 26） | 写 `"5.0.0(12)"` → `00306042 Specification Limit Violation`；写 `"26"` → `00308018 api version parameter is illegal` | DevEco 26 的规则：**API 10–25 用 `"5.0.0(12)"` 带括号格式，API ≥ 26 必须写纯版本号 `"26.0.0"`**；且 `targetSdkVersion` 不能留空字符串 | 两个字段都写 `"26.0.0"` |
+| **FIX-53** | 预编译 `.a` 链不进 SA（STA-3 的关键坑） | 把 `ohos/hap/prebuilt/x86_64/{libllama.a,libggml.a}` 加进 BUILD.gn 后，`ld.lld: error: undefined symbol: std::__n1::basic_string<…>::assign(char const*)`（几十个） | **两套工具链的 libc++ ABI 命名空间不同**：那对 `.a` 由 DevEco SDK 编（`CMakeCache` 里 `CMAKE_CXX_COMPILER_AR=D:/DevEco Studio/sdk/...`），引用 `std::__n1::*`（`_ZNSt4__n11…`）；而 OH 源码树的 libc++ 是 `std::__h::*`（`_ZNSt3__h1…`，见 `prebuilts/clang/.../lib/x86_64-linux-ohos/libc++.so`）。**同名函数、不同命名空间 → 永远链不上**（"能不能被 lld-15 读"其实早就能读：`llvm-nm` 退出码 0、`ld.lld -r --whole-archive` 合并成功 —— 账本上一版对这个风险的判断是错的） | **同一份源码用 OH 树自己的 clang 重编**（`intree/build_engine.sh`）：参数照抄 DevEco 成功构建的 `compile_commands.json`（`-DGGML_USE_TMAC` 等），只换工具链 → ABI 自然一致。判定：`.so` 从 98,752 → 2,014,512 字节，`nm -D` 里 157 个 `llama_*` |
+| **FIX-54** | 引擎没法在 GN 里编（`throw` 撞 `-fno-exceptions`） | 引擎源码加进 `ohos_static_library` 后：`error: cannot use 'throw' with exceptions disabled`（llama.cpp 有 110 处 `throw`） | OH 标准系统的 GN 工具链对所有 C++ 目标强制 `-fno-exceptions`；且 GN 模板**不暴露 `configs`**（`configs += ["//build/config/compiler:exceptions"]` 报 `Undefined identifier`）；只写 `cflags_cc = ["-fexceptions"]` 也没用 —— GN 把 target 自己的 flags 排在 config 的 flags **之前**，后面的 `-fno-exceptions` 照样赢 | 引擎**在 GN 之外**编：`intree/build_engine.sh` 用 OH 的 clang 直接编成 `libllama_engine.a`（带 `-fexceptions`），GN 只 `lib_dirs/libs` 链接它。实测：C 文件也要带 `-fexceptions`（clang 在 C 模式下默认 `nounwind`，异常穿不过 `ggml.c` 的栈帧） |
+| **FIX-55** | 引擎与业务层之间的异常边界 | 业务层（GN 编，`-fno-exceptions`）不能出现 `try/catch`；引擎又会 `throw` | —— | 加一层 **`engine/engine_shim.{h,cc}`**：`extern "C"` 的不透明句柄接口（`lut_engine_load/generate/free/n_ctx/last_log`），所有异常在内层捕获并转成错误码 + 错误串；业务层完全不碰 llama 的 C++ 类型。**好处**：换引擎不动业务层，`SaveCall`（`-fno-exceptions`）合法 |
+| **FIX-56** | 「为什么 SA 死了」看不见（诊断通道） | 客户端拿到 `ErrCode=29189`（`ERR_DEAD_OBJECT`），但 hilog 里从来没有 `[LutSa]` 行、guest 里也没有 dmesg/backtrace | SA 进程的 stdout/stderr 在 guest 里抓不到 | ① `OnStart` 里 `freopen` 把 SA 的 stdout/stderr 落到 `/data/lut_sa/rt_{stdout,stderr}.txt`（**注意 `/data/local/tmp` 对 system uid 只有 `--x`，建不了文件 → 注入镜像时另建 `/data/lut_sa` 0777**）；② 引擎壳每个阶段打 `[shim] load:/gen:` 标记。**证据**：`Failed to find kcfg. Abort transforming` 就是从这条通道读到的（一次就定位到真因） |
+| **FIX-57** | 客户端"卡住"看不出卡在哪 | 取证文件里只有 `=====LUTSA-CLIENT-START=====`，后面的行全在缓冲区里（stdout 重定向到文件时是块缓冲） | —— | `main()` 开头 `setvbuf(stdout, nullptr, _IOLBF, 0)`；取证脚本再往串口打 `#####LUT-EV-STEP-n#####` 标记，另加"QEMU 停机后从 userdata 镜像里捞文件"的通道（不依赖 guest 脚本跑完） |
+| **FIX-58** | 一份不匹配的模型把 SA 打死 | t-mac 2bit 模型加载时 `ggml-tmac.cpp` 查不到形状参数表 → `LOG(FATAL)` → `abort()`（shim 里改成抛异常后，仍因跨 C 栈帧触发 `libc++abi: terminating due to uncaught exception`）→ SA 进程死亡 → 客户端只看到 `29189` | 查表失败在**引擎内部**，业务层无从预防 | ① dmlc shim 的 `LOG(FATAL)` 由 `abort()` 改为 `throw`（`install_into_tree.sh` 里打补丁）、`LOG(WARNING)` 从 `NullStream` 改为可见（原实现把警告吞了，根本看不到是哪个张量）；② 更关键：**加载前做模型准入检查**（`engine/gguf_admission.cc`）：自己按 gguf 格式读出量化张量形状，与 `kcfg.ini` 比对，不匹配就带原因拒绝，引擎根本不碰该文件。**实测**：`LoadModel` 从「8 s 后打死进程」变成 **36 ms 返回 `ErrCode=22`，SA 存活**，且报出缺哪些形状 |
 
 ## 六、SA 稳定性实测（把「系统能力」做实）
 
@@ -169,14 +175,36 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 ---- 调用汇总：失败项 0 ----
 ```
 
+### STA-3 引擎接入（怎么编、怎么装、怎么验）
+
+```bash
+# 0) 前提：先跑过一次产品构建（engine 编译要用 out/<target>/obj/third_party/musl 这个 sysroot）
+# 1) 同步组件进树（内含"编引擎"这一步）—— 幂等，源码/内核/flags 没变会跳过重编
+wsl -d ohbuild -u root -- bash /mnt/c/.../ohos/sa/intree/install_into_tree.sh /src/ohos /mnt/c/.../ohos/sa
+#    ├─ 2c：把 3rdparty/llama.cpp 的 src/ggml 源码（4.5 MB）+ t-mac 头 + LUT 内核拷进 vendor/ohemu/lutsa/llama/
+#    ├─ 2c：给 dmlc shim 打补丁（LOG(FATAL)→抛异常，LOG(WARNING)→可见）
+#    └─ 2d：intree/build_engine.sh 用 OH 自己的 clang 编出 prebuilt/libllama_engine.a
+# 2) 编 SA + 客户端（GN/ninja；引擎以 prebuilt 静态库身份被链接）
+cd /src/ohos/out/x86_64_virt && ninja -w dupbuild=warn ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client
+# 3) 注入镜像：SA 库+客户端+取证脚本 → system.img；模型 → userdata.img（宿主侧直接写 security.selinux=xattr，
+#    另建 /data/lut_sa 0777 供 SA 写运行期 stderr）
+# 4) 冷启动 + 取串口证据（脚本 intree/sta3_verify.sh，含"停机后从镜像里捞运行期日志/打包 evidence"两步）
+
+# 单独重编引擎（改了 flags 或想强制）：
+LUTSA_FORCE_ENGINE=1 bash intree/build_engine.sh /src/ohos /src/ohos/vendor/ohemu/lutsa
+```
+
+判据（`evidence/42-sa-real-inference-sta3.txt`）：`LoadModel` ErrCode=0 且引擎日志带出 `CPU buffer 462.96 MiB`；
+`Generate` 出文本且**同 prompt 两次一致 / 换 prompt 不同**；`GetMetrics` 带 `engine=ready`。
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |
 |---|---|---|---|
 | STA-1 | **稳定性** | ✅ 6/6 冷启动注册+调用成功 | 扩到更多轮次/并发调用 |
 | STA-2 | **接口鲁棒性** | ✅ 已做：客户端 `--stress` 用例（重复调用 ×3/×2、未加载就推理、坏路径加载、Release 后再调用、压力后自检），结果 `bad=0`、SA 未被搞崩；顺带修掉两个语义 bug：`LoadModel` 原先不看路径是否存在都返回成功、`Generate` 在未加载模型时也返回成功（FIX-48 放开暖机门槛的连带遗漏，已在 `InferTokenBatch` 补 `loaded` 检查） | 证据：`evidence/41-sa-robustness-sta2.txt` |
-| STA-3 | **让它真响应** | 业务层已接真·调优 LUT 内核，但推理路径仍返回结构化状态（代码注释：`Until llama is in-process`） | 把 `ohos/hap/prebuilt/x86_64/{libllama.a,libggml.a}` 链进 SA，实现真 `LoadModel`/`Generate`（真出 token）。**已知风险**：这两个 .a 由 DevEco 的新版 LLVM 编译，OH 侧 clang-15 的 llvm-nm 已读不了其对象（符号用 DevEco 的 llvm-nm 能正常读出），链接时需验证 lld-15 能否消费 |
-| STA-4 | **对外可调** | 客户端已能调（6 方法失败项 0），但没有权限模型与对外说明 | 定义"谁能调、调到哪一档"（uid/权限/会话配额）+ 写第三方接入示例 |
+| STA-3 | **让它真响应（SA 里真推理）** | ✅ 已做：SA 进程内静态链接 **从源码编的 llama.cpp（含 t-mac LUT 内核）**，`LoadModel` 真解析 gguf、`Generate` 真出 token。证据（`evidence/42-sa-real-inference-sta3.txt`）：`LoadModel` ErrCode=0 / 3.3–5.1 s（引擎日志带出 `CPU buffer 462.96 MiB`、`KV 6 MiB`、`graph nodes 846`）；`Generate` 出真实文本；**同 prompt 两次逐字符一致**（`determinism: yes`）、**换 prompt + 贪心输出不同**（`non-constant: yes`）；`GetMetrics` 带 `engine=ready n_ctx=512 threads=4 infer=3`；`Release` 后内存归还；`peak_rss=533 MB`（模型真驻留）。三条关键坑见 FIX-53/54/55，诊断通道见 FIX-56/57，韧性见 FIX-58 | ① **t-mac 2bit 模型还差匹配的 LUT 内核**：`bitnet-3b-tmac.gguf` 存的是**分开的** gate/up/q/k/v（形状 `m3200_k8640`/`m8640_k3200`/`m3200_k3200`），而现有 `kcfg.ini`+`kernels.cc` 只覆盖**融合后**的形状（`m17280_k3200`/`m6400_k3200`/`m6400_k8640`）→ 需用 t-mac 的 gen_kernels 按本模型形状重新生成（准入检查已把缺哪些形状列出来）；② 链式 KV 前缀复用（现在是每次调用清 KV，为了可复现） |
+| STA-4 | **对外可调** | 客户端已能调（6 方法失败项 0），但没有权限模型与对外说明；引擎侧已加"模型准入检查"（FIX-58） | 定义"谁能调、调到哪一档"（uid/权限/会话配额）+ 写第三方接入示例 |
 
 > 平台边界（已实测，决定主战场）：第三方应用**不能**注册 SA、**不能**声明 `AppServiceExtensionAbility`（privilege extension）。
 > 因此"系统能力"这条路只能在 **OpenHarmony 标准系统**里做（我们自己就是系统厂商），本节的实测都在该环境完成。

@@ -5,17 +5,24 @@
 #   /system/bin/lut_sa_client        （客户端：经 samgr 跨 IPC 调用 6901，用于自证可用）
 #   /system/profile/lut_sa.json      （SA 注册表：SA_ID=6901 → libtmac_sa.z.so）
 #   /system/etc/init/lut_sa.cfg      （init 启动项：exec /system/bin/sa_main /system/profile/lut_sa.json）
+#   /system/etc/lut_sa/kcfg.ini      （t-mac 查表内核的形状参数表：引擎在 guest 里运行时读）
 #   /system/etc/init/lut_evidence.cfg + /system/bin/lut_evidence.sh
 #                                    （开机一次性取证：把 SA 调用结果打到串口 ttyS0）
 #
-# 说明：业务内核（会话/工作区/瓦片计算/QoS）为自包含软件实现，不依赖预编译引擎，
-#       因此可在任意架构（x86_64 QEMU / arm64 真机）上编进系统；引擎接入见 README。
+# 引擎形态（STA-3 定论）：**用 OH 树自己的 clang 编成静态库**（intree/build_engine.sh），
+#   GN 只负责把它链进 SA。两条实测教训：
+#   ① 仓库里那对预编译 libllama.a/libggml.a 是 DevEco SDK 工具链编的，引用 std::__n1::*，
+#      而 OH 源码树的 libc++ 用 std::__h::* —— ABI 命名空间不同，link 必然一堆 undefined。
+#   ② OH 标准系统的 GN 工具链对 C++ 强制 -fno-exceptions，而 llama.cpp 用 throw 报错；
+#      GN 模板又不暴露 configs（`configs += [...]` 报 "Undefined identifier"）→ 在 GN 里编不了。
+#   → 引擎（llama+ggml+t-mac 内核+engine_shim）在 GN 之外用同一套 OH clang 编成 .a，
+#     ABI 与 OH libc++ 一致；对 GN 而言就是一个普通 prebuilt 静态库。
 import("//build/ohos.gni")
 
 ohos_shared_library("lut_sa") {
   sources = [
     "src/lut_sa_ability.cpp",        # SystemAbility 绑定（OnStart→Publish / OnSvcCmd dump）
-    "src/lut_sa.cpp",                # 业务内核：会话 / 加载 / 暖机 / 释放
+    "src/lut_sa.cpp",                # 业务内核：会话 / 加载 / 暖机 / 真推理（走引擎 C 接口）
     "src/session_workspace.cpp",
     "src/tile_compute.cpp",
     "src/tile_pool.cpp",
@@ -26,18 +33,10 @@ ohos_shared_library("lut_sa") {
   ]
   include_dirs = [ "include", "idl" ]
 
-  # ★ 真 · 调优 LUT 内核（来自仓库 deploy/tuned/<目标>/kernels.cc，按目标架构选一份）
-  #   x86_64 → AVX2 版本；arm64 → NEON 版本。分派器与参考内核同签名，
-  #   业务层通过 include/t-mac/kernels.h 调用，暖机形状 m=128 k=3200 b2 正好命中专用实现。
-  # 关掉两个警告：t-mac 的 kernels.cc 是代码生成的，里面的 *_C_shape 变量只在 assert() 里用，
-  # 而 release 构建带 -DNDEBUG 会把 assert 编成空语句 → 变量变成"未使用"，被 -Werror 拦下。
-  if (target_cpu == "x86_64") {
-    sources += [ "src/kernels_tuned.cpp" ]
-    cflags_cc = [ "-mavx2", "-Wno-unused-variable", "-Wno-unused-but-set-variable" ]
-  } else if (target_cpu == "arm64") {
-    sources += [ "src/kernels_tuned_arm64.cpp" ]
-    cflags_cc = [ "-Wno-unused-variable", "-Wno-unused-but-set-variable" ]
-  }
+  # 引擎静态库 + t-mac 调优内核（kernels.cc 编在同一份 .a 里，所以业务层不再单独编一份，
+  # 避免同名符号重复）。业务层通过 include/t-mac/kernels.h 的 inline 分派器调用 LUT 内核。
+  lib_dirs = [ "prebuilt" ]
+  libs = [ "llama_engine" ]
 
   # FIX-41: lut_sa_ability.h/.cpp 整体被 #ifdef TMAC_SA_SAMGR_BINDING 包着；
   # 不定义这个宏，SA 绑定（REGISTER_SYSTEM_ABILITY_BY_ID / OnStart→Publish）就整段不参与编译，
@@ -99,6 +98,15 @@ ohos_prebuilt_etc("lut_sa_init_cfg") {
   subsystem_name = "ohemu"
 }
 
+# t-mac 形状参数表：引擎（ggml_tmac）在 guest 里用 TMAC_KCFG_FILE 指到这里读
+ohos_prebuilt_etc("lut_sa_kcfg") {
+  source = "etc/lut_sa/kcfg.ini"
+  relative_install_dir = "lut_sa"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
 # 开机取证：本环境 hidumper 自身不可用（exit=3）、hdc 的 hdcd 被 watchdog 杀，
 # 所以用「一次性服务把结果打到串口 ttyS0」作为取证通道，脚本与 cfg 一起装机。
 ohos_prebuilt_etc("lut_evidence_cfg") {
@@ -123,6 +131,7 @@ group("lut_sa_package") {
     ":lut_sa_client",
     ":lut_sa_profile",
     ":lut_sa_init_cfg",
+    ":lut_sa_kcfg",
     ":lut_evidence_cfg",
     ":lut_evidence_sh",
   ]

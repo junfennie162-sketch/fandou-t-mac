@@ -50,6 +50,9 @@ self context: u:r:init:s0                                    ← SELinux 策略�
 | `22-console-evidence-ipc.txt` | guest 内取证输出（SELinux 状态 / 客户端调用结果 / ps / 文件 / hilog） |
 | `12-console-evidence.txt` | 早期取证输出（无策略时的对照） |
 | `04-ps-lut_sa.txt`、`05-files.txt` | 进程与文件快照 |
+| `40-sa-stability-6rounds.txt` | STA-1：6/6 轮冷启动全绿 |
+| `41-sa-robustness-sta2.txt` | STA-2：`--stress` 鲁棒性用例 `bad=0` |
+| `42-sa-real-inference-sta3.txt` | **STA-3：SA 进程内真推理**（真 `LoadModel` + 真出 token + 可复现 + 模型准入拒绝 + 引擎运行期日志） |
 
 ## 六、真 · 调优 LUT 内核已接入（本节为最新一轮）
 
