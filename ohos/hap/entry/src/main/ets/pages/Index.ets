@@ -66,6 +66,7 @@ struct Index {
   @State extStatus: string = '未连接（引擎在独立进程 lut_engine）';
   @State extResult: string = '';
   @State extOk: boolean = false;
+  @State kernelResult: string = '';
   private bgReleaseTimer: number = -1;   // hysteresis: release only after staying backgrounded
   scroller: Scroller = new Scroller();
 
@@ -80,6 +81,8 @@ struct Index {
     // 便于在没有 hdc / 没有 UI 交互的环境（如 QEMU 镜像）里用串口取证。
     this.extCall('connect').then(() => {
       this.extCall('selftest');
+      // 扩展拿不到（第三方不允许特权扩展）也照样在应用进程内跑内核自测
+      this.runLocalKernelCheck();
     });
     // The app sandbox is the only place this process may read the model from on HarmonyOS
     // (/data/local/tmp is blocked by SELinux). chmod it so `hdc file send` can push the file in.
@@ -124,6 +127,30 @@ struct Index {
 
   // One rolling console log, with a timestamped separator per operation — so the load report
   // and each generation report stay distinguishable instead of overwriting each other.
+  /**
+   * 本进程内核自测：不管扩展可不可用，都在应用进程里直接跑一遍 native 内核，写 hilog 取证。
+   * 背景：HarmonyOS 把 AppServiceExtensionAbility 判为 privilege extension，第三方应用
+   * 不允许声明（模拟器实测 BMS 报 "not allow use privilege extension"），
+   * 所以端侧引擎实际就跑在应用进程里；这一步给出可取证的内核级证据。
+   */
+  private runLocalKernelCheck(): void {
+    try {
+      const st: string = tmac.selfTest();
+      hilog.info(0x0000, 'LUTSA_KERNEL', 'KERNEL-SELFTEST: %{public}s', st);
+      this.appendLog('内核自测（应用进程内）', st);
+      this.kernelResult = st;
+    } catch (e) {
+      hilog.error(0x0000, 'LUTSA_KERNEL', 'KERNEL-SELFTEST 异常: %{public}s', JSON.stringify(e));
+    }
+    try {
+      const bm: string = tmac.bench(200);
+      hilog.info(0x0000, 'LUTSA_KERNEL', 'KERNEL-BENCH: %{public}s', bm);
+      this.appendLog('内核基准（应用进程内）', bm);
+    } catch (e) {
+      hilog.error(0x0000, 'LUTSA_KERNEL', 'KERNEL-BENCH 异常: %{public}s', JSON.stringify(e));
+    }
+  }
+
   /** 跨进程调用引擎：connect / selftest / disconnect */
   private async extCall(mode: string): Promise<void> {
     try {

@@ -1,0 +1,5 @@
+-- 设备信息
+const.product.devicetype                 phone 
+const.ohos.apiversion                    26 
+const.product.software.version           emulator 7.0.0.107(SP8DEVC00E999R4P11) 
+const.product.model                      emulator 

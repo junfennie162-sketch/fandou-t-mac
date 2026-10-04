@@ -179,3 +179,66 @@ const out = await tmac.generateAsync('The capital of France is', 16, 0.8, 40);
 - ⚠️ `SignHap` 在本机失败（`Init keystore failed`，本地 keystore 的 JDK 版本问题）——
   这是**环境**问题，用 IDE 自动签名即可；不影响代码本身
 - ⏳ 真机点击跑通待你在设备上点一下（代码路径与 SDK 类型已全部按本机 SDK 校验通过）
+
+## 实测结果：HarmonyOS 模拟器（7.0.0 / API 26 / phone）
+
+设备：`DevEco Studio 自带模拟器`（`hdc list targets` → `127.0.0.1:5555`）
+
+| 环节 | 结果 |
+|---|---|
+| 构建 | ✅ `CompileArkTS` / `PackageHap` Finished |
+| 签名 | ✅ SDK 自带 **OH 测试链**在命令行签名（`verify-app: Verify success`），**HarmonyOS 模拟器认这份签名**，不必用 IDE 自动签名 |
+| 安装 | ✅ `hdc install -r lutsa-signed.hap` → `install bundle successfully`（图标出现在桌面） |
+| 启动 | ✅ `aa start -a EntryAbility -b com.fandou.lutsa` → `start ability successfully` |
+| 原生引擎 | ✅ `nativeVersion: LUT-SA native | x86_64 (AVX2, no FMA) | tfloat=4 B | kcfg embedded` |
+| **LUT 内核自测** | ✅ `KERNEL-SELFTEST: kernel m=128 k=3200 n=1 b=2 (x86_64 AVX2) | PASS: LUT kernel ran, zero-in => zero-out` |
+| **LUT 内核基准** | ✅ `KERNEL-BENCH: m=128 k=3200 n=1 b=2 | steps=200 | total=5.35 ms | avg=0.0267 ms` |
+
+> 自测/基准在应用启动时**自动执行**并写 hilog（tag `LUTSA_KERNEL`），无需点 UI；抓取：
+> ```bash
+> hdc shell hilog -x | grep -aE 'LUTSA|KERNEL-'
+> ```
+
+### ⚠️ 关键发现：AppServiceExtensionAbility 是特权扩展，第三方应用不能用
+
+最初把引擎包成 `AppServiceExtensionAbility`（想做成"独立进程 + 可被别的组件连"的系统服务化形态），
+在模拟器上装包被拒：
+
+```
+error: failed to install bundle. code:9568344 error: install parse profile prop check error.
+BMS 日志真因: bundle_install_checker.cpp:ProcessBundleInfoByPrivilegeCapability:1676
+              not allow use privilege extension
+```
+
+**HarmonyOS 把 `AppServiceExtensionAbility` 归为 privilege extension，普通第三方应用不允许声明**（这与"零售系统不让第三方注册 SystemAbility"是同一类平台边界）。
+所以 `module.json5` 里的 `extensionAbilities` **已注释掉**（原文保留在文件里，附原因说明），端侧引擎就跑在应用进程内。
+
+**可用的替代形态**（第三方应用能做、且有"系统协作"味道的）：
+
+| 方案 | 说明 |
+|---|---|
+| `childProcessManager` | 应用自己拉起**独立子进程**跑引擎（真进程隔离，模型与会话内存不占 UI 进程），但不能对外暴露成跨应用服务 |
+| `taskpool` / Worker | 同进程多线程，最轻；适合把推理放到后台线程 |
+| `backgroundTaskManager` | 长时任务保活（本项目已在用：切后台释放/回前台预热） |
+
+**结论**：第三方 App 能做到"引擎独立进程 + 生命周期受控"，但**做不到"对外提供系统级跨进程服务"**——那是系统应用/SA 的领域。这也是本项目"系统级形态"只有两条路的原因：真机侧走应用内进程隔离，系统侧走 OpenHarmony 标准系统里的 SA（见 `../sa/QEMU-DEPLOY.md`）。
+
+### 复现步骤（命令行，无需点 IDE）
+
+```bash
+# 1) 构建（SignHap 会因本机 keystore/JDK 失败，属预期，只要未签名包）
+cd ohos/hap && node "$DEVECO/tools/hvigor/bin/hvigorw.js" assembleHap --mode module -p product=default --no-daemon
+
+# 2) 用 OH 测试链签名（脚本在仓库 ohsign/ 下）
+bash <repo>/ohsign/build_and_sign.sh
+
+# 3) 装 + 起 + 取证
+hdc uninstall com.fandou.lutsa        # 若装过旧版（appId 不同会报 sign info inconsistent）
+hdc install -r lutsa-signed.hap
+hdc shell aa start -a EntryAbility -b com.fandou.lutsa
+hdc shell hilog -x | grep -aE 'LUTSA|KERNEL-'
+```
+
+> **版本号格式坑**：`build-profile.json5` 里 `compatibleSdkVersion`/`targetSdkVersion`：
+> API 10–25 用 `"5.0.0(12)"` 这种带括号的写法，**API ≥ 26 必须写纯版本号 `"26.0.0"`**（写错会报
+> `00306042 Specification Limit Violation` 或 `00308018 api version parameter is illegal`）。

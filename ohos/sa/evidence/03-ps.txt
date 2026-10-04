@@ -1,0 +1,4 @@
+-- 进程
+20020063      27951    138 1 00:02:01 ?     00:00:00 com.fandou.lutsa
+shell         29345    979 0 00:03:38 ?     00:00:00 sh -c ps -ef | grep -i fandou
+shell         29348  29345 1 00:03:38 ?     00:00:00 grep -i fandou

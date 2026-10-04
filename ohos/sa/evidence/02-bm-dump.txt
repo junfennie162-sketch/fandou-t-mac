@@ -1,0 +1,13 @@
+-- 包信息
+    "appId": "com.fandou.lutsa_BNtg4JBClbl92Rgc3jm/RfcAdrHXaM8F0QOiwVEhnV5ebE5jNIYnAx+weFRT3QTyUjRNdhmc2aAzWyi+5t5CoBM=",
+    "appIdentifier": "",
+        "appProvisionType": "release",
+                "versionName": ""
+                "versionName": ""
+            "versionName": ""
+        "codePath": "/data/app/el1/bundle/public/com.fandou.lutsa",
+        "isSystemApp": false,
+        "versionName": "1.0.0"
+                    "codePath": "",
+                    "deviceCapabilities": [],
+            "reqCapabilities": [],

@@ -146,6 +146,9 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 
 > **ArkTS/HAP 阶段的通用判据**：`hvigor ERROR: BUILD FAILED` 只说明"某个系统应用"没编过，真因永远在 `out/x86_64_virt/error.log` 里
 
+| **FIX-51** | 端侧形态选择（**平台边界**） | HAP 装 HarmonyOS 模拟器报 `code:9568344 install parse profile prop check error`；BMS 真因 `ProcessBundleInfoByPrivilegeCapability: not allow use privilege extension` | **`AppServiceExtensionAbility` 是 privilege extension，第三方应用不允许声明**——想在应用侧做"独立进程 + 对外跨进程服务"，这条平台边界与"零售系统不让第三方注册 SA"同源 | 已从 `module.json5` 注释掉该扩展；端侧改用**应用进程内跑引擎**（自测/基准自动执行写 hilog），或后续用 `childProcessManager` 起独立子进程。**判据**：模拟器上 `hdc install` 成功 + `hilog` 出现 `KERNEL-SELFTEST ... PASS` |
+| FIX-52 | build-profile 版本号格式（API ≥ 26） | 写 `"5.0.0(12)"` → `00306042 Specification Limit Violation`；写 `"26"` → `00308018 api version parameter is illegal` | DevEco 26 的规则：**API 10–25 用 `"5.0.0(12)"` 带括号格式，API ≥ 26 必须写纯版本号 `"26.0.0"`**；且 `targetSdkVersion` 不能留空字符串 | 两个字段都写 `"26.0.0"` |
+
 > **ArkTS/HAP 阶段的通用判据**：`hvigor ERROR: BUILD FAILED` 只说明"某个系统应用"没编过，真因永远在 `out/x86_64_virt/error.log` 里
 > 的 `ERROR Code: <5 位>` 行（如 `10311006` = Kit 校验、`10505001` = 编译器找不到名字）。`entry` 模块的 "N ArkTS Linter Error"
 > 是**警告**，不阻断构（`entry` 模块 111 条 linter 警告仍 BUILD SUCCESSFUL）。
