@@ -1,5 +1,5 @@
 #!/bin/bash
-# sta3_verify.sh —— S4/S5 一键验证（在 WSL 里跑；宿主机侧脚本，仓库内镜像）
+# sta3_verify.sh —— 一键验证（在 WSL 里跑；宿主机侧脚本，仓库内镜像）
 # 用法: MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<证据路径> bash <此文件>'
 
 #!/bin/bash
@@ -151,6 +151,9 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo
   echo "--- [8] 配额（S5-2）：model_mb 上限 / 删配置恢复 ---"
   sed -n '/\[8\] 配额/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -36
+  echo
+  echo "--- [9] 系统级动作执行（S6-1b）：start_ability + 动作白名单 ---"
+  sed -n '/\[9\] 系统级动作执行/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -30
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null

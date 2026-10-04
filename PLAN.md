@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 **路线A 已实现并静态编译通过**（Raw IPC 直调 AMS：`ability_base:want` 轻依赖 + 协议常量照抄，库 2,045,816 字节）；执行结果待冷启动验证 | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 代码完备（Raw IPC 直调 AMS + 客户端 `--action`/`--load` + 取证 `[9]` 且已重排到前面），静态编译通过；**执行结果待冷启动验证** | 见 §三 Now |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,23 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b 冷启动验证：把"真去执行"跑出证据（evidence/49）**
-  - **已实现（别重做）**：`ExecuteAction` 的**路线A**（Raw IPC 直调 AMS）已进库并静态编译通过：
-    只依赖 `"ability_base:want"`（干跑 28 个动作、0 个 arkcompiler ✓），SA id 180 / descriptor
-    `ohos.aafwk.AbilityManager` / code 1001 / parcel 顺序照抄 `ability_manager_proxy.cpp`，AMS 返回码
-    **原样回传**（`GetMetrics` 的 `last_action` 段可见）。
-  - **本轮就一件**：跑
+- **S6-1b 冷启动验证（重跑，修完 FIX-67/68 后）→ evidence/49**
+  - **上一轮踩的两个坑已修**：① 取证服务有**时间预算**，脚本被掐在 `[7]`（现象：没有 `LUT-EV-END`）→ 分段已重排
+    （`0→0b→9→1→1b→…→7→8`）+ `[8]` 改用 `--load` 快模式；② 客户端 `--action` 模式上一轮**没落盘**
+    （提交里只有 1 行改动）→ 已补齐 `--action` 与 `--load` 两个模式，静态编译通过。
+  - **本轮就一件**：
     `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/49-sa-action-exec.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（三条 + 一个风险项）**：
-    1. `[9a]` 白名单允许 `com.ohos.settings` → 结果串里出现 **AMS 的真实返回**（`AMS ErrCode=…`）；
-       若 AMS 拒绝（例如它要求系统 app 权限），**把它的码原样记下**——那也是有价值的结论，
-       下一轮据此决定"补权限"还是"改走应用侧（路线B）"。
-    2. `[9b]` 未授权 bundle（`com.ohos.camera`）→ **201**（策略拒绝）。
-    3. `[9c]` 删掉动作白名单 → 回到默认（只放 settings）仍 受理；`[1]/[7]/[8]` 与 `robustness bad=0` 无回退。
-    4. **风险项（先看这个）**：新库多了 `NEEDED libwant.z.so`，镜像里它在 `/system/lib64/platformsdk/` 下 ——
-       若 SA 因为加载不到它而起不来（表现：`GetSystemAbility(6901)` 失败 / ps 里没有 lut_sa），
-       就把它也注入 `/system/lib64/`（或确认 loader 搜索路径），并在账本记 FIX-67。
-  - 若 1 判定 AMS 因权限拒绝：**下一轮走路线B**（SA 产出动作 JSON，由 HAP 侧执行）——计划的 Next 里已有。
+    （跑之前先 `bash intree/sta3_verify.sh` 的镜像已同步：本轮改了客户端与取证脚本，注入时自动带上）
+  - **判据（四看）**：
+    1. **先看有没有 `LUT-EV-END`** —— 没有就是又被掐了，先查时间预算（FIX-67），别急着下结论；
+    2. `[9a]` 允许的 `com.ohos.settings` → 结果串里出现 **`AMS ErrCode=…`**（AMS 的真实返回；
+       即使是拒绝码也要如实记下，那就是下一轮"补权限 or 走路线B"的依据）；
+    3. `[9b]` 未授权 bundle → **201**；`[9c]` 删表恢复；`[7]/[8]` 与 `robustness bad=0`、t-mac `LoadModel` 0 无回退；
+    4. `GetMetrics` 的 `last_action:` 段能看到最近一次动作的结论。
 
 **Next（排队）**
 

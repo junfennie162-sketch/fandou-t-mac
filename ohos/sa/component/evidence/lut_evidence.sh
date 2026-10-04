@@ -39,6 +39,15 @@ mkdir -p /data/local/tmp 2>/dev/null
     echo "  缺 $M（模型未注入镜像）"
   fi
 
+  echo "--- [9] 系统级动作执行（S6-1）：start_ability + 动作白名单 ---"
+  echo "[9a] 动作白名单放 com.ohos.settings → 期望 SA 真去调 AMS 并回传它的 ErrCode"
+  printf 'com.ohos.settings\n' > /data/lut_sa/actions_allow.txt
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings
+  echo "[9b] 未授权的目标（com.ohos.camera，不在白名单）→ 期望被策略拒绝（201）"
+  /system/bin/lut_sa_client --action start_ability com.ohos.camera
+  echo "[9c] 删掉动作白名单（回默认只放 com.ohos.settings）→ 期望恢复受理"
+  rm -f /data/lut_sa/actions_allow.txt
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings
   echo "--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---"
   echo "#####LUT-EV-STEP-2-client-start#####" > /dev/ttyS0
   /system/bin/lut_sa_client "$M"
@@ -92,20 +101,11 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "--- [8] 配额（S5-2）：可加载模型大小上限 ---"
   echo "[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活"
   echo "model_mb=1" > /data/lut_sa/quota.txt
-  /system/bin/lut_sa_client "$M" | head -16
+  /system/bin/lut_sa_client --load "$M"
   echo "[8b] 删掉配额配置 → 期望重新加载成功（ErrCode=0）"
   rm -f /data/lut_sa/quota.txt
-  /system/bin/lut_sa_client "$M" | head -16
+  /system/bin/lut_sa_client --load "$M"
 
-  echo "--- [9] 系统级动作执行（S6-1）：start_ability + 动作白名单 ---"
-  echo "[9a] 动作白名单放 com.ohos.settings → 期望 SA 真去调 AMS 并回传它的 ErrCode"
-  printf 'com.ohos.settings\n' > /data/lut_sa/actions_allow.txt
-  /system/bin/lut_sa_client --action start_ability com.ohos.settings
-  echo "[9b] 未授权的目标（com.ohos.camera，不在白名单）→ 期望被策略拒绝（201）"
-  /system/bin/lut_sa_client --action start_ability com.ohos.camera
-  echo "[9c] 删掉动作白名单（回默认只放 com.ohos.settings）→ 期望恢复受理"
-  rm -f /data/lut_sa/actions_allow.txt
-  /system/bin/lut_sa_client --action start_ability com.ohos.settings
   echo "#####LUT-EV-END#####"
 } > $F 2>&1
 

@@ -127,6 +127,46 @@ int main(int argc, char **argv)
         return bad == 0 ? 0 : 1;
     }
 
+    // S6-1：系统级动作执行 —— lut_sa_client --action <action> <arg>
+    if (argc > 2 && std::strcmp(argv[1], "--action") == 0) {
+        const std::string action = argv[2];
+        const std::string arg = (argc > 3) ? argv[3] : "";
+        printf("  [ExecuteAction(%s, %s)]\n", action.c_str(), arg.c_str());
+        std::string ar;
+        ErrCode ea = proxy->ExecuteAction(action, arg, ar);
+        printf("  [ExecuteAction] ErrCode=%d  -> %s\n", static_cast<int>(ea), ar.c_str());
+        std::string mr;
+        ErrCode em = proxy->GetMetrics(mr);
+        if (em == 0) {
+            const size_t q = mr.find("last_action:");
+            if (q != std::string::npos) {
+                printf("  [metrics] %s\n", mr.substr(q, 200).c_str());
+            }
+        }
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", ea == 0 ? 0 : 1);
+        return ea == 0 ? 0 : 1;
+    }
+
+    // 快模式：只做 加载 → 指标 → 释放（不生成），给取证脚本反复验证用，省时间
+    if (argc > 2 && std::strcmp(argv[1], "--load") == 0) {
+        const std::string path = argv[2];
+        printf("  [--load %s]\n", path.c_str());
+        ErrCode el = proxy->LoadModel(path, 4, 512);
+        printf("  [LoadModel] ErrCode=%d\n", static_cast<int>(el));
+        std::string mr;
+        ErrCode em = proxy->GetMetrics(mr);
+        if (em == 0) {
+            const size_t q = mr.find("quota:");
+            if (q != std::string::npos) {
+                printf("  [metrics] %s\n", mr.substr(q, 160).c_str());
+            }
+        }
+        ErrCode er = proxy->Release(mr);
+        printf("  [Release] ErrCode=%d\n", static_cast<int>(er));
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", el == 0 ? 0 : 1);
+        return el == 0 ? 0 : 1;
+    }
+
     int fail = 0;
     std::string r;
 
