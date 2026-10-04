@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     // （STA-3 踩过：文件里只剩 START，看不出卡在哪一步）→ 改行缓冲，每行都立刻落盘
     setvbuf(stdout, nullptr, _IOLBF, 0);
     setvbuf(stderr, nullptr, _IOLBF, 0);
-    const char *modelPath = (argc > 1) ? argv[1] : "";
+    const char *modelPath = (argc > 1 && std::strcmp(argv[1], "--action") != 0) ? argv[1] : "";
 
     printf("=====LUTSA-CLIENT-START=====\n");
     printf("  client pid=%d argc=%d\n", static_cast<int>(getpid()), argc);

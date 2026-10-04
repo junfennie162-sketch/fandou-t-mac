@@ -261,6 +261,13 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 - **风险**：给 SA 链上 ability 内检 kit 可能带出一大串依赖（编译期才知道）。若链不上，回退方案要如实写清
   （例如把"执行动作"落到一个系统应用侧，而不是 SA 自己执行），不许假装通过。
 
+| **FIX-64** | 「执行系统级动作」的依赖闭包炸弹：`ability_runtime:ability_manager` 会把 **arkcompiler 整个拖进来** | 给 SA 加上 `"ability_runtime:ability_manager"`（+`"ability_base:want"`）后，编译找不到 `ability_manager_client.h`；补了 include_dirs 后能编，但 **ninja 开始编译 `arkcompiler/runtime_core/static_core/compiler/optimizer/…`**（ArkTS 运行时静态库）→ 一个走 IPC 的系统能力不该背 JS 引擎，且构建时间从分钟级变成十几分钟还没完 | ① `ability_manager` 的 `config("ability_manager_public_config")` 自带 `visibility = [":*"]` 限制 → `external_deps` **只给链接、不传 include 路径**（这是"头找不到"的真因，不是依赖写错）；② 真正的问题是**内检 kit 的传递依赖闭包**（AMS 客户端 → ability_base/framework → arkcompiler） | 本版**先不直链**：`#ifdef LUTSA_WITH_AMS` 把 AMS 调用隔开、BUILD.gn 里去掉这两个依赖（保住"树能编"），未启用时 `ExecuteAction` **如实返回失败**并写明原因（不假装已执行）。已完成的部分照常可用：**准入 + 动作白名单 + 结果回传 + 客户端 `--action` + 取证 `[9]` 三段**（静态编译通过，库 2,042,376 字节）。下一轮走 S6-1b 的两条路：**A. Raw IPC 直调 AMS**（只按需 `Want` 序列化 + 从源码读出 AMS 的 descriptor/transaction code，零大依赖）；**B. 执行放应用侧**（SA 产出动作 JSON，由 HAP 执行） |
+| FIX-65 | 改了 `BUILD.gn` 不生效（FIX-41 老坑复发） | 给 BUILD.gn 加了 `include_dirs`/`external_deps` 后，编译行里**看不到新 include** | OH 的自动 gn 重生成不总生效（同 FIX-41） | 显式 `ninja -w dupbuild=warn -C <out> build.ninja`（已固化进 `wsl/build_sa.sh`）；判据：`ninja -t commands <target> \| tr ' ' '
+' \| grep -c ability` 应大于 0 |
+| FIX-65b | 打补丁把 C++ 字符字面量写坏了（工具踩坑，记着） | `s.back() == '
+'` 变成字符串里**真换行** → `error: missing terminating ' character` | 用 python 往代码里插 `'
+'` 这类**带反斜杠的字面量**时，转义层级（heredoc → python 字符串 → C++）很容易少一层 | 插带转义的字面量时用 `chr(10)/chr(13)` 显式构造，或插完 `sed -n` 打出来核对；本轮就是靠 `cat -A` 看出来的 |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

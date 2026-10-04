@@ -18,6 +18,13 @@
 
 #include "hilog/log.h"
 #include "ipc_skeleton.h"   // S5-1：取调用方 uid/tokenId
+// S6-1：AMS 客户端内检 kit 的**依赖闭包会把 arkcompiler 整个拖进来**（实测：ninja 开始编
+// arkcompiler/runtime_core/static_core/...，见 QEMU-DEPLOY.md FIX-64），对 SA 来说体积/耦合都不合适
+// → 本版先不直链；换路径（Raw IPC 或应用侧执行）后再用 -DLUTSA_WITH_AMS 打开
+#ifdef LUTSA_WITH_AMS
+#include "ability_manager_client.h"
+#include "want.h"
+#endif
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
 
 namespace OHOS {
@@ -137,6 +144,57 @@ long long LoadQuotaModelMb() {
     }
     fclose(f);
     return mb;
+}
+
+// ---------------------------------------------------------------------------
+// S6-1 动作白名单：/data/lut_sa/actions_allow.txt（每行一个 bundle；存在且非空 → 只允许表内目标）
+//   默认预置 com.ohos.settings（"打开设置"是本环境的端到端靶子，镜像里确实有这个应用）
+const char* kActionsAllowFile = "/data/lut_sa/actions_allow.txt";
+std::string g_lastActionNote = "(未执行)";
+
+void LoadActionsAllow(std::vector<std::string>& out, bool* whitelist_mode) {
+    out.clear();
+    *whitelist_mode = false;
+    FILE* f = fopen(kActionsAllowFile, "r");
+    if (f == nullptr) {
+        out.push_back("com.ohos.settings");   // 默认只放这一个
+        return;
+    }
+    char line[160];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        std::string s(line);
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) {
+            s.pop_back();
+        }
+        if (!s.empty()) {
+            out.push_back(s);
+        }
+    }
+    fclose(f);
+    if (!out.empty()) {
+        *whitelist_mode = true;
+    } else {
+        out.push_back("com.ohos.settings");
+    }
+}
+
+bool ActionTargetAllowed(const std::string& bundle, std::string* why) {
+    std::vector<std::string> allow;
+    bool wl = false;
+    LoadActionsAllow(allow, &wl);
+    for (const auto& a : allow) {
+        if (a == bundle) {
+            return true;
+        }
+    }
+    std::string list;
+    for (size_t i = 0; i < allow.size() && i < 8; ++i) {
+        list += allow[i];
+        list += " ";
+    }
+    *why = "bundle '" + bundle + "' 不在动作白名单里（当前允许: " + list +
+           (wl ? "，来自 " + std::string(kActionsAllowFile) : "，默认值") + "）";
+    return false;
 }
 
 uint64_t FileSizeBytes(const char* path) {
@@ -272,6 +330,7 @@ ErrCode LutSystemAbility::GetMetrics(std::string &result) {
     // STA-3：引擎状态（含 llama.cpp 日志尾巴）搭这条能通的通道带出去
     // S5-1：顺带把"最近一次调用方身份 + 当前准入策略"也带出去（只读方法，无需准入）
     result = std::string(buf) + " | caller: " + g_lastCaller + " | policy: " + PolicyDesc() +
+             " | last_action: " + g_lastActionNote +
              " | quota: model<=" + std::to_string(LoadQuotaModelMb()) + "MB (" + g_lastQuotaNote +
              ") | " + ::tmac_sa::EngineInfo();
     return ERR_OK;
@@ -305,6 +364,63 @@ ErrCode LutSystemAbility::SelfTest(std::string &result) {
     g_lastSelfTest = result;
     HILOG_INFO(LOG_CORE, "[LutSa] SelfTest: %{public}s", result.c_str());
     return (warm_ok && ref_ok) ? ERR_OK : ERR_INVALID_VALUE;
+}
+
+ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::string &arg,
+                                       std::string &result) {
+    if (!InferAllowed("ExecuteAction")) {   // S5-1 准入：Tier-A / 白名单
+        return kErrPermissionDenied;
+    }
+    if (action != "start_ability") {
+        result = "unsupported action '" + action + "'（本版只支持 start_ability）";
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+
+    // arg 形如 "<bundleName>" 或 "<bundleName>/<abilityName>"
+    std::string bundle = arg;
+    std::string ability;
+    const size_t slash = arg.find('/');
+    if (slash != std::string::npos) {
+        bundle = arg.substr(0, slash);
+        ability = arg.substr(slash + 1);
+    }
+    if (bundle.empty()) {
+        result = "arg 需要 <bundleName>[/<abilityName>]";
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+
+    std::string why;
+    if (!ActionTargetAllowed(bundle, &why)) {   // S6-1 安全边界
+        result = "denied: " + why;
+        g_lastActionNote = result;
+        HILOG_ERROR(LOG_CORE, "[LutSa] ExecuteAction denied: %{public}s", result.c_str());
+        return kErrPermissionDenied;
+    }
+
+#ifdef LUTSA_WITH_AMS
+    Want want;
+    want.SetBundle(bundle);
+    if (!ability.empty()) {
+        want.SetAbilityName(ability);
+    }
+    const ErrCode ams = AAFwk::AbilityManagerClient::GetInstance()->StartAbility(want);
+    char b[320];
+    snprintf(b, sizeof(b), "start_ability %s -> AMS ErrCode=%d %s", arg.c_str(),
+             static_cast<int>(ams), ams == 0 ? "(已受理)" : "(AMS 拒绝/失败，原因见 AMS 日志)");
+    result = b;
+    g_lastActionNote = result;
+    // 如实回传 AMS 的结果：受理=0；AMS 拒绝就把它的错误码原样带给调用方（不美化）
+    return ams == 0 ? ERR_OK : ERR_INVALID_VALUE;
+#else
+    // 策略这半边是通的（准入 + 动作白名单都过了），但执行链路还没接上 → **如实报失败**，
+    // 不许假装"已执行"（FIX-64 的收尾在下一轮：Raw IPC 直调 AMS 或把执行放到应用侧）
+    result = "policy-ok: start_ability " + arg +
+             "（执行链路未启用：AMS 内检依赖闭包过大，见 FIX-64 / PLAN 的 S6-1b）";
+    g_lastActionNote = result;
+    return ERR_INVALID_VALUE;
+#endif
 }
 
 ErrCode LutSystemAbility::Release(std::string &result) {

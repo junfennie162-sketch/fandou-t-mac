@@ -38,6 +38,10 @@ public:
     ErrCode GetMetrics(std::string &result) override;
     ErrCode SelfTest(std::string &result) override;
     ErrCode Release(std::string &result) override;
+
+    // S6-1：系统级动作执行（本版只支持 start_ability，且目标 bundle 必须在动作白名单里）
+    ErrCode ExecuteAction(const std::string &action, const std::string &arg,
+                          std::string &result) override;
 };
 }  // namespace OHOS
 

@@ -210,5 +210,43 @@ ErrCode LutSaProxy::Release(
     funcResult = Str16ToStr8(reply.ReadString16());
     return ERR_OK;
 }
+
+ErrCode LutSaProxy::ExecuteAction(
+    const std::string& action,
+    const std::string& arg,
+    std::string& funcResult)
+{
+    MessageParcel data;
+    MessageParcel reply;
+    MessageOption option(MessageOption::TF_SYNC);
+
+    if (!data.WriteInterfaceToken(GetDescriptor())) {
+        return ERR_INVALID_VALUE;
+    }
+    if (!data.WriteString16(Str8ToStr16(action))) {
+        return ERR_INVALID_DATA;
+    }
+    if (!data.WriteString16(Str8ToStr16(arg))) {
+        return ERR_INVALID_DATA;
+    }
+
+    sptr<IRemoteObject> remote = Remote();
+    if (!remote) {
+        return ERR_INVALID_DATA;
+    }
+    int32_t result = remote->SendRequest(
+        static_cast<uint32_t>(ILutSaIpcCode::COMMAND_EXECUTE_ACTION), data, reply, option);
+    if (FAILED(result)) {
+        return result;
+    }
+
+    ErrCode errCode = reply.ReadInt32();
+    if (FAILED(errCode)) {
+        return errCode;
+    }
+
+    funcResult = Str16ToStr8(reply.ReadString16());
+    return ERR_OK;
+}
 } // namespace LutSa
 } // namespace OHOS

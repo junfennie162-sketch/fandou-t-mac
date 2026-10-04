@@ -33,6 +33,23 @@ ohos_shared_library("lut_sa") {
   ]
   include_dirs = [ "include", "idl" ]
 
+  # S6-1：ability_manager 的内检头必须**显式加 include_dirs** —— 它的
+  # config("ability_manager_public_config") 带 visibility 限制（只给自己和几个测试路径），
+  # 所以 external_deps 只提供链接、不传 include 路径。下面这些路径是照抄它自己的 public_config：
+  include_dirs += [
+    "//foundation/ability/ability_runtime/interfaces/inner_api/ability_manager/include",
+    "//foundation/ability/ability_runtime/interfaces/inner_api/app_manager/include/appmgr",
+    "//foundation/ability/ability_runtime/interfaces/inner_api/dataobs_manager/include",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/ability/native",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/ability/ability_runtime",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/appkit/ability_runtime/context",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/appkit/app",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/appkit",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/appkit/dfr",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/ability/native/continuation/kits",
+    "//foundation/ability/ability_runtime/interfaces/kits/native/ability/native/continuation/distributed",
+  ]
+
   # 引擎静态库 + t-mac 调优内核（kernels.cc 编在同一份 .a 里，所以业务层不再单独编一份，
   # 避免同名符号重复）。业务层通过 include/t-mac/kernels.h 的 inline 分派器调用 LUT 内核。
   lib_dirs = [ "prebuilt" ]
@@ -49,6 +66,8 @@ ohos_shared_library("lut_sa") {
     "ipc:ipc_core",
     "c_utils:utils",
     "hilog:libhilog",
+    # S6-1 的 AMS 直链**暂时去掉**：实测它的依赖闭包会把 arkcompiler 整个拖进来（FIX-64），
+    # 换路径（Raw IPC 直调 AMS / 执行放到应用侧）后再按需加回，避免 SA 无谓地背上 JS 运行时
   ]
 
   # FIX-38: output_name 写 "libtmac_sa.z" 会被 OH 再补一层变成 libtmac_sa.z.z.so，

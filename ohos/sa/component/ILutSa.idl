@@ -5,4 +5,5 @@ interface OHOS.LutSa.ILutSa {
   String GetMetrics();
   String SelfTest();
   String Release();
+  String ExecuteAction([in] String action, [in] String arg);
 }

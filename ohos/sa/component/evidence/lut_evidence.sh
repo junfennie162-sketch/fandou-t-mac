@@ -96,6 +96,16 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "[8b] 删掉配额配置 → 期望重新加载成功（ErrCode=0）"
   rm -f /data/lut_sa/quota.txt
   /system/bin/lut_sa_client "$M" | head -16
+
+  echo "--- [9] 系统级动作执行（S6-1）：start_ability + 动作白名单 ---"
+  echo "[9a] 动作白名单放 com.ohos.settings → 期望 SA 真去调 AMS 并回传它的 ErrCode"
+  printf 'com.ohos.settings\n' > /data/lut_sa/actions_allow.txt
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings
+  echo "[9b] 未授权的目标（com.ohos.camera，不在白名单）→ 期望被策略拒绝（201）"
+  /system/bin/lut_sa_client --action start_ability com.ohos.camera
+  echo "[9c] 删掉动作白名单（回默认只放 com.ohos.settings）→ 期望恢复受理"
+  rm -f /data/lut_sa/actions_allow.txt
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings
   echo "#####LUT-EV-END#####"
 } > $F 2>&1
 
