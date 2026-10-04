@@ -222,10 +222,23 @@ LUTSA_FORCE_ENGINE=1 bash intree/build_engine.sh /src/ohos /src/ohos/vendor/ohem
 Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发）"。本版先把 uid 门与拒绝码定下来，
 配额与权限名进 S5-2。
 
-判据（下一轮冷启动取证，`evidence/47-*`）：
+**实测结论（`evidence/47-sa-caller-admission.txt`，QEMU 冷启动）**：三条判据全过 ✓
 - `[7a]` 默认档位 → `SelfTest ErrCode=0`、`失败项 0`
-- `[7b]` 白名单只放 uid 12345 → `SelfTest ErrCode=201`、`失败项 ≥1`（其余只读方法仍 0）
+- `[7b]` 白名单只放 uid 12345 → **`SelfTest ErrCode=201`**、`失败项 1`（只读的 `NativeVersion`/`GetMetrics` 仍 0）
 - `[7c]` 删文件恢复 → 重新放行（证明策略**每次调用都重读**，不用重启 SA）
+- 身份回传实测：`GetMetrics` 返回 `caller: uid=0 token=671903834 last_method=SelfTest | policy: whitelist(1 uids …)`
+  → 说明 `IPCSkeleton::GetCallingUid()/GetCallingTokenID()` 在本镜像里能拿到真实身份（不是恒 0 的假值）
+- 无回退：同轮 t-mac 模型 `LoadModel` ErrCode=0 / Qwen 正常 / `robustness summary: bad=0`
+
+### S5-2 配额（第一块：可加载模型大小上限）
+
+- 配置：`/data/lut_sa/quota.txt`（可选，**每次 LoadModel 重读**）：`model_mb=2048`（`<=0` = 不限制）
+- 行为：超限 → `LoadModel` 返回 `22`（ERR_INVALID_VALUE）+ 原因写进 diag/`GetMetrics`
+  （`quota: model<=1MB (quota: model 966 MB > limit 1 MB …)`）
+- 并发这块目前**天然串行**（单引擎 + 一把锁，调用方排队），所以"并发配额"暂不需要；
+  会话数配额要等多会话（共享权重、各自 context）落地才有意义 → 进 PLAN 的 Next
+- 判据（下一轮冷启动取证，`evidence/48-*`）：`[8a]` 上限 1MB + 966MB 模型 → 拒绝且 SA 存活；
+  `[8b]` 删配置 → 重新 `ErrCode=0`
 
 ### 往「系统能力级」还差什么（按优先级）
 

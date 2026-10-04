@@ -88,6 +88,14 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "[7c] 删掉白名单恢复默认档位 → 期望重新放行（证明策略每次调用都重读）"
   rm -f /data/lut_sa/allow_uids.txt
   /system/bin/lut_sa_client
+
+  echo "--- [8] 配额（S5-2）：可加载模型大小上限 ---"
+  echo "[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活"
+  echo "model_mb=1" > /data/lut_sa/quota.txt
+  /system/bin/lut_sa_client "$M" | head -16
+  echo "[8b] 删掉配额配置 → 期望重新加载成功（ErrCode=0）"
+  rm -f /data/lut_sa/quota.txt
+  /system/bin/lut_sa_client "$M" | head -16
   echo "#####LUT-EV-END#####"
 } > $F 2>&1
 

@@ -145,6 +145,12 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
     echo
     echo "--- [6] 接口鲁棒性 ---"
     sed -n '/\[6\] 接口鲁棒性/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -16
+  echo
+  echo "--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---"
+  sed -n '/\[7\] 调用方准入/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -40
+  echo
+  echo "--- [8] 配额（S5-2）：model_mb 上限 / 删配置恢复 ---"
+  sed -n '/\[8\] 配额/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -36
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null

@@ -1,0 +1,170 @@
+===== LUT-SA SystemAbility 真推理（STA-3）=====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt）; SA 进程内经 IPC 真跑 llama.cpp
+抓取: 2026-10-05 05:52:33
+
+--- 引擎形态 ---
+静态库 libllama_engine.a：llama.cpp + ggml + t-mac LUT 内核，用 OH 树自己的 clang 编
+（仓库里的预编译 libllama.a/libggml.a 是 DevEco 工具链编的，引用 std::__n1::*，
+ 而 OH libc++ 是 std::__h::* → ABI 不同，链不了；见 QEMU-DEPLOY.md FIX-53）
+
+--- [1] t-mac 2bit 模型（形状表不匹配 → 优雅失败，不再打死 SA）---
+--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---
+=====LUTSA-CLIENT-START=====
+  client pid=1892 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fa35ded5cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 288.4 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=8.4 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 288.4 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0 (7440 ms)
+  [Generate#1(sampling)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [Generate#2(同 prompt 复现)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0  ->  Justice Nichija Nam brothersrodalandQL forum‎ slashöl acid splglgl
+  [non-constant] 换 prompt 输出不同: yes
+  [GetMetrics(引擎态)] ErrCode=0  -> peak_rss=1164.1 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 288.4 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=Generate | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=ready n_ctx=512 threads=4 infer=3 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4)  | llama_log:  prompt decode [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 piece=" Book"] [id=6982 logit=6.9431 piece="Reader"] [shim] gen: sampling [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice" [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea" [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-8.1406 max=9.2544 mean=0.5023 nan_or_inf=0 n_vocab=32002 argmax=17181 top: [id=17181 logit=9.2544 piece=" Justice"] [id=13282 logit=8.2037 piece="EY"] [id=21416 logit=8.0991 piece="agt"] [id=3305 logit=8.0194 piece="ety"] [id=4492 logit=7.4252 piece="isf"] [shim] gen: sampling [shim] diag: step 0 argmax=17181 piece_len=8 piece=" Justice" [shim] diag: step 1 argmax=16371 piece_len=5 piece=" Nich" [shim] diag: step 2 argmax=8044 piece_len=3 piece="ija" [shim] gen: done 16 tokens 
+  [Release] ErrCode=0  -> ok: session released, engine memory returned to system
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+
+--- [1b] 标准 ggml 模型（Qwen2.5-0.5B q4_k_m）：真加载 + 真出 token ---
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+=====LUTSA-CLIENT-START=====
+  client pid=2108 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fb8b6fb1cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 253.3 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=1164.1 MB, session=2, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 253.3 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=absent n_ctx=0 threads=0 infer=3 model= | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4)  | llama_log:  prompt decode [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 piece=" Book"] [id=6982 logit=6.9431 piece="Reader"] [shim] gen: sampling [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice" [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea" [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-8.1406 max=9.2544 mean=0.5023 nan_or_inf=0 n_vocab=32002 argmax=17181 top: [id=17181 logit=9.2544 piece=" Justice"] [id=13282 logit=8.2037 piece="EY"] [id=21416 logit=8.0991 piece="agt"] [id=3305 logit=8.0194 piece="ety"] [id=4492 logit=7.4252 piece="isf"] [shim] gen: sampling [shim] diag: step 0 argmax=17181 piece_len=8 piece=" Justice" [shim] diag: step 1 argmax=16371 piece_len=5 piece=" Nich" [shim] diag: step 2 argmax=8044 piece_len=3 piece="ija" [shim] gen: done 16 tokens 
+  [LoadModel(/data/local/tmp/qwen.gguf)] ErrCode=0 (1962 ms)
+  [Generate#1(sampling)] ErrCode=0  ->  ____
+A. Paris
+B. London
+C. Vienna
+
+31.The capital of Australia is ____
+
+A
+  [Generate#2(同 prompt 复现)] ErrCode=0  ->  ____
+A. Paris
+B. London
+C. Vienna
+
+31.The capital of Australia is ____
+
+A
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0  ->  4 + 2 = 6
+\]
+
+Therefore, the sum of
+  [non-constant] 换 prompt 输出不同: yes
+  [GetMetrics(引擎态)] ErrCode=0  -> peak_rss=1164.1 MB, session=2, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 253.3 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=Generate | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=ready n_ctx=512 threads=4 infer=6 model=/data/local/tmp/qwen.gguf | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1961 ms (n_ctx=512 threads=4)  | llama_log: 315 9625 374 ] text="The capital of France is" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"] [shim] gen: sampling [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __" [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?" [shim] diag: step 2 argmax=32 piece_len=1 piece="A" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"] [shim] gen: sampling [shim] diag: step 0 argmax=220 piece_len=1 piece=" " [shim] diag: step 1 argmax=19 piece_len=1 piece="4" [shim] diag: step 2 argmax=488 piece_len=2 piece=" +" [shim] gen: done 16 tokens 
+  [Release] ErrCode=0  -> ok: session released, engine memory returned to system
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [2] ps ---
+root           132     1 0 05:51:32 ?     00:00:00 sh /system/bin/lut_evidence.sh
+root           135     1 0 05:51:32 ?     00:00:00 sh /system/bin/lut_demo.sh
+system         142     1 40 05:51:32 ?    00:00:17 lut_sa
+root          2317   132 0 05:52:15 ?     00:00:00 grep -i lut
+--- [3] 装机文件 ---
+-rwxr-xr-x 1 root root   28952 2026-10-05 05:51 /system/bin/lut_sa_client
+-rw-r--r-- 1 root root 2034168 2026-10-05 05:51 /system/lib64/libtmac_sa.z.so
+-rw-r--r-- 1 root root     276 2026-10-03 16:13 /system/profile/lut_sa.json
+--- [4] service_contexts 里的 6901 ---
+6901				   u:object_r:sa_lut_sa_service:s0
+--- [5a] hilog 里的 [LutSa]（SA 自己的日志）---
+
+--- [6] 接口鲁棒性 ---
+--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---
+=====LUTSA-CLIENT-START=====
+  client pid=2338 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fa740e23cb0
+  [iface_cast] ok —— IPC 代理已建立
+=====LUTSA-STRESS-START=====
+  [repeat] NativeVersion x3 -> ok 3/3
+  [repeat] SelfTest #1 rc=0
+  [repeat] SelfTest #2 rc=0
+  [generate-without-load] rc=22 (expect non-zero)
+  [load-bad-path] rc=22 (expect non-zero)
+  [release] rc=0
+  [metrics-after-release] rc=0 -> peak_rss=1164.1 MB, session=0, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 138.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=Release | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=absent n_ctx=0 threads=0 infer=6 model= | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1961 ms (n_ctx=512 threads=4) [sa] LoadModel: path not readable: /data/local/tmp/definitely-not-exist.gguf  | llama_log: 315 9625 374 ] text="The capital of France is" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"] [shim] gen: sampling [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __" [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?" [shim] diag: step 2 argmax=32 piece_len=1 piece="A" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"] [shim] gen: sampling [shim] diag: step 0 argmax=220 piece_len=1 piece=" " [shim] diag: step 1 argmax=19 piece_len=1 piece="4" [shim] diag: step 2 argmax=488 piece_len=2 piece=" +" [shim] gen: done 16 tokens 
+  [alive-after-abuse] SelfTest rc=0 PASS
+  ---- robustness summary: bad=0 ----
+
+--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---
+--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---
+[7a] 默认档位（root 属特权 uid）→ 期望 SelfTest 放行、失败项 0
+=====LUTSA-CLIENT-START=====
+  client pid=2343 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fb66705ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 2179.8 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=1164.1 MB, session=4, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 2179.8 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=absent n_ctx=0 threads=0 infer=6 model= | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1961 ms (n_ctx=512 threads=4) [sa] LoadModel: path not readable: /data/local/tmp/definitely-not-exist.gguf  | llama_log: 315 9625 374 ] text="The capital of France is" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"] [shim] gen: sampling [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __" [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?" [shim] diag: step 2 argmax=32 piece_len=1 piece="A" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"] [shim] gen: sampling [shim] diag: step 0 argmax=220 piece_len=1 piece=" " [shim] diag: step 1 argmax=19 piece_len=1 piece="4" [shim] diag: step 2 argmax=488 piece_len=2 piece=" +" [shim] gen: done 16 tokens 
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7b] 写白名单只放 uid 12345（root 不在内）→ 期望 SelfTest 返回 201、失败项 ≥1
+=====LUTSA-CLIENT-START=====
+  client pid=2346 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f71fee27cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=201
+  [GetMetrics] ErrCode=0  -> peak_rss=1164.1 MB, session=4, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 2179.8 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: whitelist(1 uids in /data/lut_sa/allow_uids.txt) | engine=absent n_ctx=0 threads=0 infer=6 model= | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1961 ms (n_ctx=512 threads=4) [sa] LoadModel: path not readable: /data/local/tmp/definitely-not-exist.gguf  | llama_log: 315 9625 374 ] text="The capital of France is" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"] [shim] gen: sampling [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __" [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?" [shim] diag: step 2 argmax=32 piece_len=1 piece="A" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"] [shim] gen: sampling [shim] diag: step 0 argmax=220 piece_len=1 piece=" " [shim] diag: step 1 argmax=19 piece_len=1 piece="4" [shim] diag: step 2 argmax=488 piece_len=2 piece=" +" [shim] gen: done 16 tokens 
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 1 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7c] 删掉白名单恢复默认档位 → 期望重新放行（证明策略每次调用都重读）
+=====LUTSA-CLIENT-START=====
+  client pid=2350 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f0d9a839cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 342.3 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=1164.1 MB, session=4, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 342.3 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | engine=absent n_ctx=0 threads=0 infer=6 model= | diag: [sa] LoadModel ok in 7439 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1961 ms (n_ctx=512 threads=4) [sa] LoadModel: path not readable: /data/local/tmp/definitely-not-exist.gguf  | llama_log: 315 9625 374 ] text="The capital of France is" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"] [shim] gen: sampling [shim] diag: step 0 argmax=1304 piece_len=3 piece=" __" [shim] diag: step 1 argmax=12148 piece_len=3 piece="__?" [shim] diag: step 2 argmax=32 piece_len=1 piece="A" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"] [shim] gen: sampling [shim] diag: step 0 argmax=220 piece_len=1 piece=" " [shim] diag: step 1 argmax=19 piece_len=1 piece="4" [shim] diag: step 2 argmax=488 piece_len=2 piece=" +" [shim] gen: done 16 tokens 
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+#####LUT-EV-END#####
+
+--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---
+[shim] load: model ok
+[shim] load: new_context
+[shim] load: ready
+[shim] gen: tokenize
+[shim] diag: prompt n_tok=5 ids=[785 6722 315 9625 374 ] text="The capital of France is"
+[shim] gen: prompt decode
+[shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"]
+[shim] gen: sampling
+[shim] diag: step 0 argmax=1304 piece_len=3 piece=" __"
+[shim] diag: step 1 argmax=12148 piece_len=3 piece="__?"
+[shim] diag: step 2 argmax=32 piece_len=1 piece="A"
+[shim] gen: done 24 tokens
+[shim] gen: tokenize
+[shim] diag: prompt n_tok=5 ids=[785 6722 315 9625 374 ] text="The capital of France is"
+[shim] gen: prompt decode
+[shim] diag: after_prompt_decode min=-14.5802 max=17.4892 mean=-2.8650 nan_or_inf=0 n_vocab=151936 argmax=12095 top: [id=12095 logit=17.4892 piece=" Paris"] [id=32671 logit=15.7052 piece=" ______"] [id=30743 logit=15.5608 piece=" ____"] [id=1304 logit=15.4903 piece=" __"] [id=510 logit=15.0213 piece=":?"]
+[shim] gen: sampling
+[shim] diag: step 0 argmax=1304 piece_len=3 piece=" __"
+[shim] diag: step 1 argmax=12148 piece_len=3 piece="__?"
+[shim] diag: step 2 argmax=32 piece_len=1 piece="A"
+[shim] gen: done 24 tokens
+[shim] gen: tokenize
+[shim] diag: prompt n_tok=5 ids=[17 488 220 17 284 ] text="2 + 2 ="
+[shim] gen: prompt decode
+[shim] diag: after_prompt_decode min=-10.0505 max=20.0906 mean=-1.4917 nan_or_inf=0 n_vocab=151936 argmax=220 top: [id=220 logit=20.0906 piece=" "] [id=1124 logit=16.1073 piece=" \"] [id=481 logit=15.6838 piece=" -"] [id=856 logit=15.1367 piece=" x"] [id=264 logit=14.8943 piece=" a"]
+[shim] gen: sampling
+[shim] diag: step 0 argmax=220 piece_len=1 piece=" "
+[shim] diag: step 1 argmax=19 piece_len=1 piece="4"
+[shim] diag: step 2 argmax=488 piece_len=2 piece=" +"
+[shim] gen: done 16 tokens

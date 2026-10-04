@@ -68,7 +68,7 @@
 | **S2** | STA-2 接口鲁棒性：`--stress` bad=0 | ✅ | `evidence/41-sa-robustness-sta2.txt` |
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
-| **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | 🚧 S5-1 调用方准入已落地（静态编译通过），待冷启动验证 | 见 §三 Now；设计见账本「S5-1 调用方准入」节 |
+| **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | 🚧 S5-1 调用方准入 ✅ 实测（evidence/47）；S5-2 配额已落地（静态编译通过），待冷启动验证 | 账本「S5-1 / S5-2」两节 |
 | **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | ⏳ | "打开设置"端到端跑通 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
@@ -78,24 +78,17 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S5-1 冷启动验证：把「谁能调、调到哪一档」跑出证据（evidence/47）。**
-  - **已落地（上一轮，别重复实现）**：`ohos/sa/component/lut_sa_ability.cpp` 里加了 `InferAllowed()` ——
-    Tier-A（uid 0/1000/2000/<10000）全通，Tier-B 默认只读（`NativeVersion`/`GetMetrics`），
-    `LoadModel`/`Generate`/`SelfTest`/`Release` 返回 **201 ERR_PERMISSION_DENIED**；
-    白名单文件 `/data/lut_sa/allow_uids.txt` 存在且非空 → 白名单模式（每次调用重读）。
-    `GetMetrics` 现在会带回 `caller: uid=… token=… last_method=… | policy: …`。
-    取证脚本新增 `[7]` 三小步（默认档位放行 / 白名单拒绝 / 删表恢复）。**静态编译已通过**（库 2,034,168 字节）。
-  - **本轮就一件事**：跑
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/47-sa-caller-admission.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-    （注意：`intree/sta3_verify.sh` 是仓库内的镜像脚本，改完必须同步 `wsl/sta3.sh`；本轮改了取证脚本 `[7]` → 注入时会带上）
-  - **判据（三条都要）**：
-    1. `[7a]` 默认档位 → `[SelfTest] ErrCode=0`、`调用汇总：失败项 0`
-    2. `[7b]` 白名单只放 uid 12345 → `[SelfTest] ErrCode=201`、`失败项 ≥1`
-    3. `[7c]` 删表恢复 → 重新 `ErrCode=0`、`失败项 0`（证明不重启 SA 也能换策略）
-    另外确认 t-mac 模型与鲁棒性两段没回退（`LoadModel` ErrCode=0 / `robustness summary: bad=0`）。
-  - 若第 2 条不成立（例如 `IPCSkeleton::GetCallingUid()` 在本镜像里返回 0 而非真实 uid）：把实际拿到的
-    uid/token 记进账本，并改用 token 侧的身份获取方式（`GetCallingTokenID` + `AccessTokenKit::GetTokenType`），
-    或退回"仅白名单模式"作为 v1 —— **如实记录拿不到 uid 这件事**，别假装通过。
+- **S5-2 冷启动验证 + S5 收口（evidence/48）**
+  1. 跑 `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/48-sa-quota.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+     （取证脚本已加 `[8]` 两小步；本轮已把配额代码编进库，静态编译通过、库 2,035,880 字节）
+  2. 判据：`[8a]` 上限 1MB + 966MB 模型 → `LoadModel ErrCode=22` 且 SA 存活（后续 `SelfTest` 仍 0）；
+     `[8b]` 删 `/data/lut_sa/quota.txt` → 重新 `ErrCode=0`；并确认 `GetMetrics` 里有 `quota: model<=1MB (…)`
+     与 `[7a/7b/7c]` 仍全过、`robustness bad=0`、t-mac 模型 `LoadModel` 0。
+  3. 收口：把「第三方接入示例」写成文档（`ohos/sa/INTEGRATION.md`）：一个系统集成方怎么调 6901 ——
+     取 proxy（samgr）→ 权限/准入要求（uid 档位 + 白名单 + 配额）→ 六个方法的最小用法与错误码含义 →
+     `TMAC_KER_OVERRIDE`/`allow_uids.txt`/`quota.txt` 三个运维旋钮。**不要**写成"应用商店里的第三方 App 能直接调"
+     （平台边界：三方不能注册 SA、也不保证能拿到系统 SA 的 IDL proxy —— 见账本平台边界那节）。
+  4. 做完这两件，S5 收口 → 下一档进 S6（系统级执行器：自然语言意图 → 结构化动作 → 启动 Ability）。
 
 **Next（排队）**
 

@@ -49,6 +49,7 @@ std::string g_lastSelfTest = "(selftest not run yet)";
 constexpr int32_t kErrPermissionDenied = 201;  // OH: ERR_PERMISSION_DENIED
 const char* kAllowUidsFile = "/data/lut_sa/allow_uids.txt";
 std::string g_lastCaller = "(none)";
+std::string g_lastQuotaNote = "(未判定)";
 int g_allow_count = -1;   // -1 = 默认档位模式，>=0 = 白名单模式（表内条数）
 
 bool IsPrivilegedUid(uint32_t uid) {
@@ -112,6 +113,39 @@ std::string PolicyDesc() {
     }
     return std::string(b);
 }
+
+// ---------------------------------------------------------------------------
+// S5-2 配额（第一块：可加载模型大小上限）
+//   /data/lut_sa/quota.txt（可选，每次 LoadModel 重读）：
+//     model_mb=2048      单次可加载模型大小上限（MB；<=0 表示不限制）
+//   说明：并发目前**天然串行**（单引擎 + 一把锁，调用方排队），所以"并发配额"暂不需要；
+//   会话数配额要等多会话（共享权重、各自 context）落地才有意义 —— 见 PLAN 的 Next。
+const char* kQuotaFile = "/data/lut_sa/quota.txt";
+
+long long LoadQuotaModelMb() {
+    long long mb = 2048;
+    FILE* f = fopen(kQuotaFile, "r");
+    if (f == nullptr) {
+        return mb;
+    }
+    char line[96];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        long long v = 0;
+        if (sscanf(line, "model_mb=%lld", &v) == 1) {
+            mb = v;
+        }
+    }
+    fclose(f);
+    return mb;
+}
+
+uint64_t FileSizeBytes(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    return static_cast<uint64_t>(st.st_size);
+}
 }  // namespace
 
 void LutSystemAbility::OnStart() {
@@ -158,6 +192,20 @@ ErrCode LutSystemAbility::NativeVersion(std::string &result) {
 ErrCode LutSystemAbility::LoadModel(const std::string &path, int32_t threads, int32_t nCtx) {
     if (!InferAllowed("LoadModel")) {   // S5-1 准入
         return kErrPermissionDenied;
+    }
+    // S5-2 配额：模型大小上限（每次重读配置；超限就带原因拒绝，别把内存吃光）
+    {
+        const long long mb = LoadQuotaModelMb();
+        const uint64_t sz = FileSizeBytes(path.c_str());
+        if (mb > 0 && sz > static_cast<uint64_t>(mb) * 1024ULL * 1024ULL) {
+            char d[192];
+            snprintf(d, sizeof(d), "quota: model %llu MB > limit %lld MB (文件 %s)",
+                     static_cast<unsigned long long>(sz / (1024ULL * 1024ULL)), mb, path.c_str());
+            g_lastQuotaNote = d;
+            HILOG_ERROR(LOG_CORE, "[LutSa] LoadModel denied by quota: %{public}s", d);
+            return ERR_INVALID_VALUE;   // 22：调用方按"参数/配额不满足"处理
+        }
+        g_lastQuotaNote = "quota: ok";
     }
     if (g_session == kInvalidSession) {
         const ::tmac_sa::Status st = ::tmac_sa::CreateSession(&g_session);
@@ -224,7 +272,8 @@ ErrCode LutSystemAbility::GetMetrics(std::string &result) {
     // STA-3：引擎状态（含 llama.cpp 日志尾巴）搭这条能通的通道带出去
     // S5-1：顺带把"最近一次调用方身份 + 当前准入策略"也带出去（只读方法，无需准入）
     result = std::string(buf) + " | caller: " + g_lastCaller + " | policy: " + PolicyDesc() +
-             " | " + ::tmac_sa::EngineInfo();
+             " | quota: model<=" + std::to_string(LoadQuotaModelMb()) + "MB (" + g_lastQuotaNote +
+             ") | " + ::tmac_sa::EngineInfo();
     return ERR_OK;
 }
 
