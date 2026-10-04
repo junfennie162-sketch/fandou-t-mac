@@ -463,7 +463,7 @@ llama_perf_context_print:       total time =  1099.38 ms /    23 tokens
 | `ohos/scripts/` | build_kernels / deploy_arm64_device 等自动化脚本 |
 | `D:\ohos-models\` | bitnet-3b-tmac-{ags64,arm64}.gguf / f16 / Q4_0 / 测试数据 / qemu |
 | `ohos/screenshots/` | 实测截图证据（device/ 真机 + emulator/ 模拟器，含索引 README） |
-| `ohos/PROGRESS.md` | 逐日过程记录（本报告的事件级底稿） |
+|  `ohos/sa/QEMU-DEPLOY.md`（FIX 账本）| 逐日过程记录（本报告的事件级底稿） |
 
 ## 12. 五阶段路线图（一图流）
 

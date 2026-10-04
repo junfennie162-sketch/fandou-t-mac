@@ -3,7 +3,7 @@
 > **LUT-SA**（应用名「鸿蒙玲珑核」）：比特级查找表（LUT）驱动的低比特 LLM 端侧推理，落地 **HarmonyOS / 安卓 / 桌面 Linux** 三平台。上游开源出处见文末致谢。
 
 > **目标形态**：做成 OpenHarmony / HarmonyOS 的**系统服务**（SystemAbility，SA_ID 6901）——推理能力注册进系统服务框架、开机由 init 拉起、任意应用经 SAMgr 取 proxy 调用，而不是某个 App 的内部功能。
-> **当前状态**：应用级形态已交付（HAP，真机实测见下表）；系统级形态已在 OpenHarmony 7.0 源码树中编译通过（9 源文件 → `libtmac_sa.z.so` + 注册表 + init 配置 + SELinux 策略），标准系统镜像构建推进中 → [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md)。
+> **当前状态**：应用级形态已交付（HAP，真机实测见下表）；**系统级形态已在 OpenHarmony 标准系统里跑通** —— SA 6901 开机由 init 拉起、注册进 samgr、任意进程跨 IPC 可调，且**推理在 SA 进程内真跑**（真解析 gguf、真出 token、同 prompt 可复现），证据 [`ohos/sa/evidence/42-sa-real-inference-sta3.txt`](ohos/sa/evidence/42-sa-real-inference-sta3.txt)。总计划与进度板：[`PLAN.md`](PLAN.md)；踩坑账本（FIX-1…58）：[`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md)。
 
 ---
 
@@ -167,7 +167,7 @@ TTFT 计量区间：CreateSession 完成 → 首 token 返回
 |---|---|---|
 | 1 | 抽取 LUT Kernel 为 Native 静态/动态库 | ✅ 双 ABI 静态库（x86_64 / arm64-v8a），`ohos/staging-{x64,arm64}/` |
 | 2 | DevEco Native 模块，打通最小推理调用 | ✅ HAP App（ArkTS + NAPI），模拟器与真机均跑通 |
-| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ `libtmac_sa.so` + 六入口（Create/Load/Prepare/Warm/Infer/Release）+ 感知 QoS 策略；组件/注册描述/SELinux 策略齐备，并按 OH 真实头文件与 IDL **编译零错误**。系统载体线（编入 OH 标准系统镜像 + QEMU 点亮）进行中：零售真机受 SELinux 与签名限制（FULL-REPORT §6.1），正确载体为 OpenHarmony 标准系统镜像，构建配方与 15 条踩坑见 [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
+| 3 | 封装 SystemAbility，暴露 Load / Infer / Metrics | ✅ 组件/注册描述/SELinux 策略齐备，并**在 OpenHarmony 标准系统镜像里跑通**：SA 6901 开机注册、跨 IPC 可调、**进程内真 LoadModel + 真出 token + 同 prompt 可复现**（STA-1/2/3，证据 `ohos/sa/evidence/40~42`）。零售真机侧受 SELinux 与签名限制（FULL-REPORT §6.1），正确载体是 OpenHarmony 标准系统镜像；总计划与后续档位见 [`PLAN.md`](PLAN.md)，构建配方与 58 条踩坑见 [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
 | 4 | 与 llama.cpp 量化路径对照 | ✅ 同模型 A/B 2.1× + 桌面三方对比 + 内核级微基准（200 次 7.1/7.8 µs） |
 | 5 | 固化本平台 tokens/s 等数据 | ✅ 交付版真机 **22.00 tok/s / 加载 1.69 s / 二轮 TTFT 1.32 ms / 峰值 1395.1 MB** 实测归档（截图 + 控制台原始报告，22 项证据） |
 
@@ -234,13 +234,14 @@ LUT-SA 以开源 T-MAC（EuroSys 2025）比特级查找表范式为计算引擎�
 
 | 维度 | 入口 |
 |---|---|
-| 全程技术总结（先读） | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
-| 逐日过程记录 | [`ohos/PROGRESS.md`](ohos/PROGRESS.md) |
+| 全程技术总结 | [`ohos/FULL-REPORT.md`](ohos/FULL-REPORT.md) |
+| 总计划与进度板（先读） | [`PLAN.md`](PLAN.md) |
+| SA 踩坑账本（FIX-1…58）与系统级实测 | [`ohos/sa/QEMU-DEPLOY.md`](ohos/sa/QEMU-DEPLOY.md) |
+| 系统级证据文件 | [`ohos/sa/evidence/`](ohos/sa/evidence/)（注册 / IPC / 稳定性 / 鲁棒性 / 真推理） |
 | 实测截图证据（真机/模拟器） | [`ohos/screenshots/`](ohos/screenshots/) |
 | 项目一句话 / 边界 | [`AGENTS.md`](AGENTS.md) · [`CONTEXT.md`](CONTEXT.md) |
 | 技术调研与方案 | [`docs/knowledge.md`](docs/knowledge.md) |
 | 决策记录 | [`docs/adr/0001-lut-systemability-path.md`](docs/adr/0001-lut-systemability-path.md) |
-| 调研与历史材料 | [`docs/output/report/`](docs/output/report/) |
 | 任务跟踪 | GitHub Issues（`Aafff623/fandou-t-mac`） |
 
 ## 上游 T-MAC 原文

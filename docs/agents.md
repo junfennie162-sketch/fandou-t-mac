@@ -18,7 +18,7 @@ GitHub Issue
   → docs/output/report/（调研，可选）
   → docs/output/prd/prd.md（draft → approved）
   → 实施（Issue 跟踪）→ awaiting-review【停】
-  → 通过 → commit / commit-history / archive
+  → 通过 → commit / PLAN.md 进度板 / archive
 ```
 
 - **PRD 未批准不写功能代码**（T-MAC 上游代码只读分析除外）
@@ -96,7 +96,7 @@ PRD 正文定稿仍可落盘 `docs/output/prd/`，跟踪状态以 GitHub Issue �
 
 | 何时 | 做什么 |
 |------|--------|
-| 任务 Review 通过并 commit 后 | 关闭对应 GitHub Issue；摘要写入 `docs/commit-history/` |
+| 任务 Review 通过并 commit 后 | 关闭对应 GitHub Issue；摘要写入 `PLAN.md` 的进度板 |
 | 赛段结束 | 该阶段报告/演示定稿复制到 `assets/backup/`（只读备份） |
 | 对话临时稿吸收完毕 | 源临时文件可删或移入 backup；知识正文保留在 [`docs/knowledge.md`](knowledge.md) |
 

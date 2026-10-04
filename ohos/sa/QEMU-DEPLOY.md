@@ -164,7 +164,7 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 | 1–3 | ok | ok | PASS | 0 | 无 |
 | 4–6 | ok | ok | PASS | 0 | 无 |
 
-**6/6 轮冷启动全部通过**（脚本 `wsl/stab_test.sh`，每轮真冷启动：重启 QEMU → 日志清空 → 等 guest 内取证输出 → 逐项判定）。
+**6/6 轮冷启动全部通过**（脚本 `ohos/sa/intree/stab_test.sh`，每轮真冷启动：重启 QEMU → 日志清空 → 等 guest 内取证输出 → 逐项判定）。
 配套证据：`evidence/40-sa-stability-6rounds.txt`。
 
 自检输出样例（调优内核在 OH 镜像里跑）：
