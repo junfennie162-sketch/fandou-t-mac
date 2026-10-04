@@ -1,0 +1,31 @@
+===== LUT-SA SystemAbility 接口鲁棒性（STA-2）=====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt），guest 内 /system/bin/lut_sa_client --stress
+抓取时间: 2026-10-05 01:11:22
+
+--- 压力用例输出 ---
+=====LUTSA-STRESS-START=====
+  [repeat] NativeVersion x3 -> ok 3/3
+  [repeat] SelfTest #1 rc=0
+  [repeat] SelfTest #2 rc=0
+  [generate-without-load] rc=22 (expect non-zero)
+  [load-bad-path] rc=22 (expect non-zero)
+  [release] rc=0
+  [metrics-after-release] rc=0 -> peak_rss=7.9 MB, session=0, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 137.5 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [alive-after-abuse] SelfTest rc=0 PASS
+  ---- robustness summary: bad=0 ----
+=====LUTSA-STRESS-END=====
+=====LUTSA-CLIENT-END (rc=0)=====
+#####LUT-EV-END#####
+[   46.873990][    T1] [pid=1][PARAM][INFO][param_service.c:321]HandleParamWatcherAdd name persist.edm.usb_serial_disable watcher: 58
+
+--- 常规用例（同一轮启动内的对照）---
+  [GetSystemAbility(6901)] ok, remote=0x7f0e40a61cb0
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 367.8 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=7.9 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 367.8 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  ---- 调用汇总：失败项 0 ----
+  [GetSystemAbility(6901)] ok, remote=0x7f9f8b973cb0
+
+--- 说明 ---
+预期非 0 的两项（未加载模型就推理 / 坏路径加载）都拿到 rc=22(EINVAL)；
+压力用例跑完后 SA 仍能 SelfTest PASS（alive-after-abuse rc=0），即接口异常输入不会把服务打崩。

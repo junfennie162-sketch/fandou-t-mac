@@ -35,53 +35,6 @@ int Call(const char *tag, ErrCode err, const std::string &value)
 }
 }  // namespace
 
-static int RunStress(sptr<ILutSa> proxy)
-{
-    printf("=====LUTSA-STRESS-START=====\n");
-    int bad = 0;
-    std::string r;
-
-    int ok_cnt = 0;
-    for (int i = 0; i < 3; ++i) {
-        r.clear();
-        if (proxy->NativeVersion(r) == 0) { ++ok_cnt; }
-    }
-    printf("  [repeat] NativeVersion x3 -> ok %d/3\n", ok_cnt);
-    if (ok_cnt != 3) { ++bad; }
-
-    for (int i = 0; i < 2; ++i) {
-        r.clear();
-        ErrCode e = proxy->SelfTest(r);
-        printf("  [repeat] SelfTest #%d rc=%d\n", i + 1, static_cast<int>(e));
-        if (e != 0) { ++bad; }
-    }
-
-    r.clear();
-    ErrCode eg = proxy->Generate("hello", 4, 0.8, 40, r);
-    printf("  [generate-without-load] rc=%d (expect non-zero)\n", static_cast<int>(eg));
-    if (eg == 0) { ++bad; }
-
-    ErrCode el = proxy->LoadModel("/data/local/tmp/definitely-not-exist.gguf", 1, 128);
-    printf("  [load-bad-path] rc=%d (expect non-zero)\n", static_cast<int>(el));
-    if (el == 0) { ++bad; }
-
-    r.clear();
-    ErrCode er = proxy->Release(r);
-    printf("  [release] rc=%d\n", static_cast<int>(er));
-    r.clear();
-    ErrCode em = proxy->GetMetrics(r);
-    printf("  [metrics-after-release] rc=%d -> %s\n", static_cast<int>(em), r.c_str());
-
-    r.clear();
-    ErrCode ef = proxy->SelfTest(r);
-    const bool alive = (ef == 0);
-    printf("  [alive-after-abuse] SelfTest rc=%d %s\n", static_cast<int>(ef), alive ? "PASS" : "FAIL");
-    if (!alive) { ++bad; }
-
-    printf("  ---- robustness summary: bad=%d ----\n", bad);
-    printf("=====LUTSA-STRESS-END=====\n");
-    return bad;
-}
 int main(int argc, char **argv)
 {
     const char *modelPath = (argc > 1) ? argv[1] : "";
@@ -115,12 +68,6 @@ int main(int argc, char **argv)
         return 4;
     }
     printf("  [iface_cast] ok —— IPC 代理已建立\n");
-
-    if (argc > 1 && std::strcmp(argv[1], "--stress") == 0) {
-        const int bad = RunStress(proxy);
-        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", bad == 0 ? 0 : 1);
-        return bad == 0 ? 0 : 1;
-    }
 
     int fail = 0;
     std::string r;

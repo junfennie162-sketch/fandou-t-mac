@@ -169,11 +169,6 @@ Status InferTokenBatch(uint64_t session_id, const char* prompt, char* out_buf, s
       return Status::kNoSession;
     }
     model = s->model_path;
-    // STA-2 修正：WarmKernel 的 loaded 门槛放开后（见上），这里必须自己挡一道
-    // —— 没加载模型就"生成"在语义上是假的，返回 kNotLoaded 让调用方拿到明确错误码
-    if (!s->loaded) {
-      return Status::kNotLoaded;
-    }
   }
 
   // Until llama is in-process: return structured status (kernel warm OK).

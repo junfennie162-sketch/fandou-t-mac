@@ -174,7 +174,7 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 | # | 项 | 现状 | 下一步 |
 |---|---|---|---|
 | STA-1 | **稳定性** | ✅ 6/6 冷启动注册+调用成功 | 扩到更多轮次/并发调用 |
-| STA-2 | **接口鲁棒性** | 坏路径/未加载等边界未系统化验证 | 客户端加压力与错误路径用例（重复调用、Release 后调用、异常参数） |
+| STA-2 | **接口鲁棒性** | ✅ 已做：客户端 `--stress` 用例（重复调用 ×3/×2、未加载就推理、坏路径加载、Release 后再调用、压力后自检），结果 `bad=0`、SA 未被搞崩；顺带修掉两个语义 bug：`LoadModel` 原先不看路径是否存在都返回成功、`Generate` 在未加载模型时也返回成功（FIX-48 放开暖机门槛的连带遗漏，已在 `InferTokenBatch` 补 `loaded` 检查） | 证据：`evidence/41-sa-robustness-sta2.txt` |
 | STA-3 | **让它真响应** | 业务层已接真·调优 LUT 内核，但推理路径仍返回结构化状态（代码注释：`Until llama is in-process`） | 把 `ohos/hap/prebuilt/x86_64/{libllama.a,libggml.a}` 链进 SA，实现真 `LoadModel`/`Generate`（真出 token）。**已知风险**：这两个 .a 由 DevEco 的新版 LLVM 编译，OH 侧 clang-15 的 llvm-nm 已读不了其对象（符号用 DevEco 的 llvm-nm 能正常读出），链接时需验证 lld-15 能否消费 |
 | STA-4 | **对外可调** | 客户端已能调（6 方法失败项 0），但没有权限模型与对外说明 | 定义"谁能调、调到哪一档"（uid/权限/会话配额）+ 写第三方接入示例 |
 

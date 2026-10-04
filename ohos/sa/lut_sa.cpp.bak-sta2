@@ -9,7 +9,6 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-#include <unistd.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -69,11 +68,6 @@ Status LoadModel(uint64_t session_id, const std::string& model_path) {
   Session* s = FindUnlocked(session_id);
   if (!s) {
     return Status::kNoSession;
-  }
-  // 接口语义收紧：路径不可读就明确报错——在 llama 链进来之前，也不该对调用方
-  // 撒谎说"加载成功"（STA-2 的鲁棒性用例会打这条路径）
-  if (model_path.empty() || access(model_path.c_str(), R_OK) != 0) {
-    return Status::kInvalid;
   }
   s->model_path = model_path;
   s->loaded = true;
@@ -169,11 +163,6 @@ Status InferTokenBatch(uint64_t session_id, const char* prompt, char* out_buf, s
       return Status::kNoSession;
     }
     model = s->model_path;
-    // STA-2 修正：WarmKernel 的 loaded 门槛放开后（见上），这里必须自己挡一道
-    // —— 没加载模型就"生成"在语义上是假的，返回 kNotLoaded 让调用方拿到明确错误码
-    if (!s->loaded) {
-      return Status::kNotLoaded;
-    }
   }
 
   // Until llama is in-process: return structured status (kernel warm OK).

@@ -33,6 +33,8 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "--- [5b] hilog 里的 SA_CLIENT/Selinux ---"
   hilog -x 2>&1 | grep -aiE 'SA_CLIENT|samgr_class' | head -12
 
+  echo "--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---"
+  /system/bin/lut_sa_client --stress
   echo "#####LUT-EV-END#####"
 } > $F 2>&1
 
