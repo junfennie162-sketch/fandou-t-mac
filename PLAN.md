@@ -79,22 +79,31 @@
 **Now（这一轮要做的一件事）**
 
 - **S4 · 为 `bitnet-3b-tmac.gguf` 生成匹配的 LUT 内核与形状表。**
-  - 现状：模型里 182 个张量是 t-mac 2bit LUT 类型（ggml type 37），形状是**分开的**
-    `m3200_k8640`（ffn_down）、`m8640_k3200`（ffn_gate/up）、`m3200_k3200`（attn q/k/v/o）；
-    而现有 `deploy/tuned/ohos-x64-bitnet-3b/{kernels.cc,kcfg.ini}` 只覆盖**融合后**的形状
-    `m17280_k3200`/`m6400_k3200`/`m6400_k8640` → 准入检查直接拒绝（这是**正确的**行为）。
-  - 因此临时用标准量化模型（Qwen2.5-0.5B q4_k_m）验收了"SA 真推理"这条链路，二者解耦。
-  - 下一步侦察（先做，别急着改）：
-    1. 找 t-mac 的 kernel 生成工具链：仓库 `tools/`、`python/`、`docs/codegen.md`、
-       `ohos/scripts/build_kernels.ps1`、`D:/ohos-models/gen_kernels*.sh` 看哪个能对给定形状生成
-       `kernels.cc` + `kcfg.ini`；
-    2. 确认生成器的输入（模型张量形状清单 / kcfg 模板）；
-    3. 生成后放进 `deploy/tuned/ohos-x64-bitnet-3b-shapes/`（**不改旧目录**），
-       改 `intree/install_into_tree.sh` 的 `TMAC_KER=` 指向它；
-    4. 重编引擎 + 冷启动验证：`LoadModel` ErrCode=0、`Generate` 出文本、
-       `Generate#2` 与 `#1` 一致、`nm` 里新形状的 LUT 内核符号出现。
-  - 若工具链不可用：退路是给 `kcfg.ini` 手工补条目（形状参数照抄最接近的条目）+ 让分派器走通用路径，
-    并**如实写明这是未调优路径**（性能数据不得冒充调优结果）。
+  - **已探明的事实（2026-10-05 侦察，别重复劳动）**：
+    - 模型里 182 个张量是 t-mac LUT 类型，**形状只有三种**：`[3200,3200]`（attn q/k/v/o）、
+      `[3200,8640]`（ffn_gate/up）、`[8640,3200]`（ffn_down）→ 即 (m,k) = `(3200,3200)` / `(8640,3200)` / `(3200,8640)`。
+    - **所有模型变体形状完全相同**（`-202504` / `-202504-v1` / `-ags64` / `-arm64` 只差 LUT 类型号 **37/40/41**，
+      分别对应不同 activation-group 方案，即 `-ags -1` 与 `-ags 64`）→ **换模型文件解决不了**，必须按形状生成内核。
+    - 现有 `deploy/tuned/ohos-x64-bitnet-3b/{kcfg.ini,kernels.cc}` 只覆盖**融合后**的形状
+      `m17280_k3200`(2×8640) / `m6400_k3200` / `m6400_k8640`(2×3200) → 与本 gguf 不符（那是**另一个模型配置**的产物），
+      准入检查因此在 36 ms 内拒绝加载（这是**正确**行为，不是 bug）。
+    - **生成器与配方都在**：入口 `deploy/compile.py`（`-m <preset>` 或 `-md <model_dir>`、`-d ohos_x64`、`-o <outdir>`、
+      `-gc -da -nt 1 -tb`、`-ags -1|64`、`-gs 128`、可选 `-t` 调优）；现成配方见
+      `D:/ohos-models/gen_kernels.sh` 与 `gen_kernels_ags64.sh`（依赖三样：conda env `tvm-build`、`~/tvm-src`、
+      `OHOS_NDK_CC` 指向 NDK 的 clang++）。本机还有 `D:/ohos-models/tvm-src`（585 MB）与转换/调优日志。
+  - **本轮按这个顺序做（每步都能独立判定成功/失败）**：
+    1. 先确认环境在不在：WSL 里 `ls ~/miniconda3/envs/tvm-build`、`ls ~/tvm-src/build`、
+       `ls ~/ohos-linux-sdk/native/llvm/bin/clang++`；缺哪个就**把缺什么写进本板 Blocked 段**（这本身就是可判定结果）。
+    2. 读 `python/t_mac/` 里 `get_preset_models()` 的实现，确认 `-md <model_dir>` 需要什么形态的输入
+       （能否直接吃 gguf；不能就按形状造一个最小配置或找对应 preset）。
+    3. 用与类型号 37 对应的一支（`-ags -1`）生成到**新目录** `deploy/tuned/ohos-x64-bitnet-3b-shapes/`
+       （**不改旧目录**）。生成可能很慢（TVM 编译 + 可选调优），一轮做不完就把进度写进 Blocked 段交接给下一轮。
+    4. 生成成功后：把 `intree/install_into_tree.sh` 的 `TMAC_KER=` 指向新目录 → 强制重编引擎
+       （`LUTSA_FORCE_ENGINE=1 build_engine.sh`）→ `nm` 确认出现新形状的 `qgemm_lut_t1_int8_*` 符号。
+    5. 下一轮冷启动验证：`LoadModel(bitnet)` ErrCode=0 + `Generate` 出文本 + 同 prompt 可复现 +
+       `GetMetrics` 里 `engine=ready`；证据落 `evidence/43-*.txt`。
+  - **退路**（若第 1/2 步判定工具链不可用）：手工给 `kcfg.ini` 补 `m3200_k3200` / `m8640_k3200` / `m3200_k8640`
+    三条（参数照抄最接近的条目），让分派器走通用回退路径，并**如实标注"未调优路径"**（性能数字不得冒充调优结果）。
 
 **Next（排队）**
 
