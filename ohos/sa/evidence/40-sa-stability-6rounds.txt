@@ -1,0 +1,24 @@
+===== LUT-SA SA 稳定性测试 =====
+轮数: 3   开始: 2026-10-05 00:57:14
+判据: guest 内 /system/bin/lut_sa_client 的输出
+
+轮次 GetSystemAbility NativeVersion SelfTest   失败项 客户端rc panic
+1      ok               ok           PASS       0        无        无
+2      ok               ok           PASS       0        无        无
+3      ok               ok           PASS       0        无        无
+
+===== 汇总 =====
+通过: 3 / 3
+结束: 2026-10-05 01:00:14
+===== LUT-SA SA 稳定性测试 =====
+轮数: 3   开始: 2026-10-05 01:02:10
+判据: guest 内 /system/bin/lut_sa_client 的输出
+
+轮次 GetSystemAbility NativeVersion SelfTest   失败项 客户端rc panic
+1      ok               ok           PASS       0        无        无
+2      ok               ok           PASS       0        无        无
+3      ok               ok           PASS       0        无        无
+
+===== 汇总 =====
+通过: 3 / 3
+结束: 2026-10-05 01:04:57

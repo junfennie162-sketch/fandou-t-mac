@@ -149,6 +149,38 @@ cd /src/ohos && bash build/prebuilts_download.sh                  # 预编译件
 | **FIX-51** | 端侧形态选择（**平台边界**） | HAP 装 HarmonyOS 模拟器报 `code:9568344 install parse profile prop check error`；BMS 真因 `ProcessBundleInfoByPrivilegeCapability: not allow use privilege extension` | **`AppServiceExtensionAbility` 是 privilege extension，第三方应用不允许声明**——想在应用侧做"独立进程 + 对外跨进程服务"，这条平台边界与"零售系统不让第三方注册 SA"同源 | 已从 `module.json5` 注释掉该扩展；端侧改用**应用进程内跑引擎**（自测/基准自动执行写 hilog），或后续用 `childProcessManager` 起独立子进程。**判据**：模拟器上 `hdc install` 成功 + `hilog` 出现 `KERNEL-SELFTEST ... PASS` |
 | FIX-52 | build-profile 版本号格式（API ≥ 26） | 写 `"5.0.0(12)"` → `00306042 Specification Limit Violation`；写 `"26"` → `00308018 api version parameter is illegal` | DevEco 26 的规则：**API 10–25 用 `"5.0.0(12)"` 带括号格式，API ≥ 26 必须写纯版本号 `"26.0.0"`**；且 `targetSdkVersion` 不能留空字符串 | 两个字段都写 `"26.0.0"` |
 
+## 六、SA 稳定性实测（把「系统能力」做实）
+
+判据不看宿主机日志猜（串口在高负载下会丢行/断行），而是**取 guest 内客户端 `lut_sa_client` 的实际输出**：
+
+| 轮次 | GetSystemAbility(6901) | NativeVersion | SelfTest | 调用失败项 | panic |
+|---|---|---|---|---|---|
+| 1–3 | ok | ok | PASS | 0 | 无 |
+| 4–6 | ok | ok | PASS | 0 | 无 |
+
+**6/6 轮冷启动全部通过**（脚本 `wsl/stab_test.sh`，每轮真冷启动：重启 QEMU → 日志清空 → 等 guest 内取证输出 → 逐项判定）。
+配套证据：`evidence/40-sa-stability-6rounds.txt`。
+
+自检输出样例（调优内核在 OH 镜像里跑）：
+```
+[GetSystemAbility(6901)] ok, remote=0x7fe93f3e5cb0
+[SelfTest] ErrCode=0 -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 174.0 us)
+                     | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+---- 调用汇总：失败项 0 ----
+```
+
+### 往「系统能力级」还差什么（按优先级）
+
+| # | 项 | 现状 | 下一步 |
+|---|---|---|---|
+| STA-1 | **稳定性** | ✅ 6/6 冷启动注册+调用成功 | 扩到更多轮次/并发调用 |
+| STA-2 | **接口鲁棒性** | 坏路径/未加载等边界未系统化验证 | 客户端加压力与错误路径用例（重复调用、Release 后调用、异常参数） |
+| STA-3 | **让它真响应** | 业务层已接真·调优 LUT 内核，但推理路径仍返回结构化状态（代码注释：`Until llama is in-process`） | 把 `ohos/hap/prebuilt/x86_64/{libllama.a,libggml.a}` 链进 SA，实现真 `LoadModel`/`Generate`（真出 token）。**已知风险**：这两个 .a 由 DevEco 的新版 LLVM 编译，OH 侧 clang-15 的 llvm-nm 已读不了其对象（符号用 DevEco 的 llvm-nm 能正常读出），链接时需验证 lld-15 能否消费 |
+| STA-4 | **对外可调** | 客户端已能调（6 方法失败项 0），但没有权限模型与对外说明 | 定义"谁能调、调到哪一档"（uid/权限/会话配额）+ 写第三方接入示例 |
+
+> 平台边界（已实测，决定主战场）：第三方应用**不能**注册 SA、**不能**声明 `AppServiceExtensionAbility`（privilege extension）。
+> 因此"系统能力"这条路只能在 **OpenHarmony 标准系统**里做（我们自己就是系统厂商），本节的实测都在该环境完成。
+
 > **ArkTS/HAP 阶段的通用判据**：`hvigor ERROR: BUILD FAILED` 只说明"某个系统应用"没编过，真因永远在 `out/x86_64_virt/error.log` 里
 > 的 `ERROR Code: <5 位>` 行（如 `10311006` = Kit 校验、`10505001` = 编译器找不到名字）。`entry` 模块的 "N ArkTS Linter Error"
 > 是**警告**，不阻断构（`entry` 模块 111 条 linter 警告仍 BUILD SUCCESSFUL）。
