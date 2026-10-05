@@ -5,6 +5,7 @@ echo "#####LUT-EV2-BEGIN#####" > /dev/ttyS0
 sleep 75
 
 F=/data/local/tmp/lut_evidence2.txt
+M=/data/local/tmp/model.gguf
 mkdir -p /data/local/tmp 2>/dev/null
 
 {

@@ -78,24 +78,22 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-2 收口：把"模型路径"真正跑出来（evidence/54），顺带让重活内容进打包**
-  - **已验（别重复）**：`evidence/52`（轻活：`[10a]` 0 + `source=keyword` 如实、`[10b]` 22、`[10c]` **201** = 两道门、
-    `[10d]` 0）；`evidence/53` 里两个 END 都在（重活服务起来了），`[7a]/[7b]` 保持（失败项 0 / 1）。
-  - **本轮已修（跑之前不用改代码）**：FIX-74 的两个配套断层 ——
-    ① 客户端 `--intent <utterance> [<model>]`：给了模型就先 `LoadModel`、问完再 `Release`（**这才测得到模型路径**）；
-    ② harness 打包的 `[1]/[1b]/[6]` 改指向 `lut_evidence2.txt` 并新增 `[1c]` 段。
+- **S6-2 收口（第二次尝试）：模型路径 + t-mac 推理无回退（evidence/55）**
+  - **上一轮查清的（别重复）**：`evidence/54` 里 `[1c]` 的模型路径是**空串**（`argc=3` + 空 `$M`）→ 引擎 unloaded →
+    `source` 只能是 keyword；回看 `evidence/53` 的 `[1]` 也是空路径（`argc=2`）→ 那段"跳过（未给模型路径）"。
+    **根因（FIX-75）**：`M=` 定义在轻活脚本的 `[0b]` 里，拆分时没跟着搬到重活脚本 → 重活脚本的 `$M` 一直是空。
+    **已修**：两个脚本头部各自定义 `M=/data/local/tmp/model.gguf`（已 `sh -n` 校验）。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/54-sa-intent-model2.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/55-sa-intent-model3.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
   - **判据（三看）**：
-    1. 两个 END 都在，且**打包里能看到重活三段**（`[1]` t-mac `LoadModel` 0 + `Generate#1` 出文本、
-       `[1b]` Qwen 正常、`[6] robustness summary: bad=0`）；
-    2. `[1c1]` 模型已加载后的“打开设置” → `ErrCode=0`，`source` **要么 `model`（严格校验通过）要么 `keyword`
-       （如实回退）** —— 两种都接受，但必须如实；`[1c2]` “打开相机” → 非 0（模型若给出未授权/表外 bundle，
-       严格校验必须不认）；
-    3. 轻活侧不回退：`[7a]` 0 / `[7b]` 201 / `[8]` `/ [9]` / `[10]` 0/22/201/0 保持。
-  - 若 `[1c1]` 真的走成 `model`：把提示模板与"严格校验"的判据写进 `INTEGRATION.md`（动作契约那一节）；
-    若仍是 `keyword`：**如实记录"t-mac 2bit 产物的文本质量不足以支撑分类"，并在 PLAN 里把它标成已知限制**
-    （不许为了好看去调模型或放宽校验）。
+    1. **重活 `[1]` 这次必须真的加载**：`[LoadModel(/data/local/tmp/model.gguf)] ErrCode=0` +
+       `Generate#1` 出文本 + `determinism: yes` + `non-constant: yes` + `失败项 0`（这是 t-mac 推理在**拆分之后**
+       第一次回归验证 —— 之前几轮的"无回退"其实只在轻活侧成立）；
+    2. `[1c1]` 模型已加载后的“打开设置” → `[LoadModel(...)] ErrCode=0` 后 `ExecuteIntent ErrCode=0`，
+       `source` **要么 `model` 要么 `keyword`（如实）**；`[1c2]` “打开相机” 非 0；
+    3. 两个 END 都在 + `[6] robustness summary: bad=0` + 轻活 `[7]/[8]/[9]/[10]` 保持。
+  - 结局处置（预先写死，别为了让 `source=model` 好看而作弊）：若走成 `model` → 把提示模板与严格校验判据写进
+    `INTEGRATION.md`；若仍是 `keyword` → **如实写成已知限制**（t-mac 2bit 产物文本质量不足以支撑分类）。
 
 **Next（排队）**
 
