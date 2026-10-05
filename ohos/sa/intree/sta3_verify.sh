@@ -42,7 +42,15 @@ mkdir -p $M
 mount -o loop,rw "$IMG/system.img" $M || exit 1
 cp -f $O/ohemu/lutsa/libtmac_sa.z.so $M/system/lib64/libtmac_sa.z.so
 cp -f $O/ohemu/lutsa/lut_sa_client  $M/system/bin/lut_sa_client && chmod 755 $M/system/bin/lut_sa_client
-cp -f $SA/component/evidence/lut_evidence.sh $M/system/bin/lut_evidence.sh && chmod 755 $M/system/bin/lut_evidence.sh
+# 取证脚本/cfg **按 glob 全量注入**（FIX-73：手写文件清单会漏 —— 第二个服务就是这么没起来的）
+cp -f $SA/component/evidence/lut_evidence*.sh $M/system/bin/ && chmod 755 $M/system/bin/lut_evidence*.sh
+cp -f $SA/component/etc/init/lut_evidence*.cfg $M/system/etc/init/
+mkdir -p $M/system/etc/lut_sa
+cp -f /src/ohos/vendor/ohemu/lutsa/etc/lut_sa/kcfg.ini $M/system/etc/lut_sa/kcfg.ini
+echo "  已注入取证脚本: $(ls $M/system/bin/lut_evidence*.sh | xargs -n1 basename | tr '
+' ' ')"
+echo "  已注入 init cfg : $(ls $M/system/etc/init/lut_evidence*.cfg | xargs -n1 basename | tr '
+' ' ')"
 mkdir -p $M/system/etc/lut_sa
 cp -f /src/ohos/vendor/ohemu/lutsa/etc/lut_sa/kcfg.ini $M/system/etc/lut_sa/kcfg.ini
 echo "  库 $(stat -c %s $M/system/lib64/libtmac_sa.z.so) / 客户端 $(stat -c %s $M/system/bin/lut_sa_client) / kcfg $(stat -c %s $M/system/etc/lut_sa/kcfg.ini 2>/dev/null)"

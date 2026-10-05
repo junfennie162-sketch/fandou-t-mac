@@ -288,6 +288,9 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 "` 的写法极易写错；本轮我在客户端 3 处、ability 2 处连着写坏（前两轮 FIX-65b/68 同款） | 固化两条：① 插这类字面量时用 `chr(92)+'n'` **显式构造**，别手写反斜杠；② 补丁写完**立刻编译 + `cat -A` 抽查**（本轮就是靠编译报错抓到的）。另附一个一次性修复法：`s.replace(chr(10)+'"', chr(92)+'n"'` 批量把"字符串里的真换行"补回 `
 ` |
 
+| **FIX-73** | 第二个取证服务**根本没启动**（`LUT-EV2-BEGIN` 在串口里都不出现） | `evidence/52`：轻活服务完整跑完（`LUT-EV-END` ✓），但重活服务没有任何痕迹、`lut_evidence2.txt` 不存在 | 我把第二套 cfg/脚本加进了 BUILD.gn 与 `install_into_tree.sh`，**但 harness 的"注入镜像"那一步是手写的文件清单**（只拷 `lut_evidence.sh`/库/客户端/kcfg）→ 第二个脚本与 cfg 没进镜像 → init 找不到服务 ✗ | harness 的注入改为**按 glob 全量**：`cp -f component/evidence/lut_evidence*.sh → /system/bin/`、`cp -f component/etc/init/lut_evidence*.cfg → /system/etc/init/`，并打印已注入清单（以后再加服务不用改 harness） |
+| **FIX-73b** | S6-2 的**轻活半边全部判据通过**（动作表 + 两道门） | —— | —— | `evidence/52`：`[10a]` “打开设置”→ **`ErrCode=0`**，`intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword"}`（**source 如实**：轻活服务里没加载模型，就是关键词路径）；`[10b]` “打开相机”→ **22**（动作表没匹配）；`[10c]` 把动作表改成"打开设置→com.ohos.camera"→ **`ErrCode=201`**（**动作白名单仍然生效 —— 两道门成立**）；`[10d]` 删表恢复 → 0。**未验证**：模型路径（`source=model`）与无回退项（t-mac 生成/鲁棒性）—— 这两块在重活服务里，因 FIX-73 本轮没跑；已给重活脚本补 `[1c]`（加载模型后再问一次 `--intent`） |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

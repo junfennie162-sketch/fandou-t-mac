@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 动作层 ✅（evidence/51）；**S6-2 已实现**（`ExecuteIntent` + 动作表 + 模型/关键词双路径，静态编译通过 2,055,576 字节），待冷启动验证 | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 动作层 ✅（evidence/51）；**S6-2 轻活半边 ✅**（动作表 + 两道门实测：0 / 22 / 201 / 0，source 如实）；剩模型路径 `source=model` 与无回退项（在重活服务里，本轮因 FIX-73 没跑） | 见 §三 Now |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,21 +78,21 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-2 冷启动验证：`ExecuteIntent` 的双路径与 `source` 如实标注（evidence/52）**
-  - **已实现（别重做）**：`ExecuteIntent(utterance)`（IDL/proxy/stub/ability 全链路）；
-    动作表 `/data/lut_sa/intents.txt`（每行 `<说法>=<bundle>[/<ability>]`，缺省内置"打开设置/开启设置/open settings=com.ohos.settings"）；
-    **两条路径**：模型已加载时先用固定模板让它归类并**严格校验**（输出里必须出现表内 bundle 才认，`source=model`），
-    否则关键词匹配（`source=keyword`）；命中后**复用 `ExecuteAction`** 的产出（同一套 JSON 契约 + 动作白名单再挡一次）；
-    客户端 `--intent "…"`；取证 `[10]` 四小步（a 打开设置 / b 打开相机 / c 自定义动作表指向未授权 bundle / d 删表恢复）。
+- **S6-2 补齐：让重活服务起来，验证模型路径（`source=model`）+ 无回退（evidence/53）**
+  - **上一轮已验（别重复）**：`evidence/52` 的轻活半边 —— `[10a]` 0 + `source=keyword` 如实、`[10b]` 22、
+    `[10c]` **201**（动作表指向未授权 bundle 也被动作白名单挡住 = 两道门）、`[10d]` 0；`LUT-EV-END` ✓
+  - **本轮已修（跑之前不用改代码）**：
+    ① harness 注入改为 **glob 全量**（`lut_evidence*.sh` + `lut_evidence*.cfg`）—— 第二个服务没起来的真因（FIX-73）；
+    ② 重活脚本补 `[1c]`：加载模型后再问一次 `--intent "打开设置"` / `"打开相机"`（用来验证 `source=model`
+       与"严格校验"是否生效）。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/52-sa-intent.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（四看）**：
-    1. **两个 END 都在**（`LUT-EV-END` + `LUT-EV2-END`，FIX-71 的拆分生效）；
-    2. `[10a]` “打开设置” → `ErrCode=0`，JSON 里 `bundle=com.ohos.settings`，**`source` 如实**
-       （轻活服务里通常还没加载模型 → 期望 `keyword`；若模型已加载则是 `model`，**两种都对，但要如实**）；
-    3. `[10b]` “打开相机” → 非 0（动作表没匹配）；`[10c]` 自定义表把"打开设置"指向 `com.ohos.camera` → **201**
-       （动作白名单仍然生效，两道门都在）；`[10d]` 删表恢复 → 0；
-    4. 无回退：`[7]/[8]/[9]`、t-mac `LoadModel` 0 + Generate 出文本、`robustness bad=0`。
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/53-sa-intent-model.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（三看）**：
+    1. **两个 END 都在**（`LUT-EV-END` + `LUT-EV2-END`），且串口里有 `LUT-EV2-START`（重活服务真的起来了）；
+    2. `[1c1]` 模型已加载后的“打开设置” → `ErrCode=0` 且 `intent={...,"source":"model"}`（若输出不可解析而回退到
+       `keyword`，**也接受但要如实**——t-mac 2bit 产物的文本质量本来就有限，这属于"模型路径不可用 → 回退"）；
+       `[1c2]` “打开相机” → 非 0（**严格校验生效**：模型若随口给出未授权/表外 bundle，一律不认，宁可回退/拒绝）；
+    3. 无回退：`[1]` t-mac `LoadModel` 0 + Generate 出文本、`[6]` `robustness bad=0`、`[7]/[8]/[9]/[10]` 保持。
 
 **Next（排队）**
 
