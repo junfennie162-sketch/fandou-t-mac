@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ **收口**：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ 收口（S6-3 收尾：`model_said` 诊断 + 扩表 + 文档，待冷启动验证）：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,19 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-3：把"模型分类不可用"这条限制查实 + 扩动作集**
-  1. **先查实限制**（FIX-76b）：给 `ModelClassify` 加一条 diag —— 把模型的**原始输出**（截断到 ~120 字）记进 `last_action`/日志，
-     这样下一轮 `[1c1]` 的证据里就能看到"模型到底吐了什么"，把结论从"没通过校验"升级成
-     "**输出是乱码 / 输出里没有包名 / 输出被截断**"中的具体哪一种（判据：`evidence/56` 的 `[1c1]` 里出现 `model_said="…"`）。
-  2. **扩动作集**：`intents.txt` 已支持自定义；这一轮把**内置默认表**从"只有设置"扩到镜像里确实存在的几个白名单应用
-     （`com.ohos.settings` / `com.ohos.camera` / `com.ohos.contacts` / `com.ohos.distributedmusicplayer`，
-     名字取自各自 `.hap` 的 module.json —— 取法见账本 S6 侦察节），同时**动作白名单**默认仍只放 `com.ohos.settings`
-     （要放更多必须显式写 `actions_allow.txt`）—— 保持"默认最小权限"。
-  3. **把限制写进对接文档**：`INTEGRATION.md` 已知限制里加一条"意图的模型分类路径当前不可用（质量原因），
-     默认走关键词表；要启用需换更好的模型"，并给"自定义 `intents.txt` 控制关键词"的使用示例。
-  - **判据（下一轮冷启动，evidence/56）**：`[1c1]` 出现 `model_said="…"`（看清模型输出）+ 仍如实回退；
-    `intents.txt` 里加一条自定义说法（如"看相机=com.ohos.camera"）→ `--intent "看相机"` 能命中，但
-    因为动作白名单没放 camera → **201**（两道门仍成立）；既有 `[7]~[10]`、两个 END、`bad=0`、t-mac 推理 0 不回退。
+- **S6-3 冷启动验证（evidence/56）**
+  - **已实现（别重做）**：① `ModelClassify` 增加 **`model_said`** 诊断 —— 把模型对意图提示的**原始输出**
+    （清洗 + 截断 120 字）经结果串带出，用来把"模型分类不可用"从"没通过校验"升级成具体结论；
+    ② 内置动作表扩到镜像里存在的应用（设置/相机/联系人/音乐），**默认动作白名单仍只放 `com.ohos.settings`**
+    （最小权限，其余要显式写 `actions_allow.txt`）；③ 取证加 `[10e]`（内置表命中相机 → 期望 201）；
+    ④ `INTEGRATION.md` 补了"模型分类限制"与"自定义动作表示例"。静态编译通过（库 2,057,632 字节）。
+  - **本轮就一件**：
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/56-sa-intent-diag.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（三看）**：
+    1. `[1c1]` 的结果串里出现 **`model_said="…"`**（看清模型到底吐了什么：乱码 / 没有包名 / 空 / 引擎未就绪），
+       且 `source` 仍如实（`keyword`）；
+    2. `[10e]` “看相机” → **201**（内置表命中但动作白名单没放 = 两道门仍成立）；`[10a]~[10d]` 保持（0/22/201/0）；
+    3. 无回退：两个 END 都在、`[1]` t-mac `LoadModel` 0 + 出文本、`[6] bad=0`。
 
 **Next（排队）**
 

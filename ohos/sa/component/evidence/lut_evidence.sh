@@ -88,6 +88,8 @@ mkdir -p /data/local/tmp 2>/dev/null
   rm -f /data/lut_sa/intents.txt
   echo "[10d] 删表回默认 → 期望再回到 0"
   /system/bin/lut_sa_client --intent "打开设置"
+  echo "[10e] 内置表已含"看相机"→com.ohos.camera，但动作白名单默认没放它 → 期望 201（两道门）"
+  /system/bin/lut_sa_client --intent "看相机"
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
   rm -f /data/lut_sa/allow_uids.txt 2>/dev/null

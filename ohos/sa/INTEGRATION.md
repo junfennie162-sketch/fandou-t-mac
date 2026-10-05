@@ -85,6 +85,12 @@ e = sa->Release(r);                        // 归还模型与 KV 内存
 
 ## 4. 已知限制（避免踩同一批坑）
 
+- **意图的"模型分类"路径当前不可用（如实记录）**：`ExecuteIntent` 会先让本地模型按模板输出受限 JSON，
+  且**严格校验**（输出里必须出现动作表内的 bundle 才认）。实测（`evidence/55`）：模型已加载时该路径**确实被走过**，
+  但 t-mac 2bit 产物的输出没有通过校验 → **如实回退到关键词表**（`source=keyword`）。
+  这属于"模型质量"而非"链路"问题；本版**不放宽校验**（宁可回退，也不接受模型随口给的包名）。
+  要启用需换更强的模型或加约束解码 —— 判据是 `GetMetrics`/结果串里的 `model_said="…"`（S6-3 起会带出模型原始输出）。
+
 - **模型与 LUT 形状表必须成对**：t-mac 2bit 产物（`kfactor=16 / lut_scales_size=135,50` 那族）与标准量化模型不能混用同一套 kcfg；
   换内核用构建期旋钮 `TMAC_KER_OVERRIDE=<dir>`（见 FIX-63）。加载不匹配的模型会**全 NaN**（不会崩，但输出恒定）。
 - **单引擎串行**：一次 `Generate` 会占住 SA 直到出完 token（调用方在 IPC 上排队）。多会话并发（共享权重、各自 context）尚未做。
@@ -135,5 +141,15 @@ if (action.action === 'start_ability') {
     .catch((e: BusinessError) => { /* 回报失败码，别吞掉 */ });
 }
 ```
+- **自定义动作表**（不用改代码就能扩）：`/data/lut_sa/intents.txt`，每行 `<说法>=<bundle>[/<ability>]`：
+
+```
+打开设置=com.ohos.settings
+看相机=com.ohos.camera
+开会=com.ohos.calendar/EntryAbility
+```
+  表里能命中**不等于**允许执行：`com.ohos.camera` 这类还要写进 `/data/lut_sa/actions_allow.txt`（动作白名单），
+  否则 `ExecuteAction` 会回 **201**（实测见 `[10c]/[10e]`）。内置默认表已含设置/相机/联系人/音乐，
+  但**默认动作白名单只放 `com.ohos.settings`** —— 最小权限。
 - **安全边界**：SA 只产出**白名单内**的 bundle；应用侧执行前应**再校验一次**（两道门），
   并把执行结果回报给调用方 —— **不要把"SA 说可以"当成"已经执行了"**。

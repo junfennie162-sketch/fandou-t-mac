@@ -398,9 +398,17 @@ void LoadIntentTable(std::vector<std::pair<std::string, std::string>>& out) {
     out.clear();
     FILE* f = fopen(kIntentsFile, "r");
     if (f == nullptr) {
+        // S6-3：内置表扩到镜像里确实存在的几个应用（bundle 名取自 /system/app 清单）。
+        // 注意：**动作白名单默认仍只放 com.ohos.settings** —— 表里能命中 ≠ 允许执行，
+        // 其余 bundle 要生效必须显式写进 /data/lut_sa/actions_allow.txt（最小权限原则）
         out.push_back({"打开设置", "com.ohos.settings"});
         out.push_back({"开启设置", "com.ohos.settings"});
         out.push_back({"open settings", "com.ohos.settings"});
+        out.push_back({"打开相机", "com.ohos.camera"});
+        out.push_back({"看相机", "com.ohos.camera"});
+        out.push_back({"打开联系人", "com.ohos.contacts"});
+        out.push_back({"打开通讯录", "com.ohos.contacts"});
+        out.push_back({"打开音乐", "com.ohos.distributedmusicplayer"});
         return;
     }
     char line[192];
@@ -420,8 +428,30 @@ void LoadIntentTable(std::vector<std::pair<std::string, std::string>>& out) {
     }
 }
 
+// S6-3：模型对意图提示的**原始输出**（截断+清洗），用于把"模型分类不可用"从"没通过校验"
+// 升级成具体结论（输出乱码 / 没有包名 / 被截断）；经 ExecuteIntent 的结果串带出去
+std::string g_lastModelSaid = "(not tried)";
+
+void NoteModelSaid(const std::string& raw) {
+    std::string d = raw;
+    for (auto& c : d) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (u == 34 || u == 92) {
+            c = 47;
+        } else if (u < 32 || u == 127) {
+            c = 32;
+        }
+    }
+    if (d.size() > 120) {
+        d.resize(120);
+    }
+    g_lastModelSaid = d;
+}
+
+
 std::string ModelClassify(const std::string& utterance, const std::vector<std::pair<std::string, std::string>>& table) {
     if (!::tmac_sa::EngineReady()) {
+        g_lastModelSaid = "(engine not ready)";
         return "";   // 没加载模型 → 交给关键词兜底
     }
     std::string prompt = "只输出一个 json，不要解释：{\"bundle\":\"包名\"}。可选包名有 ";
@@ -437,6 +467,8 @@ std::string ModelClassify(const std::string& utterance, const std::vector<std::p
         return "";
     }
     std::string out(buf);
+    if (out.empty()) { out = "(empty)"; }
+    NoteModelSaid(out);
     // 严格校验：输出里必须出现表内的 bundle 才认（避免"模型随口说一个"）
     for (const auto& kv : table) {
         if (!kv.second.empty() && out.find(kv.second) != std::string::npos) {
@@ -594,8 +626,8 @@ ErrCode LutSystemAbility::ExecuteIntent(const std::string &utterance, std::strin
         source = "keyword";
     }
     if (bundle.empty()) {
-        result = "intent={\"utterance\":\"" + utterance + "\",\"bundle\":\"\",\"source\":\"none\"} "
-                 "no-match（动作表里没有匹配的说法）";
+        result = "intent={\"utterance\":\"" + utterance + "\",\"bundle\":\"\",\"source\":\"none\",\"model_said\":\"" +
+                 g_lastModelSaid + "\"} no-match（动作表里没有匹配的说法）";
         g_lastActionNote = result;
         return ERR_INVALID_VALUE;
     }
@@ -603,9 +635,10 @@ ErrCode LutSystemAbility::ExecuteIntent(const std::string &utterance, std::strin
     // 复用 ExecuteAction 的产出（同一套 JSON 契约；动作白名单/准入都在那里再挡一次）
     std::string act;
     const ErrCode e = ExecuteAction("start_ability", bundle, act);
-    char hdr[256];
-    snprintf(hdr, sizeof(hdr), "intent={\"utterance\":\"%s\",\"bundle\":\"%s\",\"source\":\"%s\"} ",
-             utterance.c_str(), bundle.c_str(), source.c_str());
+    char hdr[512];
+    snprintf(hdr, sizeof(hdr),
+             "intent={\"utterance\":\"%s\",\"bundle\":\"%s\",\"source\":\"%s\",\"model_said\":\"%s\"} ",
+             utterance.c_str(), bundle.c_str(), source.c_str(), g_lastModelSaid.c_str());
     result = std::string(hdr) + act;
     g_lastActionNote = result;
     return e;
