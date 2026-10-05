@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 代码完备（Raw IPC 直调 AMS + 客户端 `--action`/`--load` + 取证 `[9]` 且已重排到前面），静态编译通过；**执行结果待冷启动验证** | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 **机制已验证**（SA→AMS→真实 ErrCode 回到调用方，evidence/49）；动作白名单/拒绝路径实测（201）✓；剩「让 AMS 收下这次启动」（参数/权限，FIX-69） | 见 §三 Now |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,19 +78,24 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b 冷启动验证（重跑，修完 FIX-67/68 后）→ evidence/49**
-  - **上一轮踩的两个坑已修**：① 取证服务有**时间预算**，脚本被掐在 `[7]`（现象：没有 `LUT-EV-END`）→ 分段已重排
-    （`0→0b→9→1→1b→…→7→8`）+ `[8]` 改用 `--load` 快模式；② 客户端 `--action` 模式上一轮**没落盘**
-    （提交里只有 1 行改动）→ 已补齐 `--action` 与 `--load` 两个模式，静态编译通过。
-  - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/49-sa-action-exec.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-    （跑之前先 `bash intree/sta3_verify.sh` 的镜像已同步：本轮改了客户端与取证脚本，注入时自动带上）
-  - **判据（四看）**：
-    1. **先看有没有 `LUT-EV-END`** —— 没有就是又被掐了，先查时间预算（FIX-67），别急着下结论；
-    2. `[9a]` 允许的 `com.ohos.settings` → 结果串里出现 **`AMS ErrCode=…`**（AMS 的真实返回；
-       即使是拒绝码也要如实记下，那就是下一轮"补权限 or 走路线B"的依据）；
-    3. `[9b]` 未授权 bundle → **201**；`[9c]` 删表恢复；`[7]/[8]` 与 `robustness bad=0`、t-mac `LoadModel` 0 无回退；
-    4. `GetMetrics` 的 `last_action:` 段能看到最近一次动作的结论。
+- **S6-1b-2：搞清 AMS 为什么回 22，并把 `start_ability` 跑通（或判定该走路线B）**
+  - **已实测（别重复）**：`evidence/49-sa-action-exec.txt` —— `[9a]` 允许的 `com.ohos.settings` → 结果串
+    `start_ability com.ohos.settings -> AMS ErrCode=22`（**机制通、参数被拒**）；`[9b]` 未授权 → **201**；
+    `[9c]` 恢复；`LUT-EV-END` 在场；`[1]/[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0 无回退。
+  - **本轮三步（每步都能判定）**：
+    1. 读 AMS 的校验链：在 `foundation/ability/ability_runtime/services/abilitymgr/src/ability_manager_service.cpp`
+       里找 `StartAbility` → `StartAbilityInner` 的**参数校验**，定位返回 `ERR_INVALID_VALUE`(=22) 的那些 `if`
+       （常见：`want.GetElement().GetBundleName().empty()`、module/ability 名缺失、userId 非法、
+       `CheckCallingTokenId`/`VerificationAllToken` 失败）。**把命中的那一条记进账本**。
+    2. 按命中原因补参数：从镜像里目标应用的 `module.json`（挂 `system.img` 看 `/system/app/<bundle>*/`）
+       取出 **module 名 + 入口 ability 名 + 所需 deviceTypes**，把 Want 补成显式启动
+       （`SetElementName(bundle, ability)` + `SetModuleName(module)`），必要时把 `userId` 从 `-1` 换成
+       **当前用户 id**（镜像里通常是 `100`）。
+    3. 若校验指向**权限/令牌**（例如要求调用方是 system app 或持有某权限）：**如实写结论**并改走**路线B**
+       —— SA 只产出结构化动作 JSON（`{"action":"start_ability","bundle":…,"ability":…,"module":…}`），
+       由应用侧（HAP，有完整 ability kit 与自己的身份）执行并把结果回报；SA 这侧保留动作白名单与准入。
+  - **判据**：`[9a]` 的 `last_action` 变成 `AMS ErrCode=0（已受理）`（**端到端"打开设置"**），
+    或明确记下 AMS 的权限类拒绝码并给出路线B 的实施项；`[9b]/[9c]`、无回退项保持。
 
 **Next（排队）**
 

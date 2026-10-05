@@ -274,6 +274,8 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 | **FIX-67** | 取证脚本"跑一半就没了"：新加的分段一个都不出、**连 `LUT-EV-END` 标记都没有** | 证据文件停在 `[7]`；`[8]/[9]` 完全没跑 | 取证服务（init 拉的一次性服务）有**时间预算**（watchdog/服务超时），而脚本随功能增长越来越重：`[1]` 两次模型加载 + `[1b]` + `[6]` + `[7]`×3 + `[8]` 又一次模型 ≈ 3–4 分钟 → 跑到 `[7]` 就被掐 | ① 客户端加 **`--load` 快模式**（只做 加载→指标→释放，不生成）；② **取证分段重排**：快的新能力放前面 `[0]→[0b]→[9]→[1]→[1b]→…→[7]→[8]`，重活在后 —— 即使被掐也能拿到关键证据；③ **判据里必须检查 `LUT-EV-END` 存在**，否则整段结果不可信（本轮就是靠"缺 END"发现被掐的） |
 | FIX-68 | 补丁"以为加了"其实没落盘（工具纪律） | 上一轮提交里客户端只改了 1 行（`modelPath` 的守卫），**`--action` 模式根本没进去** → guest 里跑的是普通模式，`[9]` 段自然什么都不出 | 用 python 改代码后没**回读校验**；而且 `modelPath` 那一行改了，看起来"像改过了" | **每处补丁写完立刻回读校验并打印计数**（如 `back.count('ExecuteAction')`），提交信息里列"改了哪些文件/哪几处"；本轮就是靠 `grep -c '--load'` 发现为 0 才把 `--action` 一起补回来的 |
 
+| **FIX-69** | 「执行动作」**机制已通、但 AMS 不收**：`start_ability com.ohos.settings` → `AMS ErrCode=22` | `evidence/49`：`[9a]` 的 `last_action` 串是 `start_ability com.ohos.settings -> AMS ErrCode=22（AMS 拒绝/失败）`；`[9b]` 未授权 bundle → 201 正常；`[9c]` 恢复后仍是 22 | 机制上**完全成立**：SA 自己发的 IPC 被 AMS 收下并回了一个真实错误码（22 = EINVAL）→ 说明 Raw IPC 路径（FIX-66b 的协议三件套）正确、parcel 被接受。22 是 **AMS 的参数校验**拒绝（`ERR_INVALID_VALUE` 级别），最可能的原因是 `Want` 里缺**显式启动所需字段**（bundle 之外还要 module/ability，或 `userId=-1` 不被接受） | 下一轮（S6-1b-2）：① 读 AMS 侧的 `StartAbility` 校验链（`foundation/ability/ability_runtime/services/abilitymgr/src/ability_manager_service.cpp` 里返回 `ERR_INVALID_VALUE` 的分支），确认它到底要什么；② 从镜像里目标应用的 `module.json` 取出 **module 名 + ability 名**（如 `com.ohos.settings` 的 entry ability），把 Want 补成显式启动（`SetElementName`/`SetModuleName`）；③ 若校验要求的是**调用方权限/令牌**（而非参数），就换 PLAN 的路线B（SA 产出动作 JSON，由应用侧执行）—— **如实记录是哪种** |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |
