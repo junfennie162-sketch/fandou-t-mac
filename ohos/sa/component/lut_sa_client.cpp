@@ -148,12 +148,23 @@ int main(int argc, char **argv)
     }
 
     // S6-2：自然语言意图 —— lut_sa_client --intent "打开设置"
+    // 给了模型路径就先 LoadModel（否则引擎是 unloaded，source 必然是 keyword —— 模型路径就测不到）
     if (argc > 2 && std::strcmp(argv[1], "--intent") == 0) {
         const std::string utt = argv[2];
+        const bool with_model = (argc > 3);
+        if (with_model) {
+            ErrCode el = proxy->LoadModel(argv[3], 4, 512);
+            printf("  [LoadModel(%s)] ErrCode=%d\n", argv[3], static_cast<int>(el));
+        }
         printf("  [ExecuteIntent(%s)]\n", utt.c_str());
         std::string ir;
         ErrCode ei = proxy->ExecuteIntent(utt, ir);
         printf("  [ExecuteIntent] ErrCode=%d  -> %s\n", static_cast<int>(ei), ir.c_str());
+        if (with_model) {
+            std::string rr;
+            ErrCode er = proxy->Release(rr);
+            printf("  [Release] ErrCode=%d\n", static_cast<int>(er));
+        }
         printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", ei == 0 ? 0 : 1);
         return ei == 0 ? 0 : 1;
     }

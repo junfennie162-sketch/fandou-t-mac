@@ -146,13 +146,16 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
     echo " 而 OH libc++ 是 std::__h::* → ABI 不同，链不了；见 QEMU-DEPLOY.md FIX-53）"
     echo
     echo "--- [1] t-mac 2bit 模型（形状表不匹配 → 优雅失败，不再打死 SA）---"
-    sed -n '/\[1\] 客户端/,/\[1b\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -30
+    sed -n '/\[1\] 客户端/,/\[1b\]/p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -30
     echo
     echo "--- [1b] 标准 ggml 模型（Qwen2.5-0.5B q4_k_m）：真加载 + 真出 token ---"
-    sed -n '/\[1b\] 第二个模型/,/####/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -48
+    sed -n '/\[1b\] 第二个模型/,/####/p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -48
     echo
     echo "--- [6] 接口鲁棒性 ---"
-    sed -n '/\[6\] 接口鲁棒性/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -16
+    sed -n '/\[6\] 接口鲁棒性/,$p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -16
+  echo
+  echo "--- [1c] 模型路径的意图解析 ---"
+  sed -n '/\[1c\]/,$p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -20
   echo
   echo "--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---"
   sed -n '/\[7\] 调用方准入/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -40

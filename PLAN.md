@@ -78,21 +78,24 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-2 补齐：让重活服务起来，验证模型路径（`source=model`）+ 无回退（evidence/53）**
-  - **上一轮已验（别重复）**：`evidence/52` 的轻活半边 —— `[10a]` 0 + `source=keyword` 如实、`[10b]` 22、
-    `[10c]` **201**（动作表指向未授权 bundle 也被动作白名单挡住 = 两道门）、`[10d]` 0；`LUT-EV-END` ✓
-  - **本轮已修（跑之前不用改代码）**：
-    ① harness 注入改为 **glob 全量**（`lut_evidence*.sh` + `lut_evidence*.cfg`）—— 第二个服务没起来的真因（FIX-73）；
-    ② 重活脚本补 `[1c]`：加载模型后再问一次 `--intent "打开设置"` / `"打开相机"`（用来验证 `source=model`
-       与"严格校验"是否生效）。
+- **S6-2 收口：把"模型路径"真正跑出来（evidence/54），顺带让重活内容进打包**
+  - **已验（别重复）**：`evidence/52`（轻活：`[10a]` 0 + `source=keyword` 如实、`[10b]` 22、`[10c]` **201** = 两道门、
+    `[10d]` 0）；`evidence/53` 里两个 END 都在（重活服务起来了），`[7a]/[7b]` 保持（失败项 0 / 1）。
+  - **本轮已修（跑之前不用改代码）**：FIX-74 的两个配套断层 ——
+    ① 客户端 `--intent <utterance> [<model>]`：给了模型就先 `LoadModel`、问完再 `Release`（**这才测得到模型路径**）；
+    ② harness 打包的 `[1]/[1b]/[6]` 改指向 `lut_evidence2.txt` 并新增 `[1c]` 段。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/53-sa-intent-model.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/54-sa-intent-model2.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
   - **判据（三看）**：
-    1. **两个 END 都在**（`LUT-EV-END` + `LUT-EV2-END`），且串口里有 `LUT-EV2-START`（重活服务真的起来了）；
-    2. `[1c1]` 模型已加载后的“打开设置” → `ErrCode=0` 且 `intent={...,"source":"model"}`（若输出不可解析而回退到
-       `keyword`，**也接受但要如实**——t-mac 2bit 产物的文本质量本来就有限，这属于"模型路径不可用 → 回退"）；
-       `[1c2]` “打开相机” → 非 0（**严格校验生效**：模型若随口给出未授权/表外 bundle，一律不认，宁可回退/拒绝）；
-    3. 无回退：`[1]` t-mac `LoadModel` 0 + Generate 出文本、`[6]` `robustness bad=0`、`[7]/[8]/[9]/[10]` 保持。
+    1. 两个 END 都在，且**打包里能看到重活三段**（`[1]` t-mac `LoadModel` 0 + `Generate#1` 出文本、
+       `[1b]` Qwen 正常、`[6] robustness summary: bad=0`）；
+    2. `[1c1]` 模型已加载后的“打开设置” → `ErrCode=0`，`source` **要么 `model`（严格校验通过）要么 `keyword`
+       （如实回退）** —— 两种都接受，但必须如实；`[1c2]` “打开相机” → 非 0（模型若给出未授权/表外 bundle，
+       严格校验必须不认）；
+    3. 轻活侧不回退：`[7a]` 0 / `[7b]` 201 / `[8]` `/ [9]` / `[10]` 0/22/201/0 保持。
+  - 若 `[1c1]` 真的走成 `model`：把提示模板与"严格校验"的判据写进 `INTEGRATION.md`（动作契约那一节）；
+    若仍是 `keyword`：**如实记录"t-mac 2bit 产物的文本质量不足以支撑分类"，并在 PLAN 里把它标成已知限制**
+    （不许为了好看去调模型或放宽校验）。
 
 **Next（排队）**
 

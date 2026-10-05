@@ -27,9 +27,9 @@ mkdir -p /data/local/tmp 2>/dev/null
 
   echo "--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---"
   echo "[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）"
-  /system/bin/lut_sa_client --intent "打开设置"
+  /system/bin/lut_sa_client --intent "打开设置" "$M"
   echo "[1c2] “打开相机” → 期望非 0（严格校验：模型随口说的包名若不表内/未授权，一律不认）"
-  /system/bin/lut_sa_client --intent "打开相机"
+  /system/bin/lut_sa_client --intent "打开相机" "$M"
 
   echo "--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---"
   /system/bin/lut_sa_client --stress

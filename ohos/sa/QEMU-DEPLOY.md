@@ -291,6 +291,8 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 | **FIX-73** | 第二个取证服务**根本没启动**（`LUT-EV2-BEGIN` 在串口里都不出现） | `evidence/52`：轻活服务完整跑完（`LUT-EV-END` ✓），但重活服务没有任何痕迹、`lut_evidence2.txt` 不存在 | 我把第二套 cfg/脚本加进了 BUILD.gn 与 `install_into_tree.sh`，**但 harness 的"注入镜像"那一步是手写的文件清单**（只拷 `lut_evidence.sh`/库/客户端/kcfg）→ 第二个脚本与 cfg 没进镜像 → init 找不到服务 ✗ | harness 的注入改为**按 glob 全量**：`cp -f component/evidence/lut_evidence*.sh → /system/bin/`、`cp -f component/etc/init/lut_evidence*.cfg → /system/etc/init/`，并打印已注入清单（以后再加服务不用改 harness） |
 | **FIX-73b** | S6-2 的**轻活半边全部判据通过**（动作表 + 两道门） | —— | —— | `evidence/52`：`[10a]` “打开设置”→ **`ErrCode=0`**，`intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword"}`（**source 如实**：轻活服务里没加载模型，就是关键词路径）；`[10b]` “打开相机”→ **22**（动作表没匹配）；`[10c]` 把动作表改成"打开设置→com.ohos.camera"→ **`ErrCode=201`**（**动作白名单仍然生效 —— 两道门成立**）；`[10d]` 删表恢复 → 0。**未验证**：模型路径（`source=model`）与无回退项（t-mac 生成/鲁棒性）—— 这两块在重活服务里，因 FIX-73 本轮没跑；已给重活脚本补 `[1c]`（加载模型后再问一次 `--intent`） |
 
+| **FIX-74** | 模型路径**压根测不到** + 打包里看不到重活内容（两个"配套断层"） | `evidence/53`：两个 END 都在 ✓（重活服务这次起来了，FIX-73 的 glob 注入生效），但 `[1c1]` 的 `source` 是 **keyword** 而不是 model；且打包出来的证据里**没有** `[1]/[1b]/[6]` 三段 | ① 客户端每次运行**末尾都会 `Release`**（正常流程的收尾）→ 到 `[1c]` 时引擎已被卸 → `EngineReady()=false` → 必然落到关键词兜底（模型路径**一次都没被执行过**）；② 取证拆两个文件后，harness 的"打包证据"仍在从**老文件** `lut_evidence.txt` 取 `[1]/[1b]/[6]` → 数据其实在 guest 的 `lut_evidence2.txt` 里，只是没被打包 | ① 客户端 `--intent <utterance> [<model路径>]`：**给了模型就先 LoadModel、问完再 Release**（一行命令即可测模型路径）；重活脚本 `[1c]` 改为带模型路径；② harness 打包把 `[1]/[1b]/[6]` 指向 `lut_evidence2.txt`，并新增 `[1c]` 段。**教训（与 FIX-68/72 同源）**：拆了东西就要把"读它的地方"一起改；配套（打包/注入/脚本）的改动要和功能改动一起核对 |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |
