@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 动作层 ✅（evidence/51）；**S6-2 轻活半边 ✅**（动作表 + 两道门实测：0 / 22 / 201 / 0，source 如实）；剩模型路径 `source=model` 与无回退项（在重活服务里，本轮因 FIX-73 没跑） | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ **收口**：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,22 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-2 收口（第二次尝试）：模型路径 + t-mac 推理无回退（evidence/55）**
-  - **上一轮查清的（别重复）**：`evidence/54` 里 `[1c]` 的模型路径是**空串**（`argc=3` + 空 `$M`）→ 引擎 unloaded →
-    `source` 只能是 keyword；回看 `evidence/53` 的 `[1]` 也是空路径（`argc=2`）→ 那段"跳过（未给模型路径）"。
-    **根因（FIX-75）**：`M=` 定义在轻活脚本的 `[0b]` 里，拆分时没跟着搬到重活脚本 → 重活脚本的 `$M` 一直是空。
-    **已修**：两个脚本头部各自定义 `M=/data/local/tmp/model.gguf`（已 `sh -n` 校验）。
-  - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/55-sa-intent-model3.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（三看）**：
-    1. **重活 `[1]` 这次必须真的加载**：`[LoadModel(/data/local/tmp/model.gguf)] ErrCode=0` +
-       `Generate#1` 出文本 + `determinism: yes` + `non-constant: yes` + `失败项 0`（这是 t-mac 推理在**拆分之后**
-       第一次回归验证 —— 之前几轮的"无回退"其实只在轻活侧成立）；
-    2. `[1c1]` 模型已加载后的“打开设置” → `[LoadModel(...)] ErrCode=0` 后 `ExecuteIntent ErrCode=0`，
-       `source` **要么 `model` 要么 `keyword`（如实）**；`[1c2]` “打开相机” 非 0；
-    3. 两个 END 都在 + `[6] robustness summary: bad=0` + 轻活 `[7]/[8]/[9]/[10]` 保持。
-  - 结局处置（预先写死，别为了让 `source=model` 好看而作弊）：若走成 `model` → 把提示模板与严格校验判据写进
-    `INTEGRATION.md`；若仍是 `keyword` → **如实写成已知限制**（t-mac 2bit 产物文本质量不足以支撑分类）。
+- **S6-3：把"模型分类不可用"这条限制查实 + 扩动作集**
+  1. **先查实限制**（FIX-76b）：给 `ModelClassify` 加一条 diag —— 把模型的**原始输出**（截断到 ~120 字）记进 `last_action`/日志，
+     这样下一轮 `[1c1]` 的证据里就能看到"模型到底吐了什么"，把结论从"没通过校验"升级成
+     "**输出是乱码 / 输出里没有包名 / 输出被截断**"中的具体哪一种（判据：`evidence/56` 的 `[1c1]` 里出现 `model_said="…"`）。
+  2. **扩动作集**：`intents.txt` 已支持自定义；这一轮把**内置默认表**从"只有设置"扩到镜像里确实存在的几个白名单应用
+     （`com.ohos.settings` / `com.ohos.camera` / `com.ohos.contacts` / `com.ohos.distributedmusicplayer`，
+     名字取自各自 `.hap` 的 module.json —— 取法见账本 S6 侦察节），同时**动作白名单**默认仍只放 `com.ohos.settings`
+     （要放更多必须显式写 `actions_allow.txt`）—— 保持"默认最小权限"。
+  3. **把限制写进对接文档**：`INTEGRATION.md` 已知限制里加一条"意图的模型分类路径当前不可用（质量原因），
+     默认走关键词表；要启用需换更好的模型"，并给"自定义 `intents.txt` 控制关键词"的使用示例。
+  - **判据（下一轮冷启动，evidence/56）**：`[1c1]` 出现 `model_said="…"`（看清模型输出）+ 仍如实回退；
+    `intents.txt` 里加一条自定义说法（如"看相机=com.ohos.camera"）→ `--intent "看相机"` 能命中，但
+    因为动作白名单没放 camera → **201**（两道门仍成立）；既有 `[7]~[10]`、两个 END、`bad=0`、t-mac 推理 0 不回退。
 
 **Next（排队）**
 
