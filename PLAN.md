@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ 收口（S6-3 收尾：`model_said` 诊断 + 扩表 + 文档，待冷启动验证）：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 接近收口：意图层主体 ✅（evidence/55）；S6-3 的 `[10e]` 两道门 ✅（evidence/56）；**模型路径抓到两个真 bug（FIX-77）已修，待验证**：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,19 +78,20 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-3 冷启动验证（evidence/56）**
-  - **已实现（别重做）**：① `ModelClassify` 增加 **`model_said`** 诊断 —— 把模型对意图提示的**原始输出**
-    （清洗 + 截断 120 字）经结果串带出，用来把"模型分类不可用"从"没通过校验"升级成具体结论；
-    ② 内置动作表扩到镜像里存在的应用（设置/相机/联系人/音乐），**默认动作白名单仍只放 `com.ohos.settings`**
-    （最小权限，其余要显式写 `actions_allow.txt`）；③ 取证加 `[10e]`（内置表命中相机 → 期望 201）；
-    ④ `INTEGRATION.md` 补了"模型分类限制"与"自定义动作表示例"。静态编译通过（库 2,057,632 字节）。
+- **S6-3 收尾验证：模型路径的两个 bug 是否修好（evidence/57）**
+  - **上一轮抓到并已修（FIX-77）**：① `ModelClassify` 传**会话 0**（SA 会话从 1 起）→ 模型路径永远 kNoSession；
+    ② `LoadModel` 返回 0 但 `EngineReady()` 仍 absent（原因待钉死）。修法：① 改用 `g_session`；
+    ② 未就绪分支的 `model_said` 现在带 `EngineInfo()`（`engine=… n_ctx=… model=…`）。
+    静态编译通过（库 2,057,768 字节）。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/56-sa-intent-diag.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/57-sa-intent-diag2.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
   - **判据（三看）**：
-    1. `[1c1]` 的结果串里出现 **`model_said="…"`**（看清模型到底吐了什么：乱码 / 没有包名 / 空 / 引擎未就绪），
-       且 `source` 仍如实（`keyword`）；
-    2. `[10e]` “看相机” → **201**（内置表命中但动作白名单没放 = 两道门仍成立）；`[10a]~[10d]` 保持（0/22/201/0）；
+    1. `[1c1]`（模型已加载后问“打开设置”）的 `model_said` 变成**模型的真实输出**（能看到它吐了什么：乱码/没包名/空）
+       或带状态的未就绪串（`engine=…` 一眼看出为什么）；`source` 如实（若走成 `model` 更好，但**不许**为它调参）；
+    2. `[10e]` “看相机” 仍 **201**；`[10a]~[10d]` 保持（0/keyword、22、201、0）；
     3. 无回退：两个 END 都在、`[1]` t-mac `LoadModel` 0 + 出文本、`[6] bad=0`。
+  - 若 `model_said` 显示模型输出是乱码/不含包名 → **把"模型分类不可用"最终定性并写进 `INTEGRATION.md` 已知限制**
+    （这一条已经在文档里，确认后把措辞从"实测未通过"升级成"实测模型输出为 X，因此不可用"）✓
 
 **Next（排队）**
 

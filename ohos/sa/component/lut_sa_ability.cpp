@@ -451,7 +451,8 @@ void NoteModelSaid(const std::string& raw) {
 
 std::string ModelClassify(const std::string& utterance, const std::vector<std::pair<std::string, std::string>>& table) {
     if (!::tmac_sa::EngineReady()) {
-        g_lastModelSaid = "(engine not ready)";
+        // 把"为什么没就绪"一起带出去（FIX-77：实测 LoadModel 返回 0 但这里看到 absent）
+        g_lastModelSaid = "(engine not ready: " + ::tmac_sa::EngineInfo() + ")";
         return "";   // 没加载模型 → 交给关键词兜底
     }
     std::string prompt = "只输出一个 json，不要解释：{\"bundle\":\"包名\"}。可选包名有 ";
@@ -462,7 +463,9 @@ std::string ModelClassify(const std::string& utterance, const std::vector<std::p
     prompt += "句子：";
     prompt += utterance;
     char buf[600] = {0};
-    const auto st = ::tmac_sa::InferTokenBatch(0, prompt.c_str(), buf, sizeof(buf), 24, 0.0, 40);
+    // ★ FIX-77：这里原来传会话 0 —— 但 SA 的会话是从 1 开始的（g_session），0 号必然 kNoSession，
+    //   模型路径因此**永远走不通**（即使引擎就绪）。必须用当前会话。
+    const auto st = ::tmac_sa::InferTokenBatch(g_session, prompt.c_str(), buf, sizeof(buf), 24, 0.0, 40);
     if (st != ::tmac_sa::Status::kOk) {
         return "";
     }

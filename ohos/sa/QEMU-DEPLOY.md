@@ -298,6 +298,9 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 | **FIX-76** | **S6-2 收口：意图层判据全过**（含模型路径的诚实结论 + t-mac 推理回归） | —— | —— | `evidence/55`：① **两个 END 都在**；② **重活 `[1]` 真的加载了**（`LoadModel(...) ErrCode=0 (383 ms)` + `Generate#1` 出真实文本 + `determinism: yes` + `non-constant: yes` + 失败项 0）—— 这是**拆分之后 t-mac 推理的第一次回归验证**（FIX-75 之前它其实没跑过）；③ `[1b]` Qwen 0 / `[6] robustness summary: bad=0`；④ `[1c1]`（模型已加载后问"打开设置"）→ `[LoadModel] ErrCode=0` + `ExecuteIntent ErrCode=0`，但 **`source":"keyword"`** —— 即**模型路径确实被走过了**（`EngineReady()` 为真），只是模型输出没通过"必须包含白名单内 bundle"的严格校验 → 如实回退；⑤ `[1c2]`（"打开相机"）→ **22** + `[Release] 0`；⑥ 轻活 `[10a]~[10d]`（0/keyword、22、201、0）保持。**结论（如实）**：**"模型分类"这条路目前不可用**——t-mac 2bit 产物的文本质量不足以稳定吐出合规 JSON；按计划**不调模型、不放宽校验**，把它作为已知限制记录（`INTEGRATION.md` 的已知限制 + PLAN）。**方法论注**：打包用 `head -N` 截断会让人误判"某步没返回"（本轮 `[1c2]` 就被误读了一次）—— 查现场要看**原始文件**，别看截断后的 |
 | FIX-76b | 顺手记：`ModelClassify` 的失败没有留下"模型原始输出" | —— | —— | 现在只能说"输出未包含白名单 bundle"，**看不到模型到底吐了什么** → 下一轮给 `ModelClassify` 加一条 diag（把原始输出截断后记进 `last_action`/日志），以后判断"是输出乱还是没输出"就有依据了 |
 
+| **FIX-77** | `model_said` 诊断**当场抓到模型路径的两个真 bug** | `evidence/56`：`[1c1]` 里 `[LoadModel(...)] ErrCode=0`（模型确实加载了）但 `model_said":"(engine not ready)"`；轻活侧同样如此 | ① **会话号传错**：`ModelClassify` 调 `InferTokenBatch(**0**, …)` —— 但 SA 的会话是从 **1** 开始（`CreateSession` 自增），0 号必然 `kNoSession` → **模型路径永远走不通**（即使引擎就绪）；② `EngineReady()` 在 `LoadModel` 返回 0 之后仍看到 `absent`（未就绪）—— 现象确凿，但**原因还没钉死**（下一轮用增强诊断确认：未就绪分支现在会把 `EngineInfo()`（含 `engine=… model=…`）一起带进 `model_said`） | ① 改用当前会话 `g_session`；② 增强 `model_said` 的"未就绪"分支：`(engine not ready: engine=… n_ctx=… model=…)`，把"为什么没就绪"钉死。**副产品**：同轮 `[10e]` 验证了"内置动作表命中 `com.ohos.camera` 但动作白名单只放 settings → **201**"= **两道门仍然成立** |
+| FIX-77b | 方法论：**诊断字段要能自证** | —— | —— | 这一轮证明 `model_said` 这种"把中间态带出去"的字段很值：它把"模型分类不可用"从一个笼统结论，直接变成两个可修的具体 bug（会话号 + 引擎就绪）。**建议**：以后每条"回退/不可用"分支都顺手带一个能自证的状态字段（我们已经在 quota/action/intent 上这么做了） |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |
