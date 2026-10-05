@@ -154,5 +154,78 @@ if (action.action === 'start_ability') {
   表里能命中**不等于**允许执行：`com.ohos.camera` 这类还要写进 `/data/lut_sa/actions_allow.txt`（动作白名单），
   否则 `ExecuteAction` 会回 **201**（实测见 `[10c]/[10e]`）。内置默认表已含设置/相机/联系人/音乐，
   但**默认动作白名单只放 `com.ohos.settings`** —— 最小权限。
+- **`ExecuteIntent` 的返回值**（自然语言那一层）：
+
+```
+intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":"(engine not ready)"}
+       action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+```
+  即：**前半段是"意图解析结果"，后半段是"动作 JSON"**，两者拼在一个字符串里（`action=` 之后那一段是合法 JSON，可以直接解析）。
+
+### 字段表（给要做"应用侧执行器"的人）
+
+**① 意图段** `intent={...}`
+
+| 字段 | 含义 | 取值 |
+|---|---|---|
+| `utterance` | 原始那句话 | 字符串 |
+| `bundle` | 解析出的目标包名 | 白名单内才非空；没命中为空 |
+| `source` | **谁做的判断（如实）** | `model`（模型路径通过严格校验）/ `keyword`（关键词表兜底）/ `none`（没匹配） |
+| `model_said` | **模型的原始输出**（清洗+截断 120 字） | 用于复盘"为什么没用模型路径"（实测为词沙拉 → 所以回退） |
+
+**② 动作段** `action={...}`（**这一段是合法 JSON，正式契约就是它**）
+
+| 字段 | 含义 | 说明 |
+|---|---|---|
+| `action` | 动作类型 | 本版只有 `start_ability` |
+| `bundle` | 目标包名 | 已被 SA 的**动作白名单**校验过 |
+| `ability` / `module` | 显式启动用（可空） | 来自调用方 `arg` 的 `/<ability>` 与 `#<module>` |
+| `userId` | 目标用户 | `-1` = 默认用户 |
+| `ams_try` | **SA 直连 AMS 的尝试结果** | 本环境恒 `22`（system-caller 不被接受）；**如实带回，不美化** |
+
+### 应用侧执行器（HAP / ArkTS，**完整片段**）
+
+```ts
+import { common, Want, BusinessError } from '@kit.AbilityKit';
+
+// 从 SA 的返回串里取出动作段并执行；executor 必须自己做"第二道门"
+export async function runAction(saResult: string, ctx: common.UIAbilityContext): Promise<string> {
+  const i = saResult.indexOf('action=');
+  if (i < 0) return 'FAIL: no action segment';
+  let act: { action: string; bundle: string; ability?: string; module?: string; userId?: number };
+  try {
+    act = JSON.parse(saResult.slice(i + 'action='.length).split(' ams=')[0]);
+  } catch (e) {
+    return 'FAIL: action json parse error';
+  }
+  if (act.action !== 'start_ability' || !act.bundle) return 'FAIL: unsupported action';
+
+  // 第二道门：应用侧自己的允许清单（别把"SA 说可以"当成"已经执行了"）
+  const ALLOW = ['com.ohos.settings'];           // 按你自己的策略维护
+  if (!ALLOW.includes(act.bundle)) return 'DENY: bundle not in app-side allow list';
+
+  const want: Want = { bundleName: act.bundle };
+  if (act.ability) want.abilityName = act.ability;
+  if (act.module) want.moduleName = act.module;
+  try {
+    await ctx.startAbility(want);
+    return 'OK';
+  } catch (e) {
+    const err = e as BusinessError;
+    return `FAIL: startAbility code=${err.code} msg=${err.message}`;   // 失败也如实回报
+  }
+}
+```
+
+**失败处理对照**（应用侧只需认这几个）：
+
+| 你看到 | 含义 | 怎么办 |
+|---|---|---|
+| `ErrCode=0` + `action={...}` | SA 侧完成（策略过、动作已产出） | 交给上面的 `runAction` 执行 |
+| `ErrCode=201` | 准入或**动作白名单**拒绝 | 找系统侧加白名单；别在应用侧绕过 |
+| `ErrCode=22` | 参数/配额问题（如模型超限、显式启动参数不全） | 看 `GetMetrics` 的 `quota:`/`diag:` |
+| `ErrCode=29189` | 远端对象死亡（SA 被重启） | 重取 proxy 再试 |
+| `action` 段里 `ams_try != 0` | SA 直连 AMS 没成功（**当前环境正常**） | 忽略它，执行交给你（应用侧） |
+
 - **安全边界**：SA 只产出**白名单内**的 bundle；应用侧执行前应**再校验一次**（两道门），
   并把执行结果回报给调用方 —— **不要把"SA 说可以"当成"已经执行了"**。

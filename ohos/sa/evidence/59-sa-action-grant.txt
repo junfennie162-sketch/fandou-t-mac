@@ -1,0 +1,226 @@
+===== LUT-SA SystemAbility 真推理（STA-3）=====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt）; SA 进程内经 IPC 真跑 llama.cpp
+抓取: 2026-10-05 18:00:06
+
+--- 引擎形态 ---
+静态库 libllama_engine.a：llama.cpp + ggml + t-mac LUT 内核，用 OH 树自己的 clang 编
+（仓库里的预编译 libllama.a/libggml.a 是 DevEco 工具链编的，引用 std::__n1::*，
+ 而 OH libc++ 是 std::__h::* → ABI 不同，链不了；见 QEMU-DEPLOY.md FIX-53）
+
+--- [1] t-mac 2bit 模型（形状表不匹配 → 优雅失败，不再打死 SA）---
+--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---
+=====LUTSA-CLIENT-START=====
+  client pid=2047 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f087fc3ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 189.5 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=1146.3 MB, session=3, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 189.5 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} denied: bundle 'com.ohos.camera' 不在动作白名单里（当前允许: com.ohos.settings ，来自 /data/lut_sa/actions_allow.txt） | quota: model<=2048MB (quota: ok) | engine=absent n_ctx=0 threads=0 infer=0 model= | diag: [sa] LoadModel ok in 9497 ms (n_ctx=512 threads=4)  | llama_log:  '</s>' llm_load_print_meta: UNK token        = 0 '<unk>' llm_load_print_meta: PAD token        = 32000 '<pad>' llm_load_print_meta: LF token         = 13 '<0x0A>' llm_load_print_meta: EOG token        = 2 '</s>' llm_load_print_meta: max token length = 48 llm_load_tensors: ggml ctx size =    0.13 MiB llm_load_tensors:        CPU buffer size =   965.22 MiB ................................................................................. [shim] load: model ok [shim] load: new_context llama_new_context_with_model: n_ctx      = 512 llama_new_context_with_model: n_batch    = 512 llama_new_context_with_model: n_ubatch   = 512 llama_new_context_with_model: flash_attn = 0 llama_new_context_with_model: freq_base  = 10000.0 llama_new_context_with_model: freq_scale = 1 llama_kv_cache_init:        CPU KV buffer size =   162.50 MiB llama_new_context_with_model: KV self size  =  162.50 MiB, K (f16):   81.25 MiB, V (f16):   81.25 MiB llama_new_context_with_model:        CPU  output buffer size =     0.12 MiB llama_new_context_with_model:        CPU compute buffer size =    68.75 MiB llama_new_context_with_model: graph nodes  = 942 llama_new_context_with_model: graph splits = 1 [shim] load: ready 
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0 (246 ms)
+  [Generate#1(sampling)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [Generate#2(同 prompt 复现)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0  ->  Justice Nichija Nam brothersrodalandQL forum‎ slashöl acid splglgl
+  [non-constant] 换 prompt 输出不同: yes
+  [GetMetrics(引擎态)] ErrCode=0  -> peak_rss=1165.5 MB, session=3, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 189.5 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=Generate | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} denied: bundle 'com.ohos.camera' 不在动作白名单里（当前允许: com.ohos.settings ，来自 /data/lut_sa/actions_allow.txt） | quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=3 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 9497 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 246 ms (n_ctx=512 threads=4)  | llama_log:  prompt decode [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 piece=" Book"] [id=6982 logit=6.9431 piece="Reader"] [shim] gen: sampling [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice" [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea" [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-8.1406 max=9.2544 mean=0.5023 nan_or_inf=0 n_vocab=32002 argmax=17181 top: [id=17181 logit=9.2544 piece=" Justice"] [id=13282 logit=8.2037 piece="EY"] [id=21416 logit=8.0991 piece="agt"] [id=3305 logit=8.0194 piece="ety"] [id=4492 logit=7.4252 piece="isf"] [shim] gen: sampling [shim] diag: step 0 argmax=17181 piece_len=8 piece=" Justice" [shim] diag: step 1 argmax=16371 piece_len=5 piece=" Nich" [shim] diag: step 2 argmax=8044 piece_len=3 piece="ija" [shim] gen: done 16 tokens 
+  [Release] ErrCode=0  -> ok: session released, engine memory returned to system
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+
+--- [1b] 标准 ggml 模型（Qwen2.5-0.5B q4_k_m）：真加载 + 真出 token ---
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+=====LUTSA-CLIENT-START=====
+  client pid=2272 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f535f067cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/qwen.gguf]
+  [LoadModel] ErrCode=0
+  [metrics] quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=3 model=/data/local/tmp/qwen.gguf | diag: [sa] LoadModel ok in 9497 ms (n_ctx=512 thre
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---
+[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）
+=====LUTSA-CLIENT-START=====
+  client pid=2275 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2023c45cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2356 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f65fd2ebcb0
+  [iface_cast] ok —— IPC 代理已建立
+
+--- [6] 接口鲁棒性 ---
+
+--- [1c] 模型路径的意图解析 ---
+--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---
+[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）
+=====LUTSA-CLIENT-START=====
+  client pid=2275 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2023c45cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2356 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f65fd2ebcb0
+  [iface_cast] ok —— IPC 代理已建立
+
+--- [1d] 引擎存活性隔离实验 ---
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2356 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f65fd2ebcb0
+  [iface_cast] ok —— IPC 代理已建立
+
+--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---
+--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---
+[7a] 默认档位（root 属特权 uid）→ 期望 SelfTest 放行、失败项 0
+=====LUTSA-CLIENT-START=====
+  client pid=1995 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7ff835780cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 248.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=9.5 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 248.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} denied: bundle 'com.ohos.camera' 不在动作白名单里（当前允许: com.ohos.settings ，来自 /data/lut_sa/actions_allow.txt） | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7b] 写白名单只放 uid 12345（root 不在内）→ 期望 SelfTest 返回 201、失败项 ≥1
+=====LUTSA-CLIENT-START=====
+  client pid=1998 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fcbcc063cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=201
+  [GetMetrics] ErrCode=0  -> peak_rss=9.5 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 248.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: whitelist(1 uids in /data/lut_sa/allow_uids.txt) | last_action: intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} denied: bundle 'com.ohos.camera' 不在动作白名单里（当前允许: com.ohos.settings ，来自 /data/lut_sa/actions_allow.txt） | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 1 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7c] 删掉白名单恢复默认档位 → 期望重新放行（证明策略每次调用都重读）
+=====LUTSA-CLIENT-START=====
+  client pid=2002 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f43be423cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 243.7 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=9.5 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 243.7 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} denied: bundle 'com.ohos.camera' 不在动作白名单里（当前允许: com.ohos.settings ，来自 /data/lut_sa/actions_allow.txt） | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [8] 配额（S5-2）：可加载模型大小上限 ---
+[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活
+=====LUTSA-CLIENT-START=====
+
+--- [8] 配额（S5-2）：model_mb 上限 / 删配置恢复 ---
+--- [8] 配额（S5-2）：可加载模型大小上限 ---
+[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活
+=====LUTSA-CLIENT-START=====
+  client pid=2005 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fcb163fecb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/model.gguf]
+  [LoadModel] ErrCode=22
+  [metrics] quota: model<=1MB (quota: model 965 MB > limit 1 MB (文件 /data/local/tmp/model.gguf)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=1)=====
+[8b] 删掉配额配置 → 期望重新加载成功（ErrCode=0）
+=====LUTSA-CLIENT-START=====
+  client pid=2009 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f5a4663ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/model.gguf]
+  [LoadModel] ErrCode=0
+  [metrics] quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=0 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 9497 ms (n_ctx=512 thr
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+#####LUT-EV-END#####
+
+--- [9] 系统级动作执行（S6-1b）：start_ability + 动作白名单 ---
+--- [9] 系统级动作执行（S6-1b-2）：start_ability 参数变体一轮试完 ---
+[9a1] 只给 bundle（基线，已知 AMS=22）
+=====LUTSA-CLIENT-START=====
+  client pid=1917 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f1411e0dcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 thread
+=====LUTSA-CLIENT-END (rc=0)=====
+[9a2] 显式 ability（入口 com.ohos.settings.MainAbility）→ 期望 AMS 受理
+=====LUTSA-CLIENT-START=====
+  client pid=1922 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fbed2e30cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings/com.ohos.settings.MainAbility)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":-1,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) |
+=====LUTSA-CLIENT-END (rc=0)=====
+[9a3] 显式 ability + userId=100
+=====LUTSA-CLIENT-START=====
+  client pid=1925 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7ff6c700ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings/com.ohos.settings.MainAbility@100)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":100,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":100,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) 
+
+--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.ffn_gate.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.0.ffn_down.weight (m: 3200, k: 8640, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=135, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.ffn_up.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.1.attn_q.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.1.attn_k.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.1.attn_v.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.1.attn_output.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.1.ffn_gate.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.1.ffn_down.weight (m: 3200, k: 8640, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=135, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.1.ffn_up.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.2.attn_q.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.2.attn_k.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.2.attn_v.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.2.attn_output.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transf

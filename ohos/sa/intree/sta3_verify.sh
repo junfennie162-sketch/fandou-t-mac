@@ -168,6 +168,15 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo
   echo "--- [9] 系统级动作执行（S6-1b）：start_ability + 动作白名单 ---"
   sed -n '/\[9\] 系统级动作执行/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -30
+  echo
+  echo "--- [10] 自然语言 → 动作（source 如实）---"
+  sed -n '/\[10\] 自然语言/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -30
+  echo
+  echo "--- [11] 动作白名单「正向授权」双证明 ---"
+  sed -n '/\[11\]/,/\[12\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -20
+  echo
+  echo "--- [12] S7-0 侦察：无障碍服务状态 ---"
+  sed -n '/\[12\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -8
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null

@@ -91,6 +91,26 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "[10e] 内置表已含"看相机"→com.ohos.camera，但动作白名单默认没放它 → 期望 201（两道门）"
   /system/bin/lut_sa_client --intent "看相机"
 
+  echo "--- [11] 动作白名单「正向授权」双证明（S6-4）：放行 + 收回 ---"
+  printf '看相机=com.ohos.camera
+' > /data/lut_sa/intents.txt
+  printf 'com.ohos.settings
+com.ohos.camera
+' > /data/lut_sa/actions_allow.txt
+  echo "[11a] 意图表 + 动作白名单都放 camera → 期望 ErrCode=0 且 JSON 里 bundle=com.ohos.camera"
+  /system/bin/lut_sa_client --intent "看相机"
+  echo "[11b] 收回动作白名单（只放 settings）→ 同一条说法应回到 201（对照）"
+  printf 'com.ohos.settings
+' > /data/lut_sa/actions_allow.txt
+  /system/bin/lut_sa_client --intent "看相机"
+  rm -f /data/lut_sa/intents.txt /data/lut_sa/actions_allow.txt
+
+  echo "--- [12] S7-0 侦察：无障碍服务在本镜像里吗 ---"
+  echo "  ps(accessib): $(ps -ef 2>/dev/null | grep -i accessib | grep -v grep | head -1)"
+  echo "  profile     : $(grep -o '\"process\": *\"[a-z]*\"' /system/profile/accessibility.json 2>/dev/null | head -1)"
+  echo "  libs        : $(ls /system/lib64/libaccessibleability*.z.so 2>/dev/null | wc -l) 个无障碍库"
+  echo "  cfg         : $(ls /system/etc/init/accessibility.cfg 2>/dev/null | wc -l) 个 init cfg"
+
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
   rm -f /data/lut_sa/allow_uids.txt 2>/dev/null
   mkdir -p /data/lut_sa 2>/dev/null

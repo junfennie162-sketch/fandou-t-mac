@@ -78,15 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6 收口（已完成）+ 下一步取一件**：S6 全绿了，接下来按优先级挑**一件**做（这轮选 ①）：
-  1. **S6-4：把"意图 → 动作"的契约补全到对接文档 + 给应用侧执行留一个可跑的骨架**
-     —— 在 `INTEGRATION.md` §5 补：`ExecuteIntent` 的调用示例（含"模型不可用→关键词"的说明）、
-     动作 JSON 字段表、以及"应用侧拿到 JSON 后 `startAbility` 并回报"的**完整可编译片段**（ArkTS）；
-     同时在 SA 侧给 `ExecuteAction`/`ExecuteIntent` 各补一条 `[11]` 取证（自定义 `intents.txt` 两条说法 + 动作白名单放行一条，
-     证明"表可配、门可控"）。
-  2. 备选：**多会话**（共享权重、各自 context）—— 这是"单引擎串行"限制的正解，但工作量较大。
-  3. 备选：**arm64 真机路径**（用 `deploy/tuned/aarch64-hf-bitnet-3b` 的 kcfg/kernels 编一版，静态检查 + 说明未上机实测）。
-  - 判据（①）：`[11]` 两步都拿到预期码（放行 0 / 越权 201）+ 文档片段能被人照抄；两个 END 都在、`bad=0`、t-mac `[1]` 不回退。
+- **Phase 2 = S7-1a：写无障碍探针 `lut_a11y_dump`（独立工具，不进 SA —— 先把"accessibility 能不能拿元素树"这个未知单独打掉）**
+  1. **先量依赖闭包**（FIX-64 的教训，**出现 arkcompiler 就立刻换路**）：
+     `external_deps = [ "accessibility:accessibleability" ]`（part_name=accessibility）→ `ninja -n` 干跑，
+     判据：`grep -ci arkcompiler` 为 0（已知它自身依赖只有 c_utils/e2fsprogs/ffrt/hilog/init/ipc/samgr/json/cesfwk/**want** ✓）；
+     ⚠ **不要**带 `accessibility_common`（它带 `runtime_core:ani`）；`common/include` 只当 include 目录用。
+  2. **写探针**（新 `ohos_executable("lut_a11y_dump")`，装到 `/system/bin/`）：
+     `AccessibleAbilityClient`（头文件 `interfaces/innerkits/aafwk/include/accessible_ability_client.h`）→
+     `GetRoot(info, systemApi=true)` 或 `GetWindows(windows, true)` + `GetRootByWindow(...)`；
+     把 `AccessibilityElementInfo` 的**文本/类型/可点击/边界**打印成 **JSON**（先只打顶层 + 前 N 个子节点，别做递归爆炸）。
+  3. **在 guest 里跑**：取证脚本加 `[13]` 段直接执行 `/system/bin/lut_a11y_dump` 并把输出打进证据；
+     **判据**：打印出**带文本的元素列表**（例如设置界面里的"WLAN/蓝牙"）；若被拒/拿不到 → **如实记录错误码与原因**
+     （探针的意义就是把未知拆开，失败也是有价值的结论）。
+  - 之后（Phase 3）才把探针能力封成 SA 的 **`ReadScreen`**（独立 IDL 方法，不塞进 Action）+ 白名单/隐私。
 
 **Next（排队）**
 
@@ -143,28 +147,35 @@ wsl -d ohbuild -u root -- bash -c 'e2fsck -fy /src/ohos/out/x86_64_virt/packages
 
 ---
 
-## 七、S7 路线细化（GUI Agent：读屏 → 决策 → 执行，全程本机）
+## 七、S7 执行顺序（**已拍板**：Phase 0 → 5；S7-1 拆成 1a/1b；T1/T2 暂停）
 
-> 先把已探明的事实钉在这里（**别重复侦察**，2026-10-05 实测）：
+> 两条设计原则（定下来就别违反）：
+> ① **感知与执行是两个方向**：`ReadScreen`（世界→Agent）必须是**独立的 IDL 方法**，不塞进 `ExecuteAction`（Agent→世界）；
+>    以后要扩 `ReadCamera/ReadAudio/ReadSensor` 也走这条线。
+> ② **顺序不许跳**：看到 → 理解 → 决定 → 操作。第一版只做"看"（dump 元素树），不做自动点击 ——
+>    读屏失败能定位到"无障碍没起/元素树错/权限不足"，而点击失败要同时排查坐标/注入/权限/页面状态。
 
-| 事实 | 结论 |
-|---|---|
-| 无障碍模块 | 源码在 `foundation/barrierfree/accessibility`；内检四件套 GN 目标：`aafwk:accessibleability`、`acfwk:accessibilityconfig`、`asacfwk:accessibilityclient`、`common:accessibility_common`；**镜像里都有**（`libaccessibleability.z.so` / `libaccessibleabilityms.z.so` / `libaccessibility_config.so` + `profile/accessibility.json`） |
-| 输入注入 | SDK 有 `@ohos.multimodalInput.inputEventClient`（键/鼠/触注入）；服务侧在 `foundation/multimodalinput/input/uinput/{inject_thread,keyboard_inject,…}`；镜像里有 `multimodalinput.json` |
-| 权限等级（决定谁能干） | `INJECT_INPUT_EVENT` = **system_core / system_grant / SYSTEM**（三方拿不到 ✓）；`INPUT_MONITORING` = system_basic；`ACCESSIBILITY_EXTENSION_ABILITY` / `CONNECT_ACCESSIBILITY_EXTENSION` = system_basic；`START_ABILITIES_FROM_BACKGROUND` = system_basic |
-| 镜像预置的扩展 | `/system/etc/accessibility/` 只有 `api_event_reporter.cfg`（**没有**预置无障碍扩展 → 需要我们自己配） |
-
-| 子步 | 内容 | 判据（证据文件） |
+| Phase | 内容 | 判据（证据） |
 |---|---|---|
-| **S7-0** 侦察收尾 | ① 量无障碍内检的依赖闭包（FIX-64 教训：`ninja -n` 干跑看会不会拖进 arkcompiler）；② 确认无障碍服务在本镜像里真的起了（`ps` + `GetSystemAbility(无障碍服务 id)`）；③ 找 multimodalinput 内检目标 | 三问三答，写进账本（evidence/59 的侦察段） |
-| **S7-1 读屏（地基）** | SA 加 `ReadScreen`：用 `AccessibilityClient`（asacfwk）取**顶层元素树**（文本/类型/可点/边界）→ 返回**结构化元素 JSON**（复用 S6 的 JSON 契约与"如实"风格：`{source:"accessibility", nodes:[{i,text,type,clickable,bounds}]}`）；日志默认**不落屏幕原文** | `evidence/59`：SA 能 dump 出**带文本的元素列表**（在设置界面里能看到如"WLAN/蓝牙"这类文本） |
-| **S7-2 决策（看→想）** | 把"元素列表 + 用户话"喂给本地模型 → 输出**下一步动作 JSON**（`{action:click\|input\|back\|open, index\|text}`）；**严格校验**：动作必须在允许集、`index` 必须存在，否则回退规则匹配；`source` 如实（model/keyword） | `evidence/60`：给定已知屏幕 + "打开 WLAN"，产出**合法下一步动作**（并附模型原文 `model_said`） |
-| **S7-3 执行（想→动）** | 优先走**无障碍动作**（`AccessibilityElement` 的 action，权限门槛 system_basic ✓ 正当路径），`INJECT_INPUT_EVENT`（system_core）作为备选；先做 click/index、input、back 三个 | `evidence/61`：SA 能"点中"一个元素（目标界面出现**预期变化**） |
-| **S7-4 闭环** | 一条最小可复现任务（建议："打开设置 → 进入某子页 → 返回"，或"打开设置 → 打开 WLAN 开关"） | `evidence/62`：**同一条命令重复 3 次都成功** + **断网也成立**（证明模型与屏幕内容都不出设备） |
+| **0 = S6-4** | ✅ **已收口**：`INTEGRATION.md §5` 补成 SDK 文档（意图/动作字段表 + 完整 ArkTS 执行片段 + 失败处理对照）；**正向授权双证明**实测（`[11a]` 放行 0 / `[11b]` 收回授权 201） | `evidence/59` |
+| **1 = S7-0 侦察** | ✅ **已完成**：轻依赖路径存在（无 arkcompiler）、API 面已定位、**无障碍服务实测在跑**（`ps` → `accessibility 323 1 …`） | `evidence/59` 的 `[12]` 段 |
+| **2 = S7-1a 探针** | **独立工具，不进 SA**：`lut_a11y_dump` 只链接 `accessibility:accessibleability`（轻依赖 ✓ 无 arkcompiler），调 `AccessibleAbilityClient::GetRoot/GetWindows/GetRootByWindow` → 打印元素树 JSON；在 guest 里以 root/init 身份跑 | `evidence/60`：**能打印带文本的元素列表**；若被拒/拿不到 → **如实记下错误码与原因**（探针的意义就是把未知拆开） |
+| **3 = S7-1b ReadScreen** | 把探针能力封成 SA 的**独立方法 `ReadScreen`** + 白名单/隐私（屏幕原文默认不落日志） | `evidence/61`：白名单调用方经 IPC 拿到元素树 JSON |
+| **4 = S7-2 决策** | 元素树 + 用户话 → **下一步动作 JSON**（严格校验 + `source` 如实 + `model_said` 原文） | `evidence/62` |
+| **5 = S7-3/4 执行闭环** | 执行优先走**无障碍动作**（权限 system_basic ✓），`INJECT_INPUT_EVENT`（system_core）备选；闭环目标先选 **"打开设置 → 进子页 → 返回"** | `evidence/63`：**重复 3 次成功** + **断网也成立** |
 
-**替代路线（拿不到权限时退一步）**：**S7' 调度层** —— SA 只产出"看到什么 + 下一步该做什么"的 JSON，由**有权限的系统应用**执行并回报（与 S6 路线B 同构 ✓）。判据同 S7-2/S7-4（只是执行方换成应用侧）。
+**暂停项（写明原因，别偷偷做）**：**T1 多会话**（要拆引擎壳的 model/context 两层，属结构性改动；不在 GUI Agent 关键路径上）、
+**T2 arm64**（无整机可测 → 只能静态检查，信息量低；留作"boot 被占住时的填充任务"）。
 
-**明确不做（先）**：不要一上来就"注入 + 全自动点屏"—— 风险高、不可复现、且被权限边界卡住；**先把"看-想"做扎实**（S7-1/S7-2 本身就有独立价值：屏幕理解 + 结构化产出）。
+### S7-0 侦察结论（2026-10-05 实测，**别重复侦察**）
+
+| 问题 | 答案 |
+|---|---|
+| 无障碍模块在哪 | `foundation/barrierfree/accessibility`；**SA id = 801**，`libaccessibleabilityms.z.so`，`run-on-create: True`；镜像里有 `profile/accessibility.json` + `/system/etc/init/accessibility.cfg` |
+| 客户端 API | `interfaces/innerkits/aafwk/include/accessible_ability_client.h` → `AccessibleAbilityClient`：`GetRoot(info, systemApi)`、`GetWindows(vector&, systemApi)`、`GetRootByWindow(windowInfo, info)`、`GetRootBatch(vector&)`；另有更轻的 `accessibility_ui_test_ability.h`（`AccessibilityUITestAbility`） |
+| 轻依赖路径（关键） | `external_deps = [ "accessibility:accessibleability" ]`（part_name=accessibility）→ 它自己只依赖 `c_utils/e2fsprogs/ffrt/hilog/init/ipc_single/samgr_proxy/json/cesfwk/want` **无 arkcompiler** ✓；⚠ **`accessibility_common` 带 `runtime_core:ani`**，能不带就别带（`common/include` 只用来取头文件） |
+| 元素类型 | `common/include/accessibility_element_info.h`（`AccessibilityElementInfo`/`AccessibilityWindowInfo`/`ActionType`/`ACCESSIBILITY_ACTION_*`） |
+| 输入注入（Phase 5 备用） | SDK `@ohos.multimodalInput.inputEventClient`；`INJECT_INPUT_EVENT` = **system_core**（三方不可用 ✓ 平台边界）；`INPUT_MONITORING` = system_basic |
 
 ## 八、两件"体质"工作（随时可插，按性价比排序）
 
