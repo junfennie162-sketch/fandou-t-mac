@@ -397,13 +397,27 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
         return ERR_INVALID_VALUE;
     }
 
-    // arg 形如 "<bundleName>" 或 "<bundleName>/<abilityName>"
-    std::string bundle = arg;
+    // arg 语法：<bundle>[/<ability>][@<userId>][#<module>]
+    //   （显式启动一般要 ability 名；userId 缺省 -1=默认用户；module 名可选 —— 让取证一轮试多种组合）
+    std::string spec = arg;
+    std::string module;
+    int32_t userId = -1;
+    const size_t hash = spec.find('#');
+    if (hash != std::string::npos) {
+        module = spec.substr(hash + 1);
+        spec = spec.substr(0, hash);
+    }
+    const size_t at = spec.find('@');
+    if (at != std::string::npos) {
+        userId = static_cast<int32_t>(strtol(spec.c_str() + at + 1, nullptr, 10));
+        spec = spec.substr(0, at);
+    }
+    std::string bundle = spec;
     std::string ability;
-    const size_t slash = arg.find('/');
+    const size_t slash = spec.find('/');
     if (slash != std::string::npos) {
-        bundle = arg.substr(0, slash);
-        ability = arg.substr(slash + 1);
+        bundle = spec.substr(0, slash);
+        ability = spec.substr(slash + 1);
     }
     if (bundle.empty()) {
         result = "arg 需要 <bundleName>[/<abilityName>]";
@@ -448,13 +462,16 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
     if (!ability.empty()) {
         want.SetElementName(bundle, ability);   // 这个 OH 版本没有 SetAbilityName；用 SetElementName
     } else {
-        want.SetBundle(bundle);                 // 只给 bundle → 让 AMS 解析入口 Ability
+        want.SetBundle(bundle);                 // 只给 bundle → 让 AMS 自己解析入口 Ability
+    }
+    if (!module.empty()) {
+        want.SetModuleName(module);             // 显式启动时某些路径要求 module 名（S6-1b-2 试出来的）
     }
     MessageParcel data;
     MessageParcel reply;
     MessageOption opt(MessageOption::TF_SYNC);
     if (!data.WriteInterfaceToken(kAmsDescriptor) || !data.WriteParcelable(&want) ||
-        !data.WriteInt32(-1) /*userId: -1 = 默认用户*/ || !data.WriteInt32(0) /*requestCode*/ ||
+        !data.WriteInt32(userId) /*-1 = 默认用户，或调用方指定*/ || !data.WriteInt32(0) /*requestCode*/ ||
         !data.WriteUint64(0) /*specifiedFullTokenId*/) {
         result = "start_ability " + arg + " -> parcel 写入失败（协议与 OH 版本不符？见 FIX-66）";
         g_lastActionNote = result;
@@ -471,8 +488,10 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
     }
     const int32_t amsErr = reply.ReadInt32();
     char b[256];
-    snprintf(b, sizeof(b), "start_ability %s -> AMS ErrCode=%d%s", arg.c_str(),
-             static_cast<int>(amsErr), amsErr == 0 ? "（已受理）" : "（AMS 拒绝/失败，见 AMS 日志）");
+    snprintf(b, sizeof(b), "start_ability %s -> AMS ErrCode=%d (bundle=%s ability=%s module=%s userId=%d)%s",
+             arg.c_str(), static_cast<int>(amsErr), bundle.c_str(), ability.c_str(),
+             module.empty() ? "-" : module.c_str(), userId,
+             amsErr == 0 ? " 已受理" : " 拒绝/失败");
     result = b;
     g_lastActionNote = result;
     // 如实回传 AMS 的返回码：受理=0；拒绝原样带回（不美化）

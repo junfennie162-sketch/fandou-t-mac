@@ -39,15 +39,23 @@ mkdir -p /data/local/tmp 2>/dev/null
     echo "  缺 $M（模型未注入镜像）"
   fi
 
-  echo "--- [9] 系统级动作执行（S6-1）：start_ability + 动作白名单 ---"
-  echo "[9a] 动作白名单放 com.ohos.settings → 期望 SA 真去调 AMS 并回传它的 ErrCode"
-  printf 'com.ohos.settings\n' > /data/lut_sa/actions_allow.txt
+  echo "--- [9] 系统级动作执行（S6-1b-2）：start_ability 参数变体一轮试完 ---"
+  printf 'com.ohos.settings
+' > /data/lut_sa/actions_allow.txt
+  echo "[9a1] 只给 bundle（基线，已知 AMS=22）"
   /system/bin/lut_sa_client --action start_ability com.ohos.settings
-  echo "[9b] 未授权的目标（com.ohos.camera，不在白名单）→ 期望被策略拒绝（201）"
+  echo "[9a2] 显式 ability（入口 com.ohos.settings.MainAbility）→ 期望 AMS 受理"
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility
+  echo "[9a3] 显式 ability + userId=100"
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100
+  echo "[9a4] 显式 ability + userId=100 + module=phone（module 名取自 Settings.hap 的 module.json）"
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100#phone
+  echo "[9b] 未授权目标（com.ohos.camera）→ 期望 201"
   /system/bin/lut_sa_client --action start_ability com.ohos.camera
-  echo "[9c] 删掉动作白名单（回默认只放 com.ohos.settings）→ 期望恢复受理"
+  echo "[9c] 删表恢复（默认只放 settings）→ 期望受理（同 [9a4]）"
   rm -f /data/lut_sa/actions_allow.txt
-  /system/bin/lut_sa_client --action start_ability com.ohos.settings
+  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100#phone
+
   echo "--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---"
   echo "#####LUT-EV-STEP-2-client-start#####" > /dev/ttyS0
   /system/bin/lut_sa_client "$M"

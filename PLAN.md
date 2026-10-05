@@ -78,24 +78,21 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b-2：搞清 AMS 为什么回 22，并把 `start_ability` 跑通（或判定该走路线B）**
-  - **已实测（别重复）**：`evidence/49-sa-action-exec.txt` —— `[9a]` 允许的 `com.ohos.settings` → 结果串
-    `start_ability com.ohos.settings -> AMS ErrCode=22`（**机制通、参数被拒**）；`[9b]` 未授权 → **201**；
-    `[9c]` 恢复；`LUT-EV-END` 在场；`[1]/[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0 无回退。
-  - **本轮三步（每步都能判定）**：
-    1. 读 AMS 的校验链：在 `foundation/ability/ability_runtime/services/abilitymgr/src/ability_manager_service.cpp`
-       里找 `StartAbility` → `StartAbilityInner` 的**参数校验**，定位返回 `ERR_INVALID_VALUE`(=22) 的那些 `if`
-       （常见：`want.GetElement().GetBundleName().empty()`、module/ability 名缺失、userId 非法、
-       `CheckCallingTokenId`/`VerificationAllToken` 失败）。**把命中的那一条记进账本**。
-    2. 按命中原因补参数：从镜像里目标应用的 `module.json`（挂 `system.img` 看 `/system/app/<bundle>*/`）
-       取出 **module 名 + 入口 ability 名 + 所需 deviceTypes**，把 Want 补成显式启动
-       （`SetElementName(bundle, ability)` + `SetModuleName(module)`），必要时把 `userId` 从 `-1` 换成
-       **当前用户 id**（镜像里通常是 `100`）。
-    3. 若校验指向**权限/令牌**（例如要求调用方是 system app 或持有某权限）：**如实写结论**并改走**路线B**
-       —— SA 只产出结构化动作 JSON（`{"action":"start_ability","bundle":…,"ability":…,"module":…}`），
-       由应用侧（HAP，有完整 ability kit 与自己的身份）执行并把结果回报；SA 这侧保留动作白名单与准入。
-  - **判据**：`[9a]` 的 `last_action` 变成 `AMS ErrCode=0（已受理）`（**端到端"打开设置"**），
-    或明确记下 AMS 的权限类拒绝码并给出路线B 的实施项；`[9b]/[9c]`、无回退项保持。
+- **S6-1b-2 冷启动验证：一轮试完 6 个 `start_ability` 参数变体（evidence/50）**
+  - **已备好（别重做）**：`ExecuteAction` 的 arg 语法扩展成 `<bundle>[/<ability>][@<userId>][#<module>]`
+    （Want 相应 `SetElementName`/`SetModuleName`，parcel 用解析出的 userId；结果串会带回
+    `bundle=/ability=/module=/userId=` 便于对账）；取证 `[9]` 已改成 6 步变体；静态编译通过（库 2,046,736 字节）。
+  - **目标应用的真名**（从 `Settings.hap` 的 module.json 解出，取法：挂 `system.img` → `unzip -p <hap> module.json`）：
+    **module = `phone`**、入口 ability = **`com.ohos.settings.MainAbility`**（带 launcher skill）。
+  - **本轮就一件**：
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/50-sa-action-params.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（四看）**：
+    1. 先看 `LUT-EV-END` 在不在（不在=又被掐，按 FIX-67 先查时间预算，别下结论）；
+    2. 六个变体里哪个拿到 **`AMS ErrCode=0`** → 那就是端到端"打开设置"跑通，把该 arg 写进
+       `INTEGRATION.md` 与默认动作示例；
+    3. 若全是非 0：把**每个变体的实际码**记进账本再判断 —— `22` = 参数仍不合；若出现 `ERR_INVALID_CALLER`
+       或权限类码（且变体无法绕开）→ **如实记录并转路线B**（SA 产出动作 JSON、应用侧执行）；
+    4. `[9b]` 必须 201；`[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0 不许回退。
 
 **Next（排队）**
 
