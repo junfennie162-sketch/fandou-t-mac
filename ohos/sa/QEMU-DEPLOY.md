@@ -281,6 +281,13 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 | **FIX-71** | 取证又被掐（两轮之后）→ **结构性修法：一个服务拆两个** | `evidence/50`、`evidence/51` 都缺 `LUT-EV-END`；`[51]` 里 `[9]` 六变体拿到了（重排有效），但 `[1]` 那一段又死 | 根因同 FIX-67：**一个一次性服务扛完所有分段**（快的诊断 + 重的模型加载/生成/鲁棒性），**共用一份时间预算** → 只要总时长超了就一定被掐，靠"重排"只能保证"被掐前跑到的段落尽量有用" | 把取证**拆成两个一次性服务**：`lut_evidence.sh`（轻活：`[0][0b][9][2..5c][7][8]`，含 `LUT-EV-END`）+ `lut_evidence2.sh`（重活：`[1][1b][6]`，含 `LUT-EV2-END`，写在 `/data/local/tmp/lut_evidence2.txt`）；两份 cfg/脚本都进 BUILD.gn 与 `install_into_tree.sh`；harness 改为**等两个标记**、**打包两份证据**。判据从"必须有 `LUT-EV-END`"升级为"两个 END 都要有" |
 | **FIX-71b** | 路线B（SA 产出结构化动作 JSON）实测通过 | —— | —— | `evidence/51`：四个变体（只给 bundle / +ability / +userId / +module）全部 **`ErrCode=0` 且返回合法 JSON**，字段可对账 —— 包括 `"module":"phone"`（证明 shell 里 `#` 加引号的修法生效）与 `"userId":100`；`[9b]` 未授权 → **201** + 理由串；`[9c]` 删表恢复；同轮 `NativeVersion/SelfTest/GetMetrics` 均 0（无回退）。**SA 侧的"系统级动作"契约成立**：策略 + 结构化产出是 SA 的确定性职责，执行交给应用侧（`INTEGRATION.md` §5） |
 
+| **FIX-72** | `
+` 转义第三次把补丁写坏（工具纪律，得固化） | `error: missing terminating '"' character` / `expected expression` —— 用 python 往 C++ 里插 `printf("...
+", …)` 与 `s.back() == '
+'` 时，**反斜杠层级少了一层**，真换行进了字符串/字符字面量 | heredoc → python 字符串 → C++ 三层转义，`'\n'` 与 `"
+"` 的写法极易写错；本轮我在客户端 3 处、ability 2 处连着写坏（前两轮 FIX-65b/68 同款） | 固化两条：① 插这类字面量时用 `chr(92)+'n'` **显式构造**，别手写反斜杠；② 补丁写完**立刻编译 + `cat -A` 抽查**（本轮就是靠编译报错抓到的）。另附一个一次性修复法：`s.replace(chr(10)+'"', chr(92)+'n"'` 批量把"字符串里的真换行"补回 `
+` |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

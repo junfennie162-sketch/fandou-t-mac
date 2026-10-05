@@ -109,6 +109,20 @@ int32_t LutSaStub::OnRemoteRequest(
             }
             return ERR_NONE;
         }
+        case ILutSaIpcCode::COMMAND_EXECUTE_INTENT: {
+            std::string utterance = Str16ToStr8(data.ReadString16());
+            std::string result;
+            ErrCode errCode = ExecuteIntent(utterance, result);
+            if (!reply.WriteInt32(errCode)) {
+                return ERR_INVALID_VALUE;
+            }
+            if (SUCCEEDED(errCode)) {
+                if (!reply.WriteString16(Str8ToStr16(result))) {
+                    return ERR_INVALID_DATA;
+                }
+            }
+            return ERR_NONE;
+        }
         default:
             return IPCObjectStub::OnRemoteRequest(code, data, reply, option);
     }

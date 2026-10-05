@@ -147,6 +147,17 @@ int main(int argc, char **argv)
         return ea == 0 ? 0 : 1;
     }
 
+    // S6-2：自然语言意图 —— lut_sa_client --intent "打开设置"
+    if (argc > 2 && std::strcmp(argv[1], "--intent") == 0) {
+        const std::string utt = argv[2];
+        printf("  [ExecuteIntent(%s)]\n", utt.c_str());
+        std::string ir;
+        ErrCode ei = proxy->ExecuteIntent(utt, ir);
+        printf("  [ExecuteIntent] ErrCode=%d  -> %s\n", static_cast<int>(ei), ir.c_str());
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", ei == 0 ? 0 : 1);
+        return ei == 0 ? 0 : 1;
+    }
+
     // 快模式：只做 加载 → 指标 → 释放（不生成），给取证脚本反复验证用，省时间
     if (argc > 2 && std::strcmp(argv[1], "--load") == 0) {
         const std::string path = argv[2];

@@ -76,6 +76,19 @@ mkdir -p /data/local/tmp 2>/dev/null
     tail -25 "$f" 2>&1
   done
 
+  echo "--- [10] 自然语言 → 动作（S6-2）：source 字段如实标注 ---"
+  echo "[10a] “打开设置” → 期望 ErrCode=0 且 bundle=com.ohos.settings（轻活服务里没加载模型 → source=keyword）"
+  /system/bin/lut_sa_client --intent "打开设置"
+  echo "[10b] “打开相机” → 期望拒绝（动作表没匹配）"
+  /system/bin/lut_sa_client --intent "打开相机"
+  echo "[10c] 自定义动作表把“打开设置”指向未授权 bundle(com.ohos.camera) → 期望 201（动作白名单仍然生效）"
+  printf '打开设置=com.ohos.camera
+' > /data/lut_sa/intents.txt
+  /system/bin/lut_sa_client --intent "打开设置"
+  rm -f /data/lut_sa/intents.txt
+  echo "[10d] 删表回默认 → 期望再回到 0"
+  /system/bin/lut_sa_client --intent "打开设置"
+
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
   rm -f /data/lut_sa/allow_uids.txt 2>/dev/null
   mkdir -p /data/lut_sa 2>/dev/null

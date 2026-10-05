@@ -47,6 +47,10 @@ private:
         const std::string& arg,
         std::string& funcResult) override;
 
+    ErrCode ExecuteIntent(
+        const std::string& utterance,
+        std::string& funcResult) override;
+
     static inline BrokerDelegator<LutSaProxy> delegator_;
 };
 } // namespace LutSa

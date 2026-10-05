@@ -42,6 +42,9 @@ public:
     // S6-1：系统级动作执行（本版只支持 start_ability，且目标 bundle 必须在动作白名单里）
     ErrCode ExecuteAction(const std::string &action, const std::string &arg,
                           std::string &result) override;
+
+    // S6-2：自然语言 → 结构化动作（模型路径与关键词兜底，返回串里如实标注 source）
+    ErrCode ExecuteIntent(const std::string &utterance, std::string &result) override;
 };
 }  // namespace OHOS
 

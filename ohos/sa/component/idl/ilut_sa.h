@@ -16,6 +16,7 @@ enum class ILutSaIpcCode {
     COMMAND_SELF_TEST,
     COMMAND_RELEASE,
     COMMAND_EXECUTE_ACTION,
+    COMMAND_EXECUTE_INTENT,
 };
 
 class ILutSa : public IRemoteBroker {
@@ -49,6 +50,10 @@ public:
     virtual ErrCode ExecuteAction(
         const std::string& action,
         const std::string& arg,
+        std::string& funcResult) = 0;
+
+    virtual ErrCode ExecuteIntent(
+        const std::string& utterance,
         std::string& funcResult) = 0;
 protected:
     const int VECTOR_MAX_SIZE = 102400;

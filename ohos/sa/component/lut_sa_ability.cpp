@@ -386,6 +386,76 @@ ErrCode LutSystemAbility::SelfTest(std::string &result) {
     return (warm_ok && ref_ok) ? ERR_OK : ERR_INVALID_VALUE;
 }
 
+// ---------------------------------------------------------------------------
+// S6-2：自然语言 → 结构化动作
+//   动作表 /data/lut_sa/intents.txt（每行 "<关键词或说法>=<bundle>[/<ability>]"；缺省内置一条）
+//   两条判定路径，返回串里**如实标注 source**：
+//     model   —— 模型已加载时，用固定模板让它归类，且**严格校验**（输出里必须出现白名单内的 bundle）
+//     keyword —— 模型不可用/输出不合规时，用动作表关键词匹配（**不许把兜底说成模型判断**）
+const char* kIntentsFile = "/data/lut_sa/intents.txt";
+
+void LoadIntentTable(std::vector<std::pair<std::string, std::string>>& out) {
+    out.clear();
+    FILE* f = fopen(kIntentsFile, "r");
+    if (f == nullptr) {
+        out.push_back({"打开设置", "com.ohos.settings"});
+        out.push_back({"开启设置", "com.ohos.settings"});
+        out.push_back({"open settings", "com.ohos.settings"});
+        return;
+    }
+    char line[192];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        std::string l(line);
+        while (!l.empty() && (l.back() == '\n' || l.back() == '\r' || l.back() == ' ')) {
+            l.pop_back();
+        }
+        const size_t eq = l.find('=');
+        if (eq != std::string::npos && eq > 0) {
+            out.push_back({l.substr(0, eq), l.substr(eq + 1)});
+        }
+    }
+    fclose(f);
+    if (out.empty()) {
+        out.push_back({"打开设置", "com.ohos.settings"});
+    }
+}
+
+std::string ModelClassify(const std::string& utterance, const std::vector<std::pair<std::string, std::string>>& table) {
+    if (!::tmac_sa::EngineReady()) {
+        return "";   // 没加载模型 → 交给关键词兜底
+    }
+    std::string prompt = "只输出一个 json，不要解释：{\"bundle\":\"包名\"}。可选包名有 ";
+    for (const auto& kv : table) {
+        prompt += kv.second;
+        prompt += " ";
+    }
+    prompt += "句子：";
+    prompt += utterance;
+    char buf[600] = {0};
+    const auto st = ::tmac_sa::InferTokenBatch(0, prompt.c_str(), buf, sizeof(buf), 24, 0.0, 40);
+    if (st != ::tmac_sa::Status::kOk) {
+        return "";
+    }
+    std::string out(buf);
+    // 严格校验：输出里必须出现表内的 bundle 才认（避免"模型随口说一个"）
+    for (const auto& kv : table) {
+        if (!kv.second.empty() && out.find(kv.second) != std::string::npos) {
+            return kv.second;
+        }
+    }
+    return "";
+}
+
+std::string KeywordMatch(const std::string& utterance,
+                         const std::vector<std::pair<std::string, std::string>>& table) {
+    for (const auto& kv : table) {
+        if (!kv.first.empty() && utterance.find(kv.first) != std::string::npos) {
+            return kv.second;
+        }
+    }
+    return "";
+}
+
 ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::string &arg,
                                        std::string &result) {
     if (!InferAllowed("ExecuteAction")) {   // S5-1 准入：Tier-A / 白名单
@@ -503,6 +573,42 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
     // 语义：SA 的职责（策略 + 结构化动作）已完成 → 返回 0；ams_try 字段如实反映"SA 直连尝试"的结果
     return ERR_OK;
 #endif
+}
+
+ErrCode LutSystemAbility::ExecuteIntent(const std::string &utterance, std::string &result) {
+    if (!InferAllowed("ExecuteIntent")) {   // S5-1 准入
+        return kErrPermissionDenied;
+    }
+    if (utterance.empty()) {
+        result = "utterance 为空";
+        return ERR_INVALID_VALUE;
+    }
+    std::vector<std::pair<std::string, std::string>> table;
+    LoadIntentTable(table);
+
+    // ① 模型路径（严格校验）→ ② 关键词兜底；source 如实标注
+    std::string bundle = ModelClassify(utterance, table);
+    std::string source = "model";
+    if (bundle.empty()) {
+        bundle = KeywordMatch(utterance, table);
+        source = "keyword";
+    }
+    if (bundle.empty()) {
+        result = "intent={\"utterance\":\"" + utterance + "\",\"bundle\":\"\",\"source\":\"none\"} "
+                 "no-match（动作表里没有匹配的说法）";
+        g_lastActionNote = result;
+        return ERR_INVALID_VALUE;
+    }
+
+    // 复用 ExecuteAction 的产出（同一套 JSON 契约；动作白名单/准入都在那里再挡一次）
+    std::string act;
+    const ErrCode e = ExecuteAction("start_ability", bundle, act);
+    char hdr[256];
+    snprintf(hdr, sizeof(hdr), "intent={\"utterance\":\"%s\",\"bundle\":\"%s\",\"source\":\"%s\"} ",
+             utterance.c_str(), bundle.c_str(), source.c_str());
+    result = std::string(hdr) + act;
+    g_lastActionNote = result;
+    return e;
 }
 
 ErrCode LutSystemAbility::Release(std::string &result) {

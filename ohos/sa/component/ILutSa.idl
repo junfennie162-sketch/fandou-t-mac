@@ -6,4 +6,5 @@ interface OHOS.LutSa.ILutSa {
   String SelfTest();
   String Release();
   String ExecuteAction([in] String action, [in] String arg);
+  String ExecuteIntent([in] String utterance);
 }
