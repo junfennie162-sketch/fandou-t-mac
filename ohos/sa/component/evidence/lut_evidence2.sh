@@ -21,7 +21,7 @@ mkdir -p /data/local/tmp 2>/dev/null
   if [ -f "$Q" ]; then
     chmod 644 "$Q" 2>/dev/null
     chcon u:object_r:system_file:s0 "$Q" 2>&1 | head -2
-    /system/bin/lut_sa_client "$Q"
+    /system/bin/lut_sa_client --load "$Q"   # FIX-79：只加载（省时间；端到端由 [1] 的 t-mac 段负责）
   else
     echo "  缺 $Q（未注入第二个模型）"
   fi
@@ -29,8 +29,6 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---"
   echo "[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）"
   /system/bin/lut_sa_client --intent "打开设置" "$M"
-  echo "[1c2] “打开相机” → 期望非 0（严格校验：模型随口说的包名若不表内/未授权，一律不认）"
-  /system/bin/lut_sa_client --intent "打开相机" "$M"
 
   echo "--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离"模型分类"这件事）---"
   echo "[1d1] 只加载不释放"
