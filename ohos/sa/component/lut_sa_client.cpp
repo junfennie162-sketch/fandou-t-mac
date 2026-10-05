@@ -169,6 +169,23 @@ int main(int argc, char **argv)
         return ei == 0 ? 0 : 1;
     }
 
+    // 只加载不释放（用于验证"引擎是否在多次 IPC 调用之间存活"）
+    if (argc > 2 && std::strcmp(argv[1], "--load-keep") == 0) {
+        ErrCode el = proxy->LoadModel(argv[2], 4, 512);
+        printf("  [--load-keep %s] ErrCode=%d\n", argv[2], static_cast<int>(el));
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", el == 0 ? 0 : 1);
+        return el == 0 ? 0 : 1;
+    }
+
+    // 只打指标（顺带看 engine= 字段 —— 判断上一次 --load-keep 之后引擎还在不在）
+    if (argc > 1 && std::strcmp(argv[1], "--metrics") == 0) {
+        std::string mr;
+        ErrCode em = proxy->GetMetrics(mr);
+        printf("  [--metrics] ErrCode=%d  -> %s\n", static_cast<int>(em), mr.c_str());
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", em == 0 ? 0 : 1);
+        return em == 0 ? 0 : 1;
+    }
+
     // 快模式：只做 加载 → 指标 → 释放（不生成），给取证脚本反复验证用，省时间
     if (argc > 2 && std::strcmp(argv[1], "--load") == 0) {
         const std::string path = argv[2];

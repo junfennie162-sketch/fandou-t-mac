@@ -301,6 +301,9 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 | **FIX-77** | `model_said` 诊断**当场抓到模型路径的两个真 bug** | `evidence/56`：`[1c1]` 里 `[LoadModel(...)] ErrCode=0`（模型确实加载了）但 `model_said":"(engine not ready)"`；轻活侧同样如此 | ① **会话号传错**：`ModelClassify` 调 `InferTokenBatch(**0**, …)` —— 但 SA 的会话是从 **1** 开始（`CreateSession` 自增），0 号必然 `kNoSession` → **模型路径永远走不通**（即使引擎就绪）；② `EngineReady()` 在 `LoadModel` 返回 0 之后仍看到 `absent`（未就绪）—— 现象确凿，但**原因还没钉死**（下一轮用增强诊断确认：未就绪分支现在会把 `EngineInfo()`（含 `engine=… model=…`）一起带进 `model_said`） | ① 改用当前会话 `g_session`；② 增强 `model_said` 的"未就绪"分支：`(engine not ready: engine=… n_ctx=… model=…)`，把"为什么没就绪"钉死。**副产品**：同轮 `[10e]` 验证了"内置动作表命中 `com.ohos.camera` 但动作白名单只放 settings → **201**"= **两道门仍然成立** |
 | FIX-77b | 方法论：**诊断字段要能自证** | —— | —— | 这一轮证明 `model_said` 这种"把中间态带出去"的字段很值：它把"模型分类不可用"从一个笼统结论，直接变成两个可修的具体 bug（会话号 + 引擎就绪）。**建议**：以后每条"回退/不可用"分支都顺手带一个能自证的状态字段（我们已经在 quota/action/intent 上这么做了） |
 
+| **FIX-78** | 模型路径"引擎不在"的**进程级断点**（未定性）+ 用来隔离它的实验装置 | `evidence/56/57`：`[1c1]`（客户端先 `LoadModel` 返回 0）里 `ExecuteIntent` 看到 `engine=absent n_ctx=0 threads=0 infer=0`；重活文件的指标快照显示 **`infer` 计数从中途归零**（3/6 → 0）→ **SA 在这期间有过进程级断点**（重启或引擎被清） | ① 客户端 `--intent` 的调用顺序是对的（LoadModel → ExecuteIntent → Release，已核对源码）；② 核心侧 `LoadModel` 返回 kOk 必然已设 `g_engine`（已核对）；③ 所以断点发生在**两次 IPC 之间**——但串口里**没有** `Child process lut_sa exit` 之类痕迹，机制尚未钉死（候选：SA 在"反复加载/释放 ~1GB 模型"过程中被杀/重启 ✗，或某处提前把引擎清了 ✗） | **加一个隔离实验装置**（不再靠猜）：客户端新增 `--load-keep <模型>`（只加载不释放）与 `--metrics`（只读指标）；重活脚本新增 `[1d]` 四步：`[1d1]` load-keep → `[1d2]` **另起一个客户端进程**读指标（看 `engine=` 还是不是 ready）→ `[1d3]` 同一个已加载引擎再问一次意图 → `[1d4]` 收尾指标。这样能把"引擎存活/进程是否换过"和"意图分类"彻底分开 ✗→✓。判据：`[1d2]` 若 `engine=ready` → 引擎跨进程调用存活 ✓，问题在意图链路；若 `engine=absent` → 断点在**加载之后**，用 `[0]` 段式的 ps/pid + rt_stderr 顺序定位 |
+| FIX-78b | 附带确认：`[10e]` 两道门 ✅ | —— | —— | `evidence/56`：内置动作表命中 `com.ohos.camera`，但动作白名单默认只放 `com.ohos.settings` → `ExecuteIntent("看相机")` 回 **201** ✓（"表里能命中 ≠ 允许执行"实测成立） |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

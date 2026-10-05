@@ -78,20 +78,23 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-3 收尾验证：模型路径的两个 bug 是否修好（evidence/57）**
-  - **上一轮抓到并已修（FIX-77）**：① `ModelClassify` 传**会话 0**（SA 会话从 1 起）→ 模型路径永远 kNoSession；
-    ② `LoadModel` 返回 0 但 `EngineReady()` 仍 absent（原因待钉死）。修法：① 改用 `g_session`；
-    ② 未就绪分支的 `model_said` 现在带 `EngineInfo()`（`engine=… n_ctx=… model=…`）。
+- **S6-3 收尾：用"隔离实验"定位模型路径的进程级断点（evidence/58）**
+  - **已确认（别重复查）**：① `[10e]` 两道门 ✅（`evidence/56`）；② 客户端的调用顺序、核心侧 `LoadModel` 设引擎的路径**都核对过没问题**；
+    ③ 但 `ExecuteIntent` 时 `engine=absent n_ctx=0 infer=0`，而重活文件的指标里 **`infer` 计数中途归零** ✗
+    → **SA 在两次 IPC 之间有进程级断点**；串口里没有明确退出痕迹，机制未定性（FIX-78）。
+  - **本轮已备好装置（跑之前不用改代码）**：客户端新增 **`--load-keep <模型>`**（只加载不释放）与 **`--metrics`**（只读指标）；
+    重活脚本新增 **`[1d]`** 四步：`[1d1]` load-keep → `[1d2]` **另一个客户端进程**读指标 → `[1d3]` 同一个引擎再问意图 → `[1d4]` 收尾指标。
     静态编译通过（库 2,057,768 字节）。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/57-sa-intent-diag2.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（三看）**：
-    1. `[1c1]`（模型已加载后问“打开设置”）的 `model_said` 变成**模型的真实输出**（能看到它吐了什么：乱码/没包名/空）
-       或带状态的未就绪串（`engine=…` 一眼看出为什么）；`source` 如实（若走成 `model` 更好，但**不许**为它调参）；
-    2. `[10e]` “看相机” 仍 **201**；`[10a]~[10d]` 保持（0/keyword、22、201、0）；
-    3. 无回退：两个 END 都在、`[1]` t-mac `LoadModel` 0 + 出文本、`[6] bad=0`。
-  - 若 `model_said` 显示模型输出是乱码/不含包名 → **把"模型分类不可用"最终定性并写进 `INTEGRATION.md` 已知限制**
-    （这一条已经在文档里，确认后把措辞从"实测未通过"升级成"实测模型输出为 X，因此不可用"）✓
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/58-sa-engine-persist.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（先看 [1d]，它是决定性的）**：
+    1. `[1d2]`（另一个进程读指标）若 **`engine=ready`** → 引擎**跨 IPC 调用存活** ✓ → 那么 `[1c1]` 的问题出在"意图链路自己把引擎状态搞丢了"，
+       下一轮就只查 `InferAllowed`/`ExecuteAction` 里是否有清理动作；
+    2. `[1d2]` 若 **`engine=absent`** → 断点在**加载之后**：把 `[0]` 段式的 `ps`（SA pid）+ `rt_stderr` 的加载序列顺序一起打出来定位
+       （`rt_stderr` 是跨进程追加的，重复的 `load: backend_init` 序列 = 重启 ✓）；
+    3. `[1d3]` 的 `source` 如实（`model` 或带原因的 `keyword`）；其余 `[7]~[10]`、两个 END、`bad=0`、t-mac `[1]` 0 不回退。
+  - **纪律**：这一条查清之前，**不许**把"模型分类不可用"当成最终结论写文档（现在的措辞是"实测未通过校验"，保留即可）；
+    查清后再决定是"修 bug 让它可用"还是"如实定性为模型质量问题"。
 
 **Next（排队）**
 

@@ -32,6 +32,16 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "[1c2] “打开相机” → 期望非 0（严格校验：模型随口说的包名若不表内/未授权，一律不认）"
   /system/bin/lut_sa_client --intent "打开相机" "$M"
 
+  echo "--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离"模型分类"这件事）---"
+  echo "[1d1] 只加载不释放"
+  /system/bin/lut_sa_client --load-keep "$M"
+  echo "[1d2] 另起一个客户端进程，只读指标 → 看 engine= 是否还是 ready"
+  /system/bin/lut_sa_client --metrics
+  echo "[1d3] 再问一次意图（同一个已加载引擎）→ 期望 source=model 或带原因的 keyword"
+  /system/bin/lut_sa_client --intent "打开设置"
+  echo "[1d4] 收尾：只读指标（看实验结束时引擎状态）"
+  /system/bin/lut_sa_client --metrics
+
   echo "--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---"
   /system/bin/lut_sa_client --stress
 
