@@ -179,8 +179,10 @@ cp "$SA/component/sa_profile/lut_sa.json" "$DST/sa_profile/"
 cp "$SA/component/etc/init/lut_sa.cfg"    "$DST/etc/init/"
 # 取证通道：串口一次性服务（本环境 hidumper 自身 exit=3、hdc 的 hdcd 被 watchdog 杀）
 mkdir -p "$DST/evidence"
-cp "$SA/component/etc/init/lut_evidence.cfg" "$DST/etc/init/"
+cp "$SA/component/etc/init/lut_evidence.cfg"  "$DST/etc/init/"
 cp "$SA/component/evidence/lut_evidence.sh"  "$DST/evidence/"
+cp "$SA/component/etc/init/lut_evidence2.cfg" "$DST/etc/init/"        # 重的分段单独一个服务（FIX-71）
+cp "$SA/component/evidence/lut_evidence2.sh" "$DST/evidence/"
 if [ -f "$SA/component/sepolicy/base/te/lut_sa.te" ]; then
   cp "$SA/component/sepolicy/base/te/lut_sa.te" "$DST/sepolicy/"
 fi

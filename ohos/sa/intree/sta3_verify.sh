@@ -99,7 +99,7 @@ pkill -f qemu-system-x86_64 2>/dev/null; sleep 3
 bash "$SA/intree/qemu_boot_lutsa.sh" daemon >/dev/null 2>&1
 for i in $(seq 1 40); do
   sleep 12
-  grep -aq 'LUT-EV-END' "$LOG" 2>/dev/null && { echo "  取证完成（$((i*12))s）"; break; }
+  grep -aq 'LUT-EV2-END' "$LOG" 2>/dev/null && grep -aq 'LUT-EV-END' "$LOG" 2>/dev/null && { echo "  取证完成（$((i*12))s）"; break; }
 done
 echo "串口 $(wc -l < $LOG) 行  panic=$(grep -ac 'Kernel panic' $LOG)"
 
@@ -114,7 +114,7 @@ pkill -f qemu-system-x86_64 2>/dev/null; sleep 4
 e2fsck -fy "$IMG/userdata.img" >/dev/null 2>&1
 mkdir -p /mnt/ud2
 mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
-  for f in lut_sa/rt_stderr.txt lut_sa/rt_stdout.txt local/tmp/lut_evidence.txt; do
+  for f in lut_sa/rt_stderr.txt lut_sa/rt_stdout.txt local/tmp/lut_evidence.txt local/tmp/lut_evidence2.txt; do
     P=/mnt/ud2/$f
     echo "===== $f ($(stat -c %s "$P" 2>/dev/null) 字节) ====="
     [ -f "$P" ] && tail -c 4000 "$P" | tr -d '\000'

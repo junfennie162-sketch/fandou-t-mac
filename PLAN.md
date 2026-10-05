@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 **路线A 的结论已定**（机制通、参数三连否 → AMS 不收 system caller）；**已转路线B**：SA 产出结构化动作 JSON（已实现，静态编译通过），执行由应用侧完成（契约写进 INTEGRATION.md §5） | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ **动作层收口**：SA 产出结构化动作 JSON 实测通过（四变体 `ErrCode=0` + 合法 JSON；未授权 201；契约见 INTEGRATION.md §5）；执行由应用侧完成 | `evidence/51` + FIX-70/71b |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,22 +78,22 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b-3 路线B 的冷启动验证（evidence/51）**
-  - **已实现（别重做）**：`ExecuteAction` 现在把**结构化动作 JSON** 作为确定性产出返回
-    （`{"action":"start_ability","bundle":…,"ability":…,"module":…,"userId":…,"ams_try":…}`），
-    返回码语义：`0` = SA 职责完成（策略通过 + 动作已产出）、`201` = 策略拒绝；`ams_try` 如实反映直连 AMS 的结果；
-    脚本里 `#` 已加引号；契约与"应用侧参考写法（ArkTS `startAbility`）"写进 `INTEGRATION.md` 第 5 节。
-    静态编译通过（库 2,046,616 字节）。
-  - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/51-sa-action-json.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（三看）**：
-    1. `[9a*]` 任一变体（含 `'…@100#phone'`）→ `ExecuteAction ErrCode=0` **且返回串里出现合法 JSON**
-       （`action={"action":"start_ability","bundle":"com.ohos.settings",…}`，字段齐全、`#phone` 变体的
-       `module":"phone"` 要对得上）；
-    2. `[9b]` 未授权 → **201**；`[9c]` 恢复；
-    3. 无回退：`[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0。（`LUT-EV-END` 缺失属已知问题，见 FIX-67/70 ——       只要 `[9]` 在前面拿到即可，但要在证据里注明。）
-  - 之后进 **S6-2**：自然语言 → 动作（用本地模型把"打开设置"这类话分类成 `{action, bundle}`），
-    仍走同一条 JSON 契约；动作集先只含白名单内的 bundle。
+- **S6-2：自然语言 → 结构化动作（"打开设置"这句话，落到 `{action, bundle}`）**
+  - **上一轮已收口**（别重做）：动作层已实测（`evidence/51`）：四变体 `ErrCode=0` + 合法 JSON；未授权 201；
+    取证已**拆成两个服务**（FIX-71，轻活 `LUT-EV-END` + 重活 `LUT-EV2-END`）。
+  - **本轮实现**（新 IDL 方法 `ExecuteIntent([in] String utterance, [out] String result)`）：
+    1. **动作集**：先只支持白名单内的 bundle（默认 `com.ohos.settings`），做成一张小表
+       （`/data/lut_sa/intents.txt`，每行 `<关键词或说法>=<bundle>[/<ability>]`，缺省内置"打开设置=com.ohos.settings"）。
+    2. **两条判定路径，必须如实区分**：
+       - **模型路径**：用固定提示模板让本地模型把 utterance 归类（输出受限 JSON），解析成功则
+         `source=model`；
+       - **关键词兜底**：模型不可用/输出不可解析时，用动作表里的关键词匹配，`source=keyword`；
+       - 返回串形如 `intent={"action":"start_ability","bundle":"com.ohos.settings","source":"model|keyword"}`
+         —— **不许把兜底说成模型判断**（对齐账本纪律"区分命中与回退"）。
+    3. 命中白名单 → 复用现有 `ExecuteAction` 的产出（同一套 JSON 契约）；未命中 → `201` + 理由。
+  - **判据（下一轮冷启动，`evidence/52`）**：`ExecuteIntent("打开设置")` → `ErrCode=0` 且 JSON 里
+    `bundle=com.ohos.settings`（`source` 字段如实）；`ExecuteIntent("打开相机")` → 201/拒绝；
+    两个 `LUT-EV*-END` 都在；`[7]/[8]/[9]`、`bad=0`、t-mac `LoadModel` 0 无回退。
 
 **Next（排队）**
 

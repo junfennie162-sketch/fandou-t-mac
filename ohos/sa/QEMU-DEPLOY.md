@@ -278,6 +278,9 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 
 | **FIX-70** | 三种参数组合都被 AMS 回 22 →「系统级动作」改走**路线B**；外加一个脚本小坑 | `evidence/50` 的六个变体：`[9a1]` 只给 bundle → 22；`[9a2]` 显式 ability（`com.ohos.settings.MainAbility`）→ 22；`[9a3]` 再 `@100`（userId）→ 22 | 参数不是主因：`Want` 已经带了 bundle/ability/userId（结果串里 `bundle=/ability=/module=/userId=` 可对账），AMS 仍退 22（参数校验级）；结合 `StartAbilityInner` 的校验链（DLP/`VerifyAccountPermission`/`VerifyAllToken`）判断：**在 system-caller 语境下 AMS 不接受这次启动**，需要的能力/令牌不是 SA 侧能补的参数。另：`[9a4]` 那个 `#module` 变体**根本没测到** —— `#` 在 shell 里是注释符，被吃掉了 | ① 转**路线B**：SA 的确定性产出改为**结构化动作 JSON**（`{"action":"start_ability","bundle":…,"ability":…,"module":…,"userId":…,"ams_try":…}`），执行由应用侧（HAP，有 ability kit 与自身身份）完成 —— 返回码语义：`0`=SA 职责完成、`201`=策略拒绝，`ams_try` 如实反映直连尝试；② 脚本里 `#` 必须加引号（`'…@100#phone'`）；③ 应用侧参考写法写进 `INTEGRATION.md` 第 5 节。**副产品**：本轮 `LUT-EV-END` 仍然缺失（脚本又被掐），但 FIX-67 的"分段重排"让 `[9]` 的六个变体**照样拿到了** —— 这个策略有效 |
 
+| **FIX-71** | 取证又被掐（两轮之后）→ **结构性修法：一个服务拆两个** | `evidence/50`、`evidence/51` 都缺 `LUT-EV-END`；`[51]` 里 `[9]` 六变体拿到了（重排有效），但 `[1]` 那一段又死 | 根因同 FIX-67：**一个一次性服务扛完所有分段**（快的诊断 + 重的模型加载/生成/鲁棒性），**共用一份时间预算** → 只要总时长超了就一定被掐，靠"重排"只能保证"被掐前跑到的段落尽量有用" | 把取证**拆成两个一次性服务**：`lut_evidence.sh`（轻活：`[0][0b][9][2..5c][7][8]`，含 `LUT-EV-END`）+ `lut_evidence2.sh`（重活：`[1][1b][6]`，含 `LUT-EV2-END`，写在 `/data/local/tmp/lut_evidence2.txt`）；两份 cfg/脚本都进 BUILD.gn 与 `install_into_tree.sh`；harness 改为**等两个标记**、**打包两份证据**。判据从"必须有 `LUT-EV-END`"升级为"两个 END 都要有" |
+| **FIX-71b** | 路线B（SA 产出结构化动作 JSON）实测通过 | —— | —— | `evidence/51`：四个变体（只给 bundle / +ability / +userId / +module）全部 **`ErrCode=0` 且返回合法 JSON**，字段可对账 —— 包括 `"module":"phone"`（证明 shell 里 `#` 加引号的修法生效）与 `"userId":100`；`[9b]` 未授权 → **201** + 理由串；`[9c]` 删表恢复；同轮 `NativeVersion/SelfTest/GetMetrics` 均 0（无回退）。**SA 侧的"系统级动作"契约成立**：策略 + 结构化产出是 SA 的确定性职责，执行交给应用侧（`INTEGRATION.md` §5） |
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |

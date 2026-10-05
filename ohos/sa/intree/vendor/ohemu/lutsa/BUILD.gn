@@ -145,6 +145,24 @@ ohos_prebuilt_etc("lut_evidence_sh") {
   subsystem_name = "ohemu"
 }
 
+# FIX-71：取证拆成两个一次性服务 —— 一个服务扛完所有分段会被 watchdog 掐（服务有时间预算），
+# 重的（模型加载/生成/鲁棒性）单独一个服务、单独一份预算
+ohos_prebuilt_etc("lut_evidence2_cfg") {
+  source = "etc/init/lut_evidence2.cfg"
+  relative_install_dir = "init"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
+ohos_prebuilt_etc("lut_evidence2_sh") {
+  source = "evidence/lut_evidence2.sh"
+  relative_install_dir = "bin"
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
 group("lut_sa_package") {
   deps = [
     ":lut_sa",
@@ -154,5 +172,7 @@ group("lut_sa_package") {
     ":lut_sa_kcfg",
     ":lut_evidence_cfg",
     ":lut_evidence_sh",
+    ":lut_evidence2_cfg",
+    ":lut_evidence2_sh",
   ]
 }

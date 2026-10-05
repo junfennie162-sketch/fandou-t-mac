@@ -56,21 +56,6 @@ mkdir -p /data/local/tmp 2>/dev/null
   rm -f /data/lut_sa/actions_allow.txt
   /system/bin/lut_sa_client --action start_ability 'com.ohos.settings/com.ohos.settings.MainAbility@100#phone'
 
-  echo "--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---"
-  echo "#####LUT-EV-STEP-2-client-start#####" > /dev/ttyS0
-  /system/bin/lut_sa_client "$M"
-  echo "#####LUT-EV-STEP-3-client-done#####" > /dev/ttyS0
-
-  echo "--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---"
-  Q=/data/local/tmp/qwen.gguf
-  if [ -f "$Q" ]; then
-    chmod 644 "$Q" 2>/dev/null
-    chcon u:object_r:system_file:s0 "$Q" 2>&1 | head -2
-    /system/bin/lut_sa_client "$Q"
-  else
-    echo "  缺 $Q（未注入第二个模型）"
-  fi
-
   echo "--- [2] ps ---"
   ps -ef 2>&1 | grep -i lut
 
@@ -90,9 +75,6 @@ mkdir -p /data/local/tmp 2>/dev/null
     echo "== $f ($(stat -c %s $f 2>/dev/null) 字节) 尾 25 行 =="
     tail -25 "$f" 2>&1
   done
-
-  echo "--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---"
-  /system/bin/lut_sa_client --stress
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
   rm -f /data/lut_sa/allow_uids.txt 2>/dev/null
