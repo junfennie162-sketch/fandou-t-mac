@@ -17,6 +17,9 @@ enum class ILutSaIpcCode {
     COMMAND_RELEASE,
     COMMAND_EXECUTE_ACTION,
     COMMAND_EXECUTE_INTENT,
+    // S7-1b：感知（世界→Agent）与执行（Agent→世界）是两个方向，各自独立的方法 ——
+    // 不复用 ExecuteAction；以后的 ReadCamera/ReadAudio/ReadSensor 按同一条线走。
+    COMMAND_READ_SCREEN,
 };
 
 class ILutSa : public IRemoteBroker {
@@ -54,6 +57,13 @@ public:
 
     virtual ErrCode ExecuteIntent(
         const std::string& utterance,
+        std::string& funcResult) = 0;
+
+    // S7-1b：读当前屏幕（无障碍元素树）—— 感知方向，独立方法。
+    // maxNodes <= 0 时用默认上限；返回有界 JSON（窗口列表 + 文本/可点元素 + 计数 + 采集耗时）。
+    // 隐私：屏幕原文默认不写日志；返回内容只给通过准入的调用方。
+    virtual ErrCode ReadScreen(
+        int32_t maxNodes,
         std::string& funcResult) = 0;
 protected:
     const int VECTOR_MAX_SIZE = 102400;

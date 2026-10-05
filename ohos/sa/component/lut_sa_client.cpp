@@ -7,6 +7,7 @@
 // 输出：stdout（由开机取证服务重定向到文件再打到串口）
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unistd.h>
@@ -184,6 +185,22 @@ int main(int argc, char **argv)
         printf("  [--metrics] ErrCode=%d  -> %s\n", static_cast<int>(em), mr.c_str());
         printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", em == 0 ? 0 : 1);
         return em == 0 ? 0 : 1;
+    }
+
+    // S7-1b：读屏（感知）—— lut_sa_client --screen [maxNodes]
+    // 判据：ErrCode=0 且返回 JSON 里 ok=1、counts.withText>0；撤白名单应回 201。
+    if (argc > 1 && std::strcmp(argv[1], "--screen") == 0) {
+        const int32_t maxNodes = (argc > 2) ? static_cast<int32_t>(atoi(argv[2])) : 0;
+        std::string sr;
+        ErrCode es = proxy->ReadScreen(maxNodes, sr);
+        printf("  [--screen %d] ErrCode=%d\n", static_cast<int>(maxNodes), static_cast<int>(es));
+        if (es == 0) {
+            printf("  %s\n", sr.c_str());
+        } else {
+            printf("  （被拒/失败时 SA 不回传结果串；错误码即结论：0=成功 201=准入拒绝）\n");
+        }
+        printf("=====LUTSA-CLIENT-END (rc=%d)=====\n", es == 0 ? 0 : 1);
+        return es == 0 ? 0 : 1;
     }
 
     // 快模式：只做 加载 → 指标 → 释放（不生成），给取证脚本反复验证用，省时间

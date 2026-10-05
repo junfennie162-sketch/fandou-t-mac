@@ -125,6 +125,20 @@ com.ohos.camera
   echo "  exit=$?"
   echo "  注意：「没拿到」也是结论 —— 但要留下**真实错误码**，不许写成「大概不行」"
 
+  echo "--- [14] S7-1b 读屏：SA 的 ReadScreen（感知方向，独立 IDL 方法）---"
+  echo "  门：与其它方法同一套准入（默认档位 / allow_uids.txt 白名单）—— 先证拒绝、再证放行"
+  echo "[14a] 写白名单只放 uid 12345（root 不在内）→ 期望 ErrCode=201（准入拒绝，且 SA 不回传结果串）"
+  mkdir -p /data/lut_sa 2>/dev/null
+  echo "12345" > /data/lut_sa/allow_uids.txt
+  /system/bin/lut_sa_client --screen 0
+  echo "[14b] 删掉白名单恢复默认档位 → 期望 ErrCode=0，且 JSON 里 ok=1 与 counts.withText>0"
+  rm -f /data/lut_sa/allow_uids.txt
+  /system/bin/lut_sa_client --screen 0
+  echo "[14c] 有界性：上限 8 → 期望 ok=1 且 counts.nodes<=8（截断标记 truncated=1）"
+  /system/bin/lut_sa_client --screen 8
+  echo "[14d] 指标里的 screen 状态（只记连接状态，不含屏幕原文 —— 隐私纪律）"
+  /system/bin/lut_sa_client --metrics
+
 
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"

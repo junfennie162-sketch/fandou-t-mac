@@ -33,6 +33,7 @@
 #include "iremote_object.h"
 #endif
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
+#include "lut_screen.h"  // S7-1b：读屏（无障碍元素树）
 
 namespace OHOS {
 
@@ -655,7 +656,21 @@ ErrCode LutSystemAbility::Release(std::string &result) {
         (void) ::tmac_sa::ReleaseSession(g_session);
         g_session = kInvalidSession;
     }
+    ::tmac_sa::ReleaseScreen();          // S7-1b：顺手断开无障碍连接（幂等）
     result = "ok: session released, engine memory returned to system";
+    return ERR_OK;
+}
+
+// S7-1b：读屏（感知方向）—— 与执行方向（ExecuteAction/ExecuteIntent）互相独立。
+// 准入：与其它方法同一套（默认档位 / allow_uids.txt 白名单），所以撤白名单即 201。
+// 隐私：屏幕原文不落日志（只记计数与耗时），返回内容只给通过准入的调用方。
+ErrCode LutSystemAbility::ReadScreen(int32_t maxNodes, std::string &result) {
+    if (!InferAllowed("ReadScreen")) {   // S5-1 准入
+        return kErrPermissionDenied;
+    }
+    result = ::tmac_sa::ReadScreenJson(static_cast<int>(maxNodes));
+    // 屏幕内容不进日志；这里只把「有无屏幕能力」写进备注，供 GetMetrics 观察
+    g_lastActionNote = "ReadScreen(" + std::to_string(maxNodes) + ") → " + ::tmac_sa::ScreenState();
     return ERR_OK;
 }
 

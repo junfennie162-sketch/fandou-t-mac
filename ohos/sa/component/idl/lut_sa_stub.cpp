@@ -123,6 +123,21 @@ int32_t LutSaStub::OnRemoteRequest(
             }
             return ERR_NONE;
         }
+        // S7-1b：感知方向（读屏）—— 独立方法，参数只有节点上限
+        case ILutSaIpcCode::COMMAND_READ_SCREEN: {
+            int32_t maxNodes = data.ReadInt32();
+            std::string result;
+            ErrCode errCode = ReadScreen(maxNodes, result);
+            if (!reply.WriteInt32(errCode)) {
+                return ERR_INVALID_VALUE;
+            }
+            if (SUCCEEDED(errCode)) {
+                if (!reply.WriteString16(Str8ToStr16(result))) {
+                    return ERR_INVALID_DATA;
+                }
+            }
+            return ERR_NONE;
+        }
         default:
             return IPCObjectStub::OnRemoteRequest(code, data, reply, option);
     }

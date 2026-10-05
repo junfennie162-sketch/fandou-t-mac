@@ -45,6 +45,9 @@ public:
 
     // S6-2：自然语言 → 结构化动作（模型路径与关键词兜底，返回串里如实标注 source）
     ErrCode ExecuteIntent(const std::string &utterance, std::string &result) override;
+
+    // S7-1b：感知方向（读屏）—— 与执行方向独立；走无障碍元素树，隐私：屏幕原文不落日志
+    ErrCode ReadScreen(int32_t maxNodes, std::string &result) override;
 };
 }  // namespace OHOS
 

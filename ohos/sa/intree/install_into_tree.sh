@@ -173,6 +173,8 @@ sed 's|#include "../lut_sa.h"|#include "lut_sa.h"|' "$SA/component/lut_sa_abilit
 cp "$SA/component/lut_sa_ability.h" "$DST/include/"
 cp "$SA/component/lut_sa_client.cpp" "$DST/src/"     # 客户端：跨 IPC 调 6901，自证可用
 cp "$SA/component/lut_a11y_dump.cpp" "$DST/src/"     # S7-1a：无障碍读屏探针（独立工具）
+cp "$SA/component/lut_screen.cpp" "$DST/src/"        # S7-1b：SA 内读屏（无障碍元素树）
+cp "$SA/component/lut_screen.h" "$DST/include/"
 cp "$SA/component/idl/"* "$DST/idl/"
 
 # S7-1a 链接期：探针要链镜像里现成的无障碍库（两个，缺一不可：

@@ -46,6 +46,7 @@ cp -f $O/ohemu/lutsa/lut_a11y_dump  $M/system/bin/lut_a11y_dump && chmod 755 $M/
 # 取证脚本/cfg **按 glob 全量注入**（FIX-73：手写文件清单会漏 —— 第二个服务就是这么没起来的）
 cp -f $SA/component/evidence/lut_evidence*.sh $M/system/bin/ && chmod 755 $M/system/bin/lut_evidence*.sh
 cp -f $SA/component/etc/init/lut_evidence*.cfg $M/system/etc/init/
+cp -f $SA/component/etc/init/lut_sa.cfg $M/system/etc/init/lut_sa.cfg   # FIX-87: SA 的 cfg 也要注入（权限就在它里面；漏了会 1005）
 mkdir -p $M/system/etc/lut_sa
 cp -f /src/ohos/vendor/ohemu/lutsa/etc/lut_sa/kcfg.ini $M/system/etc/lut_sa/kcfg.ini
 echo "  已注入取证脚本: $(ls $M/system/bin/lut_evidence*.sh | xargs -n1 basename | tr '
@@ -182,6 +183,9 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo "----- [13] S7-1a 无障碍探针（真错误码是结论，不许 head 截断成「没跑」）-----"
   # FIX-76 第三次：head -90 把 271 行的 [13] 段砍断了 —— 探针段用**整段**（271 行），不设小上限
   sed -n '/\[13\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -400
+  echo
+  echo "----- [14] S7-1b SA 读屏（ReadScreen：感知方向，独立 IDL 方法）-----"
+  sed -n '/\[14\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -60
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null

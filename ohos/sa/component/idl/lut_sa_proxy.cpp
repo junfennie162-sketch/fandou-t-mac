@@ -211,6 +211,41 @@ ErrCode LutSaProxy::Release(
     return ERR_OK;
 }
 
+// S7-1b：感知方向（读屏）—— 独立事务码，参数 = 节点上限
+ErrCode LutSaProxy::ReadScreen(
+    int32_t maxNodes,
+    std::string& funcResult)
+{
+    MessageParcel data;
+    MessageParcel reply;
+    MessageOption option(MessageOption::TF_SYNC);
+
+    if (!data.WriteInterfaceToken(GetDescriptor())) {
+        return ERR_INVALID_VALUE;
+    }
+    if (!data.WriteInt32(maxNodes)) {
+        return ERR_INVALID_DATA;
+    }
+
+    sptr<IRemoteObject> remote = Remote();
+    if (!remote) {
+        return ERR_INVALID_DATA;
+    }
+    int32_t result = remote->SendRequest(
+        static_cast<uint32_t>(ILutSaIpcCode::COMMAND_READ_SCREEN), data, reply, option);
+    if (FAILED(result)) {
+        return result;
+    }
+
+    ErrCode errCode = reply.ReadInt32();
+    if (FAILED(errCode)) {
+        return errCode;
+    }
+
+    funcResult = Str16ToStr8(reply.ReadString16());
+    return ERR_OK;
+}
+
 ErrCode LutSaProxy::ExecuteAction(
     const std::string& action,
     const std::string& arg,

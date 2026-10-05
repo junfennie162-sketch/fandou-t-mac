@@ -78,41 +78,36 @@
 
 **Now（这一轮要做的一件事）**
 
-- **Phase 2 = S7-1a ✅ 已完成**（`evidence/60`，探针 `lut_a11y_dump`，结论 `TREE-OK-WITH-TEXT` / `exit=0`）
-  实测链（每一步都是探针自己打印的真返回值，不是推断）：
-  1. **依赖闭包**：不走 `external_deps`（`accessibility:accessibleability` 声明了 `runtime_core:ani` +
-     `napi:ace_napi` = JS 运行时整包）→ 改「显式 `include_dirs` + prebuilt 两份 .so」；
-     闭包干跑实测 `arkcompiler / runtime_core / ace_napi / ani / ets_*` **全 0 行** ✓（配方见 FIX-82）
-  2. **v1**（普通客户端 `AccessibleAbilityClient`）→ `GetWindows`/`GetRoot` 一律
-     **4004 = RET_ERR_NO_CONNECTION**：`isConnected_` 只在 `Init(channel, channelId)` 置真，
-     而 channel 只由系统下发给「登记过的无障碍 ability」。
-  3. **v2**（`AccessibilityUITestAbility` —— uitest 用的那条原生口子）→ 第一次跑
-     **1005 = RET_ERR_NO_PERMISSION**：服务端查调用进程 native token 的
-     `ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY`。
-  4. **权限从哪来**（产品级、配置驱动）：init 服务 cfg 的 `permission`/`permission_acls` 字段
-     （`init_service.c` 用它构造 `NativeTokenInfoParams` → `GetAccessTokenId` → 子进程 `SetSelfTokenID`；
-     本树先例 = `base/sensors/start/etc/init/msdp_musl.cfg`）。给 `lut_evidence.cfg` 加两权限后：
-     `RegisterAbilityListener ret=0` → `Connect(0) ret=0` → `OnAbilityConnected`（~500–600 ms）→
-     `GetWindows ret=0 count=5` → 全窗口 `printed=169 withText=14 clickable=6`；
-     读到的真实文本：`上滑解锁` / `21:25` / `2026年10月5日` / `星期一` / `丙午年八月廿五` /
-     `没有 SIM 卡` / `100%`（当时屏幕 = 锁屏）。
-  - **对 S7 的结论**：SA 里封 `ReadScreen` **可行** —— SA 的 `lut_sa.cfg` 声明同样权限，SA 进程的 token 就带着它们；
-    同一 API 面已含执行侧（`ExecuteAction(elementInfo, action)` / `InjectGesture` / `SetTargetBundleName`），
-    S7-3 不用再找路。
-  - **如实边界**（写清楚，别当没看见）：走的是「UITest ability」模式（管理器把它登记成
-    `Utils::GetUri(processName, processName)`），语义上是**测试框架的口子**，生产加固版应换成正式无障碍扩展；
-    本轮是**只读**（未调用任何 ExecuteAction/InjectGesture）；连接是进程级单例，与真实 `uitest` 运行互斥。
+- **Phase 3 = S7-1b ✅ 已完成**（`evidence/61`，SA 的 `ReadScreen`，感知方向，独立 IDL 方法）
+  判据（全是跨 IPC 的真返回值）：
+  1. **准入双证明**：白名单不含调用方 → **201**；恢复默认档位 → **ErrCode=0**（与其它方法同一套门）；
+  2. **拿到带文本的元素树**：`{"ok":1,"connected":1,"user":100,...}`，
+     `counts={"nodes":13,"withText":7,"clickable":6}`，(win,a11yId) 键全部唯一；
+     文本 = `上滑解锁 / 23:17 / 2026年10月5日 / 星期一 / 丙午年八月廿五 / 没有 SIM 卡 / 100%`（屏幕=锁屏）；
+     另有 6 个可点元素（Stack/Swiper/SwiperIndicator + box）给 S7-3 用；
+  3. **有界性**：budget=8 → `nodes=8`、`truncated=1`（不会把整棵树甩过 IPC）；
+  4. **延迟**：首调 **677 ms**（含 RegisterAbilityListener + Connect + 等 channel 回调），后续 **29–32 ms**；
+  5. **隐私已落地**：SA 日志只记计数与耗时（`nodes=13 withText=7 clickable=6 ms=31`），**不记屏幕原文**；
+     `GetMetrics` 里 `screen=` 只报连接状态；本轮**未调用任何注入类 API**（`ExecuteAction`/`InjectGesture` 留到 S7-3）。
+  - 权限机制：`lut_sa.cfg` 的 `permission` 字段（与取证服务同一套，FIX-83）——
+    **注意** harness 的注入清单原来漏了 `lut_sa.cfg`（导致 SA 侧 1005），已补（FIX-87）。
+  - 实现落点：`ilut_sa.h` / `lut_sa_proxy.*` / `lut_sa_stub.cpp` / `lut_sa_ability.h,*.cpp`（`ReadScreen`）
+    + 新模块 `component/lut_screen.{h,cpp}`（进程级单例 + 有界遍历 + 只回文本/可点节点）
+    + 客户端 `--screen [maxNodes]` + 取证 `[14]` 段。
 
 **Next（排队）**
 
-1. **Phase 3 = S7-1b：把探针能力封成 SA 的 `ReadScreen`（独立 IDL 方法，不塞进 `ExecuteAction`）**
-   - `lut_sa.cfg` 加 `ACCESSIBILITY_EXTENSION_ABILITY` + `QUERY_ACCESSIBILITY_ELEMENT`（`INJECT_INPUT_EVENT` 留给 S7-3）；
-   - SA 内进程级单例：首次调用时 `RegisterAbilityListener` + `Connect`，之后复用；断开放 `Release`；
-   - 返回**有界 JSON**（最多 N 节点、只带文本/可点 + 窗口信息 + 采集时间戳），不返回整棵树；
-   - **隐私**：屏幕原文默认**不落日志**（只记计数与错误码），结果只给通过既有准入/白名单的调用方；
-   - 判据（`evidence/61`）：白名单调用方经 IPC 拿到带文本的元素树；撤白名单 → 201。
-2. S5 第三方接入示例：HAP 侧最小示例 + 文档（native 版已有 `lut_sa_client`）；
-3. S6-3：扩动作集（更多白名单 bundle）+ 应用侧执行参考实现；
+1. **Phase 4 = S7-2：元素树 + 话语 → 下一步动作 JSON（「理解」与「决定」）**
+   - 输入：`ReadScreen` 的 JSON（文本/可点/窗口）+ 用户话语；
+   - 输出：严格校验的动作 JSON（`{"action":"click","a11yId":…}` / `{"action":"back"}` / `{"action":"start_ability",…}`），
+     **`source` 如实标注**（model/keyword/none）、`model_said` 原样带回（沿用 S6-2 的纪律）；
+   - 判据（`evidence/62`）：给"打开设置"→ 决策出 `start_ability com.ohos.settings`；
+     给"点 WLAN"这类需要界面的说法 → 决策出带 `a11yId` 的 click；拿不定 → `source=none` 且不动作。
+2. **Phase 5 = S7-3/4：执行闭环「打开设置 → 进子页 → 返回」**（`evidence/63`）
+   - 执行侧优先用无障碍动作（`ExecuteAction(elementInfo, action)`，system_basic），
+     `INJECT_INPUT_EVENT`（system_core）作兜底（已先在 cfg 里声明）；
+   - 重复 3 次 + 断网跑，全程只在本机完成（隐私诉求）。
+3. S5 第三方接入示例：HAP 侧最小示例 + 文档（native 版已有 `lut_sa_client`）；
 4. 工程化：一条命令出镜像（`intree/make_image.sh`）+ 性能基线（TTFT / tok/s / 内存）。
 
 **Blocked / 已知缺口（写清楚，不留暗坑）**

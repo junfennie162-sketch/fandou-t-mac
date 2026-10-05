@@ -41,6 +41,11 @@ public:
     ErrCode Release(
         std::string& funcResult) override;
 
+    // S7-1b：感知方向（读屏）—— 独立方法，不复用 ExecuteAction
+    ErrCode ReadScreen(
+        int32_t maxNodes,
+        std::string& funcResult) override;
+
 private:
     ErrCode ExecuteAction(
         const std::string& action,

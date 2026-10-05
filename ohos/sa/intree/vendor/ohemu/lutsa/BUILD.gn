@@ -28,6 +28,7 @@ ohos_shared_library("lut_sa") {
     "src/tile_pool.cpp",
     "src/qos_policy.cpp",
     "src/lut_kernel_ref.cpp",        # 便携参考内核：现在只作「算法自检锚点」（入口已改名 ref_*）
+    "src/lut_screen.cpp",            # S7-1b：读屏（无障碍元素树，感知方向）
     "idl/lut_sa_proxy.cpp",          # ILutSa 生成物（IPC 代理）
     "idl/lut_sa_stub.cpp",           # ILutSa 生成物（IPC 桩）
   ]
@@ -50,10 +51,50 @@ ohos_shared_library("lut_sa") {
     "//foundation/ability/ability_runtime/interfaces/kits/native/ability/native/continuation/distributed",
   ]
 
+  # S7-1b：SA 自己也要读屏，所以要把无障碍客户端的头/库也接进来。
+  # 这一段与下面 lut_a11y_dump 的那份**同一来源**（无障碍库自己的编译命令行，见 FIX-82），
+  # 之所以不抽成 config：OH 的 GN 模板对 `configs` 支持有限（FIX-54 踩过），复制粘贴更稳。
+  include_dirs += [
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/aafwk/include",
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/common/include",
+    "//foundation/barrierfree/accessibility/common/interface/include",
+    "//foundation/barrierfree/accessibility/common/log/include",
+    "//foundation/barrierfree/accessibility/frameworks/aafwk/include",
+    "$root_gen_dir/foundation/barrierfree/accessibility/common/interface",
+    "//arkcompiler/runtime_core/static_core/plugins/ets/runtime/ani",
+    "//arkcompiler/runtime_core/static_core/plugins",
+    "//foundation/arkui/napi/interfaces/kits",
+    "//foundation/arkui/napi/interfaces/inner_api",
+    "//foundation/arkui/napi",
+    "//third_party/node/src",
+    "//third_party/libuv/include",
+    "//base/notification/eventhandler/interfaces/inner_api",
+    "//base/notification/eventhandler/frameworks/eventhandler/include",
+    "//base/hiviewdfx/hilog/interfaces/native/innerkits/include",
+    "//base/startup/init/interfaces/innerkits/include",
+    "//third_party/bounds_checking_function/include",
+    "//commonlibrary/c_utils/base/include",
+    "//commonlibrary/c_utils/base/src",
+    "//foundation/systemabilitymgr/samgr/interfaces/innerkits/samgr_proxy/include",
+    "//foundation/resourceschedule/ffrt/include",
+    "//foundation/resourceschedule/ffrt/interfaces/kits",
+    "//foundation/resourceschedule/ffrt/interfaces/inner_api",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/event/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/proxy/include",
+    "//base/hiviewdfx/hitrace/interfaces/native/innerkits/include/hitrace_meter",
+    "//base/hiviewdfx/hitrace/utils",
+  ]
+
   # 引擎静态库 + t-mac 调优内核（kernels.cc 编在同一份 .a 里，所以业务层不再单独编一份，
   # 避免同名符号重复）。业务层通过 include/t-mac/kernels.h 的 inline 分派器调用 LUT 内核。
+  # S7-1b：再加无障碍的两份 .so（客户端 + 元素结构体实现），同样是 prebuilt 拷贝、不走 external_deps。
   lib_dirs = [ "prebuilt" ]
-  libs = [ "llama_engine" ]
+  libs = [
+    "llama_engine",
+    "accessibleability.z",
+    "accessibility_common.z",
+  ]
 
   # FIX-41: lut_sa_ability.h/.cpp 整体被 #ifdef TMAC_SA_SAMGR_BINDING 包着；
   # 不定义这个宏，SA 绑定（REGISTER_SYSTEM_ABILITY_BY_ID / OnStart→Publish）就整段不参与编译，
