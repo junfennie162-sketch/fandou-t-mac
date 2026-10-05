@@ -141,6 +141,38 @@ wsl -d ohbuild -u root -- bash -c 'e2fsck -fy /src/ohos/out/x86_64_virt/packages
 
 ---
 
+---
+
+## 七、S7 路线细化（GUI Agent：读屏 → 决策 → 执行，全程本机）
+
+> 先把已探明的事实钉在这里（**别重复侦察**，2026-10-05 实测）：
+
+| 事实 | 结论 |
+|---|---|
+| 无障碍模块 | 源码在 `foundation/barrierfree/accessibility`；内检四件套 GN 目标：`aafwk:accessibleability`、`acfwk:accessibilityconfig`、`asacfwk:accessibilityclient`、`common:accessibility_common`；**镜像里都有**（`libaccessibleability.z.so` / `libaccessibleabilityms.z.so` / `libaccessibility_config.so` + `profile/accessibility.json`） |
+| 输入注入 | SDK 有 `@ohos.multimodalInput.inputEventClient`（键/鼠/触注入）；服务侧在 `foundation/multimodalinput/input/uinput/{inject_thread,keyboard_inject,…}`；镜像里有 `multimodalinput.json` |
+| 权限等级（决定谁能干） | `INJECT_INPUT_EVENT` = **system_core / system_grant / SYSTEM**（三方拿不到 ✓）；`INPUT_MONITORING` = system_basic；`ACCESSIBILITY_EXTENSION_ABILITY` / `CONNECT_ACCESSIBILITY_EXTENSION` = system_basic；`START_ABILITIES_FROM_BACKGROUND` = system_basic |
+| 镜像预置的扩展 | `/system/etc/accessibility/` 只有 `api_event_reporter.cfg`（**没有**预置无障碍扩展 → 需要我们自己配） |
+
+| 子步 | 内容 | 判据（证据文件） |
+|---|---|---|
+| **S7-0** 侦察收尾 | ① 量无障碍内检的依赖闭包（FIX-64 教训：`ninja -n` 干跑看会不会拖进 arkcompiler）；② 确认无障碍服务在本镜像里真的起了（`ps` + `GetSystemAbility(无障碍服务 id)`）；③ 找 multimodalinput 内检目标 | 三问三答，写进账本（evidence/59 的侦察段） |
+| **S7-1 读屏（地基）** | SA 加 `ReadScreen`：用 `AccessibilityClient`（asacfwk）取**顶层元素树**（文本/类型/可点/边界）→ 返回**结构化元素 JSON**（复用 S6 的 JSON 契约与"如实"风格：`{source:"accessibility", nodes:[{i,text,type,clickable,bounds}]}`）；日志默认**不落屏幕原文** | `evidence/59`：SA 能 dump 出**带文本的元素列表**（在设置界面里能看到如"WLAN/蓝牙"这类文本） |
+| **S7-2 决策（看→想）** | 把"元素列表 + 用户话"喂给本地模型 → 输出**下一步动作 JSON**（`{action:click\|input\|back\|open, index\|text}`）；**严格校验**：动作必须在允许集、`index` 必须存在，否则回退规则匹配；`source` 如实（model/keyword） | `evidence/60`：给定已知屏幕 + "打开 WLAN"，产出**合法下一步动作**（并附模型原文 `model_said`） |
+| **S7-3 执行（想→动）** | 优先走**无障碍动作**（`AccessibilityElement` 的 action，权限门槛 system_basic ✓ 正当路径），`INJECT_INPUT_EVENT`（system_core）作为备选；先做 click/index、input、back 三个 | `evidence/61`：SA 能"点中"一个元素（目标界面出现**预期变化**） |
+| **S7-4 闭环** | 一条最小可复现任务（建议："打开设置 → 进入某子页 → 返回"，或"打开设置 → 打开 WLAN 开关"） | `evidence/62`：**同一条命令重复 3 次都成功** + **断网也成立**（证明模型与屏幕内容都不出设备） |
+
+**替代路线（拿不到权限时退一步）**：**S7' 调度层** —— SA 只产出"看到什么 + 下一步该做什么"的 JSON，由**有权限的系统应用**执行并回报（与 S6 路线B 同构 ✓）。判据同 S7-2/S7-4（只是执行方换成应用侧）。
+
+**明确不做（先）**：不要一上来就"注入 + 全自动点屏"—— 风险高、不可复现、且被权限边界卡住；**先把"看-想"做扎实**（S7-1/S7-2 本身就有独立价值：屏幕理解 + 结构化产出）。
+
+## 八、两件"体质"工作（随时可插，按性价比排序）
+
+| # | 内容 | 要点 | 判据 |
+|---|---|---|---|
+| **T1 多会话** | 共享权重、各自上下文 | 引擎壳拆出 model/context 两层（现在是一体 ✓）；`llama_context` per session + 共享 `llama_model`；会话数配额 + 内存水位（配额框架已有 ✓） | 两会话**交替推理互不串扰**（各自 prompt 各自答）+ 内存/会话数上限生效 |
+| **T2 arm64 形态** | 真机路径的可编译性 | 用 `deploy/tuned/aarch64-hf-bitnet-3b/`（kfactor=16/135-50，与 x86 验证过的那族一致 ✓）+ `install_into_tree.sh` 的 arm 分支（已写 ✓） | 静态检查通过（符号/体积）+ **如实标注"未上机实测"** |
+
 ## 六、定时任务运行规则（自动化每轮先读这一节）
 
 > 目标：在**不依赖对话上下文**的前提下持续推进；状态只在 `PLAN.md`（本文件）与账本里。
