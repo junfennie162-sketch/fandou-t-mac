@@ -172,7 +172,31 @@ echo "== 3. SA 绑定 + 客户端 + IDL 生成物 =="
 sed 's|#include "../lut_sa.h"|#include "lut_sa.h"|' "$SA/component/lut_sa_ability.cpp" > "$DST/src/lut_sa_ability.cpp"
 cp "$SA/component/lut_sa_ability.h" "$DST/include/"
 cp "$SA/component/lut_sa_client.cpp" "$DST/src/"     # 客户端：跨 IPC 调 6901，自证可用
+cp "$SA/component/lut_a11y_dump.cpp" "$DST/src/"     # S7-1a：无障碍读屏探针（独立工具）
 cp "$SA/component/idl/"* "$DST/idl/"
+
+# S7-1a 链接期：探针要链镜像里现成的无障碍库（两个，缺一不可：
+#   libaccessibleability.z.so    = 客户端（AccessibleAbilityClient）
+#   libaccessibility_common.z.so = 元素结构体实现（AccessibilityElementInfo::GetContent 等）
+# 不走 external_deps（那会拖 runtime_core:ani + napi 进构建闭包），
+# 改成把镜像里那两份拷进 prebuilt/ —— 每轮 install 都刷新，不会与镜像版本漂移。
+mkdir -p "$DST/prebuilt"
+A11Y_LIBS=""
+for pair in "libaccessibleability.z.so:lib64" "libaccessibility_common.z.so:lib64/platformsdk"; do
+  n=${pair%%:*}; d=${pair#*:}
+  for base in "$TREE/out/x86_64_virt/packages/phone/system" "$TREE/out/x86_64_virt"; do
+    if [ -f "$base/$d/$n" ]; then
+      cp -f "$base/$d/$n" "$DST/prebuilt/$n"
+      A11Y_LIBS="$A11Y_LIBS $n"
+      break
+    fi
+  done
+done
+if [ -n "$A11Y_LIBS" ]; then
+  echo "  无障碍库 → prebuilt/：$A11Y_LIBS"
+else
+  echo "  ⚠ 没找到无障碍客户端库（先整体编过一遍镜像？）—— 探针链接会失败"
+fi
 
 echo "== 4. profile / init cfg / 取证服务 / sepolicy =="
 cp "$SA/component/sa_profile/lut_sa.json" "$DST/sa_profile/"

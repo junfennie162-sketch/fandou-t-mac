@@ -28,10 +28,10 @@ echo "=== 2. 重建 gn + 链接 SA（含静态引擎）==="
 # 不加这个开关 gn 直接失败 → build.ninja 不更新 → 编译还用旧 include_dirs（本次踩过）
 "$N" -w dupbuild=warn -C $O build.ninja 2>&1 | tail -3
 cd $O || exit 1
-"$N" -w dupbuild=warn -C $O ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client -j6 2>&1 \
+"$N" -w dupbuild=warn -C $O ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client ohemu/lutsa/lut_a11y_dump -j6 2>&1 \
   | grep -vE '^ninja: warning: multiple rules' | tail -45
 echo "  ninja 退出码: ${PIPESTATUS[0]}"
-ls -la ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client 2>/dev/null | awk '{print "  ", $5, $9}'
+ls -la ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client ohemu/lutsa/lut_a11y_dump 2>/dev/null | awk '{print "  ", $5, $9}'
 echo "  引擎符号（.so 里应能看到 llama_*）:"
 nm -D ohemu/lutsa/libtmac_sa.z.so 2>/dev/null | grep -c "llama_" | xargs echo "    llama_* 导出:"
 strings -a ohemu/lutsa/libtmac_sa.z.so 2>/dev/null | grep -c "ggml-tmac\|tmac" | xargs echo "    tmac 相关字符串:"
@@ -42,6 +42,7 @@ mkdir -p $M
 mount -o loop,rw "$IMG/system.img" $M || exit 1
 cp -f $O/ohemu/lutsa/libtmac_sa.z.so $M/system/lib64/libtmac_sa.z.so
 cp -f $O/ohemu/lutsa/lut_sa_client  $M/system/bin/lut_sa_client && chmod 755 $M/system/bin/lut_sa_client
+cp -f $O/ohemu/lutsa/lut_a11y_dump  $M/system/bin/lut_a11y_dump && chmod 755 $M/system/bin/lut_a11y_dump
 # 取证脚本/cfg **按 glob 全量注入**（FIX-73：手写文件清单会漏 —— 第二个服务就是这么没起来的）
 cp -f $SA/component/evidence/lut_evidence*.sh $M/system/bin/ && chmod 755 $M/system/bin/lut_evidence*.sh
 cp -f $SA/component/etc/init/lut_evidence*.cfg $M/system/etc/init/
@@ -177,6 +178,10 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo
   echo "--- [12] S7-0 侦察：无障碍服务状态 ---"
   sed -n '/\[12\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -8
+  echo
+  echo "----- [13] S7-1a 无障碍探针（真错误码是结论，不许 head 截断成「没跑」）-----"
+  # FIX-76 第三次：head -90 把 271 行的 [13] 段砍断了 —— 探针段用**整段**（271 行），不设小上限
+  sed -n '/\[13\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -400
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null

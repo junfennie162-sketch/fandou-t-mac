@@ -78,27 +78,42 @@
 
 **Now（这一轮要做的一件事）**
 
-- **Phase 2 = S7-1a：写无障碍探针 `lut_a11y_dump`（独立工具，不进 SA —— 先把"accessibility 能不能拿元素树"这个未知单独打掉）**
-  1. **先量依赖闭包**（FIX-64 的教训，**出现 arkcompiler 就立刻换路**）：
-     `external_deps = [ "accessibility:accessibleability" ]`（part_name=accessibility）→ `ninja -n` 干跑，
-     判据：`grep -ci arkcompiler` 为 0（已知它自身依赖只有 c_utils/e2fsprogs/ffrt/hilog/init/ipc/samgr/json/cesfwk/**want** ✓）；
-     ⚠ **不要**带 `accessibility_common`（它带 `runtime_core:ani`）；`common/include` 只当 include 目录用。
-  2. **写探针**（新 `ohos_executable("lut_a11y_dump")`，装到 `/system/bin/`）：
-     `AccessibleAbilityClient`（头文件 `interfaces/innerkits/aafwk/include/accessible_ability_client.h`）→
-     `GetRoot(info, systemApi=true)` 或 `GetWindows(windows, true)` + `GetRootByWindow(...)`；
-     把 `AccessibilityElementInfo` 的**文本/类型/可点击/边界**打印成 **JSON**（先只打顶层 + 前 N 个子节点，别做递归爆炸）。
-  3. **在 guest 里跑**：取证脚本加 `[13]` 段直接执行 `/system/bin/lut_a11y_dump` 并把输出打进证据；
-     **判据**：打印出**带文本的元素列表**（例如设置界面里的"WLAN/蓝牙"）；若被拒/拿不到 → **如实记录错误码与原因**
-     （探针的意义就是把未知拆开，失败也是有价值的结论）。
-  - 之后（Phase 3）才把探针能力封成 SA 的 **`ReadScreen`**（独立 IDL 方法，不塞进 Action）+ 白名单/隐私。
+- **Phase 2 = S7-1a ✅ 已完成**（`evidence/60`，探针 `lut_a11y_dump`，结论 `TREE-OK-WITH-TEXT` / `exit=0`）
+  实测链（每一步都是探针自己打印的真返回值，不是推断）：
+  1. **依赖闭包**：不走 `external_deps`（`accessibility:accessibleability` 声明了 `runtime_core:ani` +
+     `napi:ace_napi` = JS 运行时整包）→ 改「显式 `include_dirs` + prebuilt 两份 .so」；
+     闭包干跑实测 `arkcompiler / runtime_core / ace_napi / ani / ets_*` **全 0 行** ✓（配方见 FIX-82）
+  2. **v1**（普通客户端 `AccessibleAbilityClient`）→ `GetWindows`/`GetRoot` 一律
+     **4004 = RET_ERR_NO_CONNECTION**：`isConnected_` 只在 `Init(channel, channelId)` 置真，
+     而 channel 只由系统下发给「登记过的无障碍 ability」。
+  3. **v2**（`AccessibilityUITestAbility` —— uitest 用的那条原生口子）→ 第一次跑
+     **1005 = RET_ERR_NO_PERMISSION**：服务端查调用进程 native token 的
+     `ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY`。
+  4. **权限从哪来**（产品级、配置驱动）：init 服务 cfg 的 `permission`/`permission_acls` 字段
+     （`init_service.c` 用它构造 `NativeTokenInfoParams` → `GetAccessTokenId` → 子进程 `SetSelfTokenID`；
+     本树先例 = `base/sensors/start/etc/init/msdp_musl.cfg`）。给 `lut_evidence.cfg` 加两权限后：
+     `RegisterAbilityListener ret=0` → `Connect(0) ret=0` → `OnAbilityConnected`（~500–600 ms）→
+     `GetWindows ret=0 count=5` → 全窗口 `printed=169 withText=14 clickable=6`；
+     读到的真实文本：`上滑解锁` / `21:25` / `2026年10月5日` / `星期一` / `丙午年八月廿五` /
+     `没有 SIM 卡` / `100%`（当时屏幕 = 锁屏）。
+  - **对 S7 的结论**：SA 里封 `ReadScreen` **可行** —— SA 的 `lut_sa.cfg` 声明同样权限，SA 进程的 token 就带着它们；
+    同一 API 面已含执行侧（`ExecuteAction(elementInfo, action)` / `InjectGesture` / `SetTargetBundleName`），
+    S7-3 不用再找路。
+  - **如实边界**（写清楚，别当没看见）：走的是「UITest ability」模式（管理器把它登记成
+    `Utils::GetUri(processName, processName)`），语义上是**测试框架的口子**，生产加固版应换成正式无障碍扩展；
+    本轮是**只读**（未调用任何 ExecuteAction/InjectGesture）；连接是进程级单例，与真实 `uitest` 运行互斥。
 
 **Next（排队）**
 
-1. S5 权限模型：`service_contexts` + 调用方白名单（uid / token / 权限名）+ 会话与内存配额（拒绝而非硬扛）；
-2. S5 第三方接入示例：一个独立进程的最小客户端（native 版已有 `lut_sa_client`，再给一份 HAP 侧示例）+ 文档；
-3. S6 系统级执行器：SA 增加 `ExecuteIntent`（自然语言 → 动作 JSON → `StartAbility`/`Want`），
-   **只开放安全动作集**（打开/切换/查询），先不做像素级操控；
-4. 工程化：一条命令出镜像（把 `sta3_verify.sh` 的注入部分抽成 `intree/make_image.sh`）+ 性能基线（TTFT/tok/s/内存）。
+1. **Phase 3 = S7-1b：把探针能力封成 SA 的 `ReadScreen`（独立 IDL 方法，不塞进 `ExecuteAction`）**
+   - `lut_sa.cfg` 加 `ACCESSIBILITY_EXTENSION_ABILITY` + `QUERY_ACCESSIBILITY_ELEMENT`（`INJECT_INPUT_EVENT` 留给 S7-3）；
+   - SA 内进程级单例：首次调用时 `RegisterAbilityListener` + `Connect`，之后复用；断开放 `Release`；
+   - 返回**有界 JSON**（最多 N 节点、只带文本/可点 + 窗口信息 + 采集时间戳），不返回整棵树；
+   - **隐私**：屏幕原文默认**不落日志**（只记计数与错误码），结果只给通过既有准入/白名单的调用方；
+   - 判据（`evidence/61`）：白名单调用方经 IPC 拿到带文本的元素树；撤白名单 → 201。
+2. S5 第三方接入示例：HAP 侧最小示例 + 文档（native 版已有 `lut_sa_client`）；
+3. S6-3：扩动作集（更多白名单 bundle）+ 应用侧执行参考实现；
+4. 工程化：一条命令出镜像（`intree/make_image.sh`）+ 性能基线（TTFT / tok/s / 内存）。
 
 **Blocked / 已知缺口（写清楚，不留暗坑）**
 
@@ -109,6 +124,9 @@
 - 串口在高负载下会丢行/断行 → 判据尽量取 guest 内文件（`/data/lut_sa/*`、`/data/local/tmp/lut_evidence.txt`），
   停机后从 userdata 镜像里捞。
 - 本机没有整机，HarmonyOS 侧只能在模拟器验证；OH 侧只有 QEMU x86_64（arm64 有 staging 但未实测）。
+- **无障碍口子的语义边界**（S7-1a 新发现，已写进 `evidence/60` 与 FIX-83/84）：当前走的是系统给原生进程的
+  「UITest ability」模式 —— 能力与权限都对，但语义上是测试框架的通道。生产加固方向 = 让本组件成为**正式的无障碍扩展**
+  （或由无障碍管理器提供正式的「系统读屏」登记口）；届时只需换登记方式，`ReadScreen` 的上下层接口不变。
 
 ---
 

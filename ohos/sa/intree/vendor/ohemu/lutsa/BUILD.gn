@@ -100,6 +100,82 @@ ohos_executable("lut_sa_client") {
   subsystem_name = "ohemu"
 }
 
+# S7-1a：无障碍「读屏」能力探针（**独立工具，不进 SA**）
+#
+# 依赖闭包的纪律（FIX-64 那条教训的第二次应用）：
+#   external_deps 里**不能**写 "accessibility:accessibleability" —— 它的 BUILD.gn 明确声明了
+#   "runtime_core:ani" + "napi:ace_napi"，等于把 JS 运行时整包拖进构建闭包。
+#   改为两条腿各走各的：
+#     · 编译期：显式 include_dirs（下面那串路径照抄各组件自己的 config/public_config）
+#     · 链接期：镜像里**现成**的 libaccessibleability.z.so（prebuilt 拷贝，与 llama_engine 同一手法）
+#   它自带的 DT_NEEDED（libani / libace_napi / libffrt / libmmi-client …）镜像里本来就有，
+#   且该 .so 已装在 /system/lib64（实测确认），所以运行时不需要新增任何东西。
+#
+# 为什么探针单独存在：写 SA 的 ReadScreen 之前，先独立回答「无障碍能不能拿到元素树」。
+#   已知硬约束（读码所得，本轮实测验证）：客户端必须被系统 Init(channel, channelId) 才会
+#   isConnected_ —— 也就是**读屏者在系统眼里必须是一个无障碍 ability**。
+ohos_executable("lut_a11y_dump") {
+  sources = [ "src/lut_a11y_dump.cpp" ]
+  # 下面这份 include 列表**抄自无障碍库自己的编译命令行**（从 ninja 的
+  # obj/foundation/barrierfree/accessibility/.../accessible_ability_client_impl.o 那条边里掏出），
+  # 顺序也照抄 —— 顺序有意义：同名头（hilog_wrapper.h / event_handler.h / ani.h 各有好几份）
+  # 必须由无障碍自己那份先命中，否则会撞到别的组件的同名实现。
+  include_dirs = [
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/aafwk/include",
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/common/include",
+    "//foundation/barrierfree/accessibility/common/interface/include",
+    "//foundation/barrierfree/accessibility/common/log/include",
+    "//foundation/barrierfree/accessibility/frameworks/aafwk/include",
+    "$root_gen_dir/foundation/barrierfree/accessibility/common/interface",
+    "//arkcompiler/runtime_core/static_core/plugins/ets/runtime/ani",   # 客户端头 include <ani.h>
+    "//arkcompiler/runtime_core/static_core/plugins",
+    "//foundation/arkui/napi/interfaces/kits",                          # 还 include napi/native_api.h
+    "//foundation/arkui/napi/interfaces/inner_api",
+    "//foundation/arkui/napi",
+    "//third_party/node/src",                                           # node_api.h 在这里
+    "//third_party/libuv/include",
+    "//base/notification/eventhandler/interfaces/inner_api",
+    "//base/notification/eventhandler/frameworks/eventhandler/include",
+    "//base/hiviewdfx/hilog/interfaces/native/innerkits/include",
+    "//base/startup/init/interfaces/innerkits/include",
+    "//third_party/bounds_checking_function/include",
+    "//commonlibrary/c_utils/base/include",
+    "//commonlibrary/c_utils/base/src",
+    "//foundation/communication/ipc/interfaces/innerkits/ipc_core/include",
+    "//foundation/systemabilitymgr/samgr/interfaces/innerkits/samgr_proxy/include",
+    "//foundation/resourceschedule/ffrt/include",
+    "//foundation/resourceschedule/ffrt/interfaces/kits",
+    "//foundation/resourceschedule/ffrt/interfaces/inner_api",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/event/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/proxy/include",
+    "//base/hiviewdfx/hitrace/interfaces/native/innerkits/include/hitrace_meter",
+    "//base/hiviewdfx/hitrace/utils",
+  ]
+  # 抄自 accessibility 的 accessibleability_private_config（日志域不定义就编不过）
+  defines = [
+    "AAMS_LOG_TAG = \"lut_a11y\"",
+    "AAMS_LOG_DOMAIN = 0xD001D01",
+  ]
+  lib_dirs = [ "prebuilt" ]
+  # 两份都要：客户端类在 accessibleability，元素结构体的实现（GetContent/IsClickable…）在 accessibility_common
+  libs = [
+    "accessibleability.z",
+    "accessibility_common.z",
+  ]
+  external_deps = [
+    "c_utils:utils",
+    "hilog:libhilog",
+    "ipc:ipc_core",
+    "samgr:samgr_proxy",
+  ]
+  output_name = "lut_a11y_dump"
+  install_enable = true
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
 # FIX-38/39: SA 注册表必须走官方 ohos_sa_profile 模板才会进 /system/profile/；
 # 用 ohos_prebuilt_etc + relative_install_dir="profile" 会落到 /system/etc/profile/。
 # 注意该模板在 part_name 已给定时不读 subsystem_name，多写会 GN 报 "Assignment had no effect"。
@@ -167,6 +243,7 @@ group("lut_sa_package") {
   deps = [
     ":lut_sa",
     ":lut_sa_client",
+    ":lut_a11y_dump",
     ":lut_sa_profile",
     ":lut_sa_init_cfg",
     ":lut_sa_kcfg",

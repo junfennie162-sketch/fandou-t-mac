@@ -111,6 +111,22 @@ com.ohos.camera
   echo "  libs        : $(ls /system/lib64/libaccessibleability*.z.so 2>/dev/null | wc -l) 个无障碍库"
   echo "  cfg         : $(ls /system/etc/init/accessibility.cfg 2>/dev/null | wc -l) 个 init cfg"
 
+  echo "--- [13] S7-1a 探针：独立原生进程能不能拿到无障碍元素树（v2 走 AccessibilityUITestAbility）---"
+  echo "  v1 教训：普通客户端 GetWindows/GetRoot 一律 4004=RET_ERR_NO_CONNECTION（必须有系统下发的 channel）"
+  echo "  v2 路径：RegisterAbilityListener → Connect(userId) → 等 channel 回调 → GetWindows/GetRoot/GetChildren"
+  echo "  权限来源：本服务 cfg 的 permission 字段（init 按它给进程设 native token，见 QEMU-DEPLOY FIX-83）"
+  echo "  默认模式会把**所有窗口**都走一遍（实测：顶层桌面窗口 4 层内全是容器、没有文本）"
+  echo "  每一步的真实返回值都是证据；退出码 0=有文本 1=有树无文本 2=句柄空 3=没连上 4=连上没树"
+  echo "[13a] 默认（无参数，走所有窗口）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+  echo "[13b] 只走指定窗口（上轮的顶层窗口 winId=6）"
+  /system/bin/lut_a11y_dump 6
+  echo "  exit=$?"
+  echo "  注意：「没拿到」也是结论 —— 但要留下**真实错误码**，不许写成「大概不行」"
+
+
+
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
   rm -f /data/lut_sa/allow_uids.txt 2>/dev/null
   mkdir -p /data/lut_sa 2>/dev/null
