@@ -49,12 +49,12 @@ mkdir -p /data/local/tmp 2>/dev/null
   echo "[9a3] 显式 ability + userId=100"
   /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100
   echo "[9a4] 显式 ability + userId=100 + module=phone（module 名取自 Settings.hap 的 module.json）"
-  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100#phone
+  /system/bin/lut_sa_client --action start_ability 'com.ohos.settings/com.ohos.settings.MainAbility@100#phone'
   echo "[9b] 未授权目标（com.ohos.camera）→ 期望 201"
   /system/bin/lut_sa_client --action start_ability com.ohos.camera
   echo "[9c] 删表恢复（默认只放 settings）→ 期望受理（同 [9a4]）"
   rm -f /data/lut_sa/actions_allow.txt
-  /system/bin/lut_sa_client --action start_ability com.ohos.settings/com.ohos.settings.MainAbility@100#phone
+  /system/bin/lut_sa_client --action start_ability 'com.ohos.settings/com.ohos.settings.MainAbility@100#phone'
 
   echo "--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---"
   echo "#####LUT-EV-STEP-2-client-start#####" > /dev/ttyS0

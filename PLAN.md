@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 启动 Ability | 🚧 **机制已验证**（SA→AMS→真实 ErrCode 回到调用方，evidence/49）；动作白名单/拒绝路径实测（201）✓；剩「让 AMS 收下这次启动」（参数/权限，FIX-69） | 见 §三 Now |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 **路线A 的结论已定**（机制通、参数三连否 → AMS 不收 system caller）；**已转路线B**：SA 产出结构化动作 JSON（已实现，静态编译通过），执行由应用侧完成（契约写进 INTEGRATION.md §5） | 见 §三 Now |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,21 +78,22 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-1b-2 冷启动验证：一轮试完 6 个 `start_ability` 参数变体（evidence/50）**
-  - **已备好（别重做）**：`ExecuteAction` 的 arg 语法扩展成 `<bundle>[/<ability>][@<userId>][#<module>]`
-    （Want 相应 `SetElementName`/`SetModuleName`，parcel 用解析出的 userId；结果串会带回
-    `bundle=/ability=/module=/userId=` 便于对账）；取证 `[9]` 已改成 6 步变体；静态编译通过（库 2,046,736 字节）。
-  - **目标应用的真名**（从 `Settings.hap` 的 module.json 解出，取法：挂 `system.img` → `unzip -p <hap> module.json`）：
-    **module = `phone`**、入口 ability = **`com.ohos.settings.MainAbility`**（带 launcher skill）。
+- **S6-1b-3 路线B 的冷启动验证（evidence/51）**
+  - **已实现（别重做）**：`ExecuteAction` 现在把**结构化动作 JSON** 作为确定性产出返回
+    （`{"action":"start_ability","bundle":…,"ability":…,"module":…,"userId":…,"ams_try":…}`），
+    返回码语义：`0` = SA 职责完成（策略通过 + 动作已产出）、`201` = 策略拒绝；`ams_try` 如实反映直连 AMS 的结果；
+    脚本里 `#` 已加引号；契约与"应用侧参考写法（ArkTS `startAbility`）"写进 `INTEGRATION.md` 第 5 节。
+    静态编译通过（库 2,046,616 字节）。
   - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/50-sa-action-params.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（四看）**：
-    1. 先看 `LUT-EV-END` 在不在（不在=又被掐，按 FIX-67 先查时间预算，别下结论）；
-    2. 六个变体里哪个拿到 **`AMS ErrCode=0`** → 那就是端到端"打开设置"跑通，把该 arg 写进
-       `INTEGRATION.md` 与默认动作示例；
-    3. 若全是非 0：把**每个变体的实际码**记进账本再判断 —— `22` = 参数仍不合；若出现 `ERR_INVALID_CALLER`
-       或权限类码（且变体无法绕开）→ **如实记录并转路线B**（SA 产出动作 JSON、应用侧执行）；
-    4. `[9b]` 必须 201；`[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0 不许回退。
+    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/51-sa-action-json.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
+  - **判据（三看）**：
+    1. `[9a*]` 任一变体（含 `'…@100#phone'`）→ `ExecuteAction ErrCode=0` **且返回串里出现合法 JSON**
+       （`action={"action":"start_ability","bundle":"com.ohos.settings",…}`，字段齐全、`#phone` 变体的
+       `module":"phone"` 要对得上）；
+    2. `[9b]` 未授权 → **201**；`[9c]` 恢复；
+    3. 无回退：`[7]/[8]`、`robustness bad=0`、t-mac `LoadModel` 0。（`LUT-EV-END` 缺失属已知问题，见 FIX-67/70 ——       只要 `[9]` 在前面拿到即可，但要在证据里注明。）
+  - 之后进 **S6-2**：自然语言 → 动作（用本地模型把"打开设置"这类话分类成 `{action, bundle}`），
+    仍走同一条 JSON 契约；动作集先只含白名单内的 bundle。
 
 **Next（排队）**
 

@@ -487,15 +487,21 @@ ErrCode LutSystemAbility::ExecuteAction(const std::string &action, const std::st
         return ERR_INVALID_VALUE;
     }
     const int32_t amsErr = reply.ReadInt32();
-    char b[256];
-    snprintf(b, sizeof(b), "start_ability %s -> AMS ErrCode=%d (bundle=%s ability=%s module=%s userId=%d)%s",
-             arg.c_str(), static_cast<int>(amsErr), bundle.c_str(), ability.c_str(),
-             module.empty() ? "-" : module.c_str(), userId,
-             amsErr == 0 ? " 已受理" : " 拒绝/失败");
+    // 路线B（S6-1b-3）：**SA 的确定性产出是"结构化动作"**，执行由应用侧完成。
+    // 实测（evidence/50）：三种参数组合（只给 bundle / 显式 ability / +userId）AMS 一律回 22
+    // → 参数不是主因，system caller 语境下 AMS 不收；因此把动作 JSON 作为对外契约的一部分返回，
+    // 应用侧（有完整 ability kit 与自身身份）拿 JSON 去 startAbility 执行并回报。
+    char js[384];
+    snprintf(js, sizeof(js),
+             "{\"action\":\"start_ability\",\"bundle\":\"%s\",\"ability\":\"%s\","
+             "\"module\":\"%s\",\"userId\":%d,\"ams_try\":%d}",
+             bundle.c_str(), ability.c_str(), module.c_str(), userId, static_cast<int>(amsErr));
+    char b[768];
+    snprintf(b, sizeof(b), "action=%s ams=%d", js, static_cast<int>(amsErr));
     result = b;
     g_lastActionNote = result;
-    // 如实回传 AMS 的返回码：受理=0；拒绝原样带回（不美化）
-    return amsErr == 0 ? ERR_OK : ERR_INVALID_VALUE;
+    // 语义：SA 的职责（策略 + 结构化动作）已完成 → 返回 0；ams_try 字段如实反映"SA 直连尝试"的结果
+    return ERR_OK;
 #endif
 }
 

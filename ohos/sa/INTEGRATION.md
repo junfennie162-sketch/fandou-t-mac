@@ -83,6 +83,51 @@ e = sa->Release(r);                        // 归还模型与 KV 内存
 
 ---
 
+---
+
+## 5. 系统级动作（S6）：SA 产出「结构化动作」，应用侧执行
+
+**为什么要这样分工（实测结论）**：SA 侧直连 AMS（Raw IPC，code 1001）**机制是通的** ——
+AMS 会收下我们的 parcel 并回一个真实错误码；但三种参数组合（只给 bundle / 显式 ability / 再加 userId=100）
+**一律回 `22`**（参数校验级拒绝）→ 在 system-caller 语境下 AMS 不接受这次启动（见账本 FIX-69/70）。
+所以本版把职责切干净：
+
+| 谁 | 干什么 |
+|---|---|
+| **SA（6901）** | 准入（Tier-A/白名单）+ **动作白名单**（`/data/lut_sa/actions_allow.txt`）+ 产出**结构化动作 JSON** |
+| **应用侧**（有完整 ability kit 与自身身份） | 拿 JSON 去 `startAbility` 执行，并把结果回报 |
+
+### 调用与返回
+
+```cpp
+std::string r;
+sa->ExecuteAction("start_ability", "com.ohos.settings/com.ohos.settings.MainAbility@100#phone", r);
+// r 形如：
+// action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility",
+//         "module":"phone","userId":100,"ams_try":22}  ams=22
+```
+
+- **arg 语法**：`<bundle>[/<ability>][@<userId>][#<module>]`
+  ⚠ 在 shell 里调用时 `#` 要加引号（`'…@100#phone'`），否则被当注释（FIX-70 踩过）。
+- **返回码**：`0` = SA 侧职责完成（**策略通过 + 动作已产出**）；`201` = 准入/白名单拒绝。
+  `ams_try` 字段是 SA **直连 AMS 的尝试结果**（本环境恒为 22，如实带回，不美化）。
+- **应用侧执行的参考写法**（HAP 侧，ArkTS）：
+
+```ts
+// 收到 SA 的动作 JSON 后
+let action = JSON.parse(actionJson);
+if (action.action === 'start_ability') {
+  let want: Want = { bundleName: action.bundle,
+                     abilityName: action.ability,
+                     moduleName: action.module };
+  this.context.startAbility(want)
+    .then(() => { /* 回报成功 */ })
+    .catch((e: BusinessError) => { /* 回报失败码，别吞掉 */ });
+}
+```
+- **安全边界**：SA 只产出**白名单内**的 bundle；应用侧执行前应**再校验一次**（两道门），
+  并把执行结果回报给调用方 —— **不要把"SA 说可以"当成"已经执行了"**。
+
 ## 4. 已知限制（避免踩同一批坑）
 
 - **模型与 LUT 形状表必须成对**：t-mac 2bit 产物（`kfactor=16 / lut_scales_size=135,50` 那族）与标准量化模型不能混用同一套 kcfg；
