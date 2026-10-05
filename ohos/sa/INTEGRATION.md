@@ -83,6 +83,16 @@ e = sa->Release(r);                        // 归还模型与 KV 内存
 
 ---
 
+## 4. 已知限制（避免踩同一批坑）
+
+- **模型与 LUT 形状表必须成对**：t-mac 2bit 产物（`kfactor=16 / lut_scales_size=135,50` 那族）与标准量化模型不能混用同一套 kcfg；
+  换内核用构建期旋钮 `TMAC_KER_OVERRIDE=<dir>`（见 FIX-63）。加载不匹配的模型会**全 NaN**（不会崩，但输出恒定）。
+- **单引擎串行**：一次 `Generate` 会占住 SA 直到出完 token（调用方在 IPC 上排队）。多会话并发（共享权重、各自 context）尚未做。
+- **文本质量**：本版证明的是"能力通"，不是"效果好"。LUT 2bit 产物的续写质量本来就有限（桌面参考同档）。
+- **SELinux**：本项目在 QEMU 环境是 `permissive`（`enforce=0`）。上量产要按 enforcing 配策略：`service_contexts` 里 6901 的类型、
+  调用方域对 `sa_lut_sa_service:samgr_class { get }`、以及 SA 读模型文件的 `file` 权限。
+- **权限名**：当前按 uid + 白名单控制；`ohos.permission.LUT_SA_INFER` 这类正式权限名尚未注册（进 `PLAN.md` 的 Next）。
+
 ---
 
 ## 5. 系统级动作（S6）：SA 产出「结构化动作」，应用侧执行
@@ -127,13 +137,3 @@ if (action.action === 'start_ability') {
 ```
 - **安全边界**：SA 只产出**白名单内**的 bundle；应用侧执行前应**再校验一次**（两道门），
   并把执行结果回报给调用方 —— **不要把"SA 说可以"当成"已经执行了"**。
-
-## 4. 已知限制（避免踩同一批坑）
-
-- **模型与 LUT 形状表必须成对**：t-mac 2bit 产物（`kfactor=16 / lut_scales_size=135,50` 那族）与标准量化模型不能混用同一套 kcfg；
-  换内核用构建期旋钮 `TMAC_KER_OVERRIDE=<dir>`（见 FIX-63）。加载不匹配的模型会**全 NaN**（不会崩，但输出恒定）。
-- **单引擎串行**：一次 `Generate` 会占住 SA 直到出完 token（调用方在 IPC 上排队）。多会话并发（共享权重、各自 context）尚未做。
-- **文本质量**：本版证明的是"能力通"，不是"效果好"。LUT 2bit 产物的续写质量本来就有限（桌面参考同档）。
-- **SELinux**：本项目在 QEMU 环境是 `permissive`（`enforce=0`）。上量产要按 enforcing 配策略：`service_contexts` 里 6901 的类型、
-  调用方域对 `sa_lut_sa_service:samgr_class { get }`、以及 SA 读模型文件的 `file` 权限。
-- **权限名**：当前按 uid + 白名单控制；`ohos.permission.LUT_SA_INFER` 这类正式权限名尚未注册（进 `PLAN.md` 的 Next）。
