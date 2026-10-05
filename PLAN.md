@@ -69,7 +69,7 @@
 | **S3** | STA-3 真推理：SA 内真 `LoadModel`/`Generate` | ✅ | `evidence/42-sa-real-inference-sta3.txt` |
 | **S4** | **t-mac 2bit 模型可用**：LUT 内核/kcfg 与模型形状对齐 | ✅ **达成**：SA 内 `LoadModel`+`Generate` 出真实文本、可复现、失败项 0 | `evidence/45-sa-tmac-kcfg-pair-fix.txt` + FIX-59/60/62/63 |
 | **S5** | STA-4 对外可调：权限模型 + 配额 + 第三方接入示例 | ✅ **收口**：S5-1 准入实测（evidence/47）、S5-2 配额实测（evidence/48）、接入文档 [`ohos/sa/INTEGRATION.md`](ohos/sa/INTEGRATION.md) | 账本「S5-1 / S5-2」两节 |
-| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | 🚧 接近收口：意图层主体 ✅（evidence/55）；S6-3 的 `[10e]` 两道门 ✅（evidence/56）；**模型路径抓到两个真 bug（FIX-77）已修，待验证**：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
+| **S6** | 系统级执行器：意图 → 结构化动作 → 执行 | ✅ **完全收口**：动作层/意图层/两道门全绿；**模型路径链路全通**，分类不可用已由**模型原文**证定为"质量原因"（evidence/58 + FIX-80）：动作层（结构化动作 JSON，evidence/51）+ 意图层（动作表/两道门/双路径，evidence/52+55）全部实测；**模型分类路径实测不可用**（如实回退 keyword，记为已知限制）；t-mac 推理回归通过（evidence/55） | `evidence/51/52/55` + FIX-70~76 |
 | **S7** | GUI Agent（愿景，暂不排期）：无障碍读屏 + 输入注入 | ⏳ | 感知-决策-执行闭环 |
 
 ---
@@ -78,19 +78,15 @@
 
 **Now（这一轮要做的一件事）**
 
-- **S6-3 收尾（第二次）：跑通隔离实验，定性引擎断点（evidence/58 重跑）**
-  - **上一轮没跑成的原因（已修，FIX-79）**：重活服务又超预算被砍（`LUT-EV2-END=0`）→ 已减负：
-    `[1b]` 改 `--load`（只加载）、`[1c]` 去掉重复的"打开相机"；并立了"重活脚本 ≤1.5 分钟"的纪律（写进 §六）。
-  - **装置已就绪（别重做）**：客户端 `--load-keep <模型>` / `--metrics`；重活 `[1d]` 四步
-    （load-keep → **另一个客户端进程**读指标 → 同一引擎再问意图 → 收尾指标）。静态编译通过（库 2,057,768 字节）。
-  - **本轮就一件**：
-    `MSYS_NO_PATHCONV=1 wsl.exe -d ohbuild -u root -- bash -c 'EVOUT=<repo>/ohos/sa/evidence/58-sa-engine-persist.txt bash <repo>/ohos/sa/intree/sta3_verify.sh'`
-  - **判据（先看 [1d]）**：
-    1. **两个 END 都在**（先查这个，缺一个就别急着下结论）；
-    2. `[1d2]`（另一个进程读指标）**`engine=ready`** → 引擎跨 IPC 存活 ✓ → 问题出在意图链路自己
-       （下一轮只查 `InferAllowed`/`ExecuteAction` 路径里有没有把引擎清掉的动作）；
-       **`engine=absent`** → 断点在加载之后 → 用 `[0]` 式的 `ps`（SA pid）+ `rt_stderr` 顺序定位（重复的 `load: backend_init` 序列 = 重启）；
-    3. `[1d3]` 的 `source` 如实；`[1]` t-mac 完整序列仍绿、`[6] bad=0`、`[7]~[10]`（含 `[10e]` 201）保持。
+- **S6 收口（已完成）+ 下一步取一件**：S6 全绿了，接下来按优先级挑**一件**做（这轮选 ①）：
+  1. **S6-4：把"意图 → 动作"的契约补全到对接文档 + 给应用侧执行留一个可跑的骨架**
+     —— 在 `INTEGRATION.md` §5 补：`ExecuteIntent` 的调用示例（含"模型不可用→关键词"的说明）、
+     动作 JSON 字段表、以及"应用侧拿到 JSON 后 `startAbility` 并回报"的**完整可编译片段**（ArkTS）；
+     同时在 SA 侧给 `ExecuteAction`/`ExecuteIntent` 各补一条 `[11]` 取证（自定义 `intents.txt` 两条说法 + 动作白名单放行一条，
+     证明"表可配、门可控"）。
+  2. 备选：**多会话**（共享权重、各自 context）—— 这是"单引擎串行"限制的正解，但工作量较大。
+  3. 备选：**arm64 真机路径**（用 `deploy/tuned/aarch64-hf-bitnet-3b` 的 kcfg/kernels 编一版，静态检查 + 说明未上机实测）。
+  - 判据（①）：`[11]` 两步都拿到预期码（放行 0 / 越权 201）+ 文档片段能被人照抄；两个 END 都在、`bad=0`、t-mac `[1]` 不回退。
 
 **Next（排队）**
 

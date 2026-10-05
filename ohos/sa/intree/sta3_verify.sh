@@ -157,6 +157,9 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo "--- [1c] 模型路径的意图解析 ---"
   sed -n '/\[1c\]/,$p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -20
   echo
+  echo "--- [1d] 引擎存活性隔离实验 ---"
+  sed -n '/\[1d\]/,/\[6\]/p' /mnt/ud2/local/tmp/lut_evidence2.txt | head -24
+  echo
   echo "--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---"
   sed -n '/\[7\] 调用方准入/,$p' /mnt/ud2/local/tmp/lut_evidence.txt | head -40
   echo

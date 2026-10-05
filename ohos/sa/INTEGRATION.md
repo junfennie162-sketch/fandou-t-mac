@@ -88,7 +88,10 @@ e = sa->Release(r);                        // 归还模型与 KV 内存
 - **意图的"模型分类"路径当前不可用（如实记录）**：`ExecuteIntent` 会先让本地模型按模板输出受限 JSON，
   且**严格校验**（输出里必须出现动作表内的 bundle 才认）。实测（`evidence/55`）：模型已加载时该路径**确实被走过**，
   但 t-mac 2bit 产物的输出没有通过校验 → **如实回退到关键词表**（`source=keyword`）。
-  这属于"模型质量"而非"链路"问题；本版**不放宽校验**（宁可回退，也不接受模型随口给的包名）。
+  **实测原文（`evidence/58` 的 `[1d3]`）**：同一引擎下 `model_said=" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionena…"`
+  —— **模型输出是词沙拉**，既不是 JSON 也不含任何包名；**引擎跨 IPC 调用存活**（`[1d2]` 另起进程读指标仍 `engine=ready`）
+  → 所以这是"**模型质量**"问题而非"链路"问题：链路（加载/存活/推理/严格校验/回退）全部工作正常。
+  本版**不放宽校验**（宁可回退，也不接受模型随口给的包名）。
   要启用需换更强的模型或加约束解码 —— 判据是 `GetMetrics`/结果串里的 `model_said="…"`（S6-3 起会带出模型原始输出）。
 
 - **模型与 LUT 形状表必须成对**：t-mac 2bit 产物（`kfactor=16 / lut_scales_size=135,50` 那族）与标准量化模型不能混用同一套 kcfg；
