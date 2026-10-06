@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA 读屏实测 · 可视化</title>
+<style>
+  :root{--bg:#0b0e14;--card:#141922;--line:#232b38;--fg:#e6edf3;--dim:#8b98a9;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--acc:#58a6ff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:26px;margin:0 0 6px} h2{font-size:19px;margin:34px 0 12px;padding-left:10px;border-left:3px solid var(--acc)}
+  .sub{color:var(--dim);margin:0 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:18px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  /* 屏幕重建：位置/大小全部来自设备返回的 box */
+  .phone{position:relative;aspect-ratio:1024/768;background:linear-gradient(160deg,#101521,#1b2130);
+         border:1px solid var(--line);border-radius:14px;overflow:hidden;container-type:size}
+  .el{position:absolute;display:flex;align-items:center;justify-content:center;white-space:pre-wrap;
+       text-align:center;overflow:hidden;border-radius:3px}
+  .el.text{color:#f2f6fb;font-weight:300;letter-spacing:.5px}
+  .el .ty{font-size:1.7cqh;color:#5b6980;letter-spacing:0}
+  .el.click{outline:1px dashed rgba(88,166,255,.55);background:rgba(88,166,255,.06)}
+  .el.zero{outline:1px solid var(--warn);background:transparent}
+  .el.hi{outline:2px solid var(--acc);background:rgba(88,166,255,.22);z-index:5}
+  .hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--dim);font-weight:600}
+  td.t{color:#dbe6f3} tr.rclick td{background:rgba(88,166,255,.06)}
+  tr.hi td{background:rgba(88,166,255,.18)}
+  .statrow{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 0}
+  .stat{background:#0f141c;border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-width:120px}
+  .stat b{display:block;font-size:19px;color:var(--acc)} .stat span{font-size:12px;color:var(--dim)}
+  .chip{display:inline-block;background:#0f141c;border:1px solid var(--line);border-radius:999px;
+        padding:3px 10px;margin:3px 4px 0 0;font-size:13px}
+  .gate{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#0f141c}
+  .gate.yes{border-color:rgba(63,185,80,.5)}
+  .gname{color:var(--dim);font-size:12.5px} .gcall{font-family:Consolas,monospace;font-size:13px;color:#c9d6e4}
+  .gret{font:600 14px Consolas,monospace} .gret span{color:var(--dim);font-weight:400;font-size:12.5px}
+  .gate.no .gret{color:var(--bad)} .gate.yes .gret{color:var(--ok)}
+  .gwhy{color:var(--dim);font-size:12.5px}
+  ol.phases{list-style:none;padding:0;margin:0}
+  ol.phases li{display:grid;grid-template-columns:88px 1fr auto;gap:10px;padding:9px 12px;border:1px solid var(--line);
+               border-radius:10px;margin-bottom:7px;background:#0f141c;align-items:baseline}
+  ol.phases li.done{border-left:3px solid var(--ok)} ol.phases li.next{border-left:3px solid var(--acc)}
+  ol.phases li.todo{border-left:3px solid var(--line);color:var(--dim)}
+  .pname{font-weight:700} .pdesc{font-size:13.5px} .pev{font-size:12px;color:var(--dim);font-family:Consolas,monospace}
+  ul.api{list-style:none;padding:0;margin:0;font-family:Consolas,monospace;font-size:13.5px;columns:2}
+  ul.api li{padding:4px 0;color:#c9d6e4}
+  ul.api li.new{color:var(--fg)} .badge{background:rgba(88,166,255,.16);color:var(--acc);border-radius:999px;
+        padding:1px 8px;font-size:11.5px;margin-left:6px;font-family:inherit}
+  ul.fix{list-style:none;padding:0;margin:0;font-size:13px;color:var(--dim)} ul.fix li{padding:3px 0}
+  .foot{margin-top:34px;color:var(--dim);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px}
+  code{background:#0f141c;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px}
+</style></head><body><div class="wrap">
+<h1>LUT-SA：读屏能力实测（设备回传数据可视化）</h1>
+<p class="sub">SystemAbility 6901 的第 9 个方法 <code>ReadScreen</code> —— 下面每一个坐标、文本、计数都来自设备证据
+ <code>evidence/61</code> / <code>evidence/60</code>，由 <code>visual/gen_visual.py</code> 现场读取生成，不是手抄。</p>
+
+<h2>① SA 当时“看到”的屏幕（按真实 box 还原）</h2>
+<div class="grid">
+  <div>
+    <div class="phone"><div class="el text" data-i="0" style="left:48.145%;top:21.875%;width:5.176%;height:1.953%;font-size:1.41cqh;" title="#0 Text 上滑解锁">上滑解锁</div>
+<div class="el text" data-i="1" style="left:41.797%;top:26.042%;width:16.406%;height:10.286%;font-size:7.41cqh;" title="#1 Text 23:17">23:17</div>
+<div class="el text" data-i="2" style="left:41.797%;top:36.719%;width:11.523%;height:2.604%;font-size:1.88cqh;" title="#2 Text 2026年10月5日">2026年10月5日</div>
+<div class="el text" data-i="3" style="left:53.320%;top:36.719%;width:4.980%;height:2.604%;font-size:1.88cqh;" title="#3 Text 星期一">星期一</div>
+<div class="el text" data-i="4" style="left:45.508%;top:40.234%;width:8.984%;height:2.344%;font-size:1.69cqh;" title="#4 Text 丙午年八月廿五">丙午年八月廿五</div>
+<div class="el text" data-i="5" style="left:2.148%;top:1.042%;width:5.859%;height:1.693%;font-size:1.22cqh;" title="#5 Text 没有 SIM 卡">没有 SIM 卡</div>
+<div class="el text" data-i="6" style="left:92.871%;top:1.042%;width:2.832%;height:1.693%;font-size:1.22cqh;" title="#6 Text 100%">100%</div>
+<div class="el click" data-i="7" style="left:0.000%;top:0.000%;width:100.000%;height:7.422%;" title="#7 Stack "><span class='ty'>Stack</span></div>
+<div class="el zero" data-i="8" style="left:0.000%;top:0.000%;width:1px;height:1px"></div>
+<div class="el click" data-i="9" style="left:35.938%;top:17.057%;width:28.027%;height:0.130%;" title="#9 Text "><span class='ty'>Text</span></div>
+<div class="el click" data-i="10" style="left:35.938%;top:23.177%;width:28.027%;height:58.724%;" title="#10 Swiper "><span class='ty'>Swiper</span></div>
+<div class="el click" data-i="11" style="left:48.828%;top:77.995%;width:2.246%;height:3.906%;" title="#11 SwiperIndicator "><span class='ty'>SwiperIndicator</span></div>
+<div class="el click" data-i="12" style="left:48.145%;top:81.641%;width:3.613%;height:3.906%;" title="#12 SwiperIndicator "><span class='ty'>SwiperIndicator</span></div></div>
+    <p class="hint">虚线框 = 设备上报 <code>click:1</code> 的可点元素；悬浮任意元素可与右侧表格互相高亮。
+    零尺寸元素（<code>box=[0,0,0,0]</code>）用黄色小点标出。配色为示意，<b>位置/文本/字号-占比来自实测</b>。</p>
+  </div>
+  <div class="card">
+    <div class="statrow">
+      <div class="stat"><b>13</b><span>元素节点</span></div>
+      <div class="stat"><b>7</b><span>带文本</span></div>
+      <div class="stat"><b>6</b><span>可点元素</span></div>
+      <div class="stat"><b>677 ms</b><span>首调（含建连）</span></div>
+      <div class="stat"><b>5</b><span>窗口</span></div>
+    </div>
+    <p class="hint" style="margin-top:12px">SA 读到的文本（真实内容）：</p>
+    <div><span class="chip">上滑解锁</span><span class="chip">23:17</span><span class="chip">2026年10月5日</span><span class="chip">星期一</span><span class="chip">丙午年八月廿五</span><span class="chip">没有 SIM 卡</span><span class="chip">100%</span></div>
+    <p class="hint">窗口栈（id / type / layer）：[{&quot;id&quot;: 7, &quot;type&quot;: 2110, &quot;layer&quot;: 5}, {&quot;id&quot;: 4, &quot;type&quot;: 2112, &quot;layer&quot;: 4}, {&quot;id&quot;: 5, &quot;type&quot;: 2111, &quot;layer&quot;: 3}, {&quot;id&quot;: 10, &quot;type&quot;: 2108, &quot;layer&quot;: 2}, {&quot;id&quot;: 3, &quot;type&quot;: 2001, &quot;layer&quot;: 1}]</p>
+    <table><thead><tr><th>#</th><th>窗口</th><th>类型</th><th>文本</th><th>可点</th><th>坐标 box</th></tr></thead>
+    <tbody><tr data-i="0" class=""><td>0</td><td>7</td><td>Text</td><td class="t">上滑解锁</td><td></td><td>[493, 168, 546, 183]</td></tr>
+<tr data-i="1" class=""><td>1</td><td>7</td><td>Text</td><td class="t">23:17</td><td></td><td>[428, 200, 596, 279]</td></tr>
+<tr data-i="2" class=""><td>2</td><td>7</td><td>Text</td><td class="t">2026年10月5日</td><td></td><td>[428, 282, 546, 302]</td></tr>
+<tr data-i="3" class=""><td>3</td><td>7</td><td>Text</td><td class="t">星期一</td><td></td><td>[546, 282, 597, 302]</td></tr>
+<tr data-i="4" class=""><td>4</td><td>7</td><td>Text</td><td class="t">丙午年八月廿五</td><td></td><td>[466, 309, 558, 327]</td></tr>
+<tr data-i="5" class=""><td>5</td><td>7</td><td>Text</td><td class="t">没有 SIM 卡</td><td></td><td>[22, 8, 82, 21]</td></tr>
+<tr data-i="6" class=""><td>6</td><td>7</td><td>Text</td><td class="t">100%</td><td></td><td>[951, 8, 980, 21]</td></tr>
+<tr data-i="7" class="rclick"><td>7</td><td>10</td><td>Stack</td><td class="t">—</td><td>✔</td><td>[0, 0, 1024, 57]</td></tr>
+<tr data-i="8" class="rclick"><td>8</td><td>3</td><td>Stack</td><td class="t">—</td><td>✔</td><td>[0, 0, 0, 0]</td></tr>
+<tr data-i="9" class="rclick"><td>9</td><td>3</td><td>Text</td><td class="t">—</td><td>✔</td><td>[368, 131, 655, 131]</td></tr>
+<tr data-i="10" class="rclick"><td>10</td><td>3</td><td>Swiper</td><td class="t">—</td><td>✔</td><td>[368, 178, 655, 629]</td></tr>
+<tr data-i="11" class="rclick"><td>11</td><td>3</td><td>SwiperIndicator</td><td class="t">—</td><td>✔</td><td>[500, 599, 523, 629]</td></tr>
+<tr data-i="12" class="rclick"><td>12</td><td>3</td><td>SwiperIndicator</td><td class="t">—</td><td>✔</td><td>[493, 627, 530, 657]</td></tr></tbody></table>
+  </div>
+</div>
+
+<h2>② 三道门是怎么打掉的（S7-1a 探针，全部真错误码）</h2>
+<div class="card"><div class="gate no"><div class="gname">v1 普通客户端</div><div class="gcall">GetWindows / GetRoot</div><div class="gret">4004 <span>RET_ERR_NO_CONNECTION</span></div><div class="gwhy">channel 只发给&quot;登记过的无障碍 ability&quot;</div></div>
+<div class="gate no"><div class="gname">v2 UITest 口子</div><div class="gcall">RegisterAbilityListener</div><div class="gret">1005 <span>RET_ERR_NO_PERMISSION</span></div><div class="gwhy">进程 native token 缺 ACCESSIBILITY_EXTENSION_ABILITY</div></div>
+<div class="gate yes"><div class="gname">v2 + init 权限</div><div class="gcall">RegisterAbilityListener → Connect</div><div class="gret">0 <span>RET_OK</span></div><div class="gwhy">权限来自 init 服务 cfg 的 permission 字段（SET self token）</div></div>
+  <p class="hint">探针全窗口模式：14 条文本 / 6 个可点，<code>verdict=TREE-OK-WITH-TEXT</code>；
+  样例文本：<span class="chip">上滑解锁</span><span class="chip">21:25</span><span class="chip">2026年10月5日</span><span class="chip">星期一</span><span class="chip">丙午年八月廿五</span><span class="chip">没有 SIM 卡</span><span class="chip">100%</span></p></div>
+
+<h2>③ 进度与接口</h2>
+<div class="card">
+  <ol class="phases"><li class="done"><span class="pname">S0–S6</span><span class="pdesc">SA 基底 / 注册 / 跨 IPC / 引擎真推理 / 准入 / 配额 / 动作层 / 接入文档</span><span class="pev">evidence/42–59</span></li>
+<li class="done"><span class="pname">S7-0</span><span class="pdesc">侦察：无障碍服务在跑 + 客户端 API + 权限档位</span><span class="pev">evidence/59 [12]</span></li>
+<li class="done"><span class="pname">S7-1a</span><span class="pdesc">独立探针实测：三道门（4004 → 1005 → 权限）逐个打掉，拿到带文本元素树</span><span class="pev">evidence/60</span></li>
+<li class="done"><span class="pname">S7-1b</span><span class="pdesc">SA 封 <b>ReadScreen</b>（独立 IDL 方法）：准入双证 + 有界 + 隐私不落盘</span><span class="pev">evidence/61</span></li>
+<li class="next"><span class="pname">S7-2</span><span class="pdesc">理解 + 决定：元素树 + 话语 → 下一步动作 JSON（严格校验，source 如实）</span><span class="pev">待做 · evidence/62</span></li>
+<li class="todo"><span class="pname">S7-3/4</span><span class="pdesc">执行闭环：打开设置 → 进子页 → 返回（×3 + 断网）</span><span class="pev">待做 · evidence/63</span></li></ol>
+  <p class="hint" style="margin-top:14px">SA 对外接口（9 个，来自 <code>ILutSa.idl</code>）：</p>
+  <ul class="api"><li class="">NativeVersion</li>
+<li class="">LoadModel</li>
+<li class="">Generate</li>
+<li class="">GetMetrics</li>
+<li class="">SelfTest</li>
+<li class="">Release</li>
+<li class="">ExecuteAction</li>
+<li class="">ExecuteIntent</li>
+<li class="new">ReadScreen<span class="badge">本轮新增 · S7-1b</span></li></ul>
+</div>
+
+<h2>④ 账本（踩坑 88 条，最近 4 条）</h2>
+<div class="card"><ul class="fix"><li><b>FIX-88</b> ReadScreen 返回的 nodes 里同一棵子树出现两遍</li>
+<li><b>FIX-87</b> 两轮&quot;假运行&quot;：脚本因 CRLF 语法错误静默死掉，而我读到的是上一轮的陈旧日志；顺带又漏注入一项</li>
+<li><b>FIX-86</b> 两个&quot;证据纪律&quot;事故：包装脚本硬编码 EVOUT 覆盖了上一轮证据；且有一轮用旧源码构建（注入的库尺寸与本轮改动不符）</li>
+<li><b>FIX-85</b> 给 ILutSa 加一个 IPC 方法要同步三处，只改接口会在&quot;实例化点&quot;报错</li></ul>
+  <p class="hint">每条格式固定为「现象 → 真因 → 修法」，全文见 <code>QEMU-DEPLOY.md</code>。</p></div>
+
+<p class="foot">数据出处：<code>ohos/sa/evidence/61-s7-1b-read-screen.txt</code>（SA 的 ReadScreen 现场）+
+<code>ohos/sa/evidence/60-s7-1a-a11y-probe.txt</code>（探针三道门）+
+<code>ohos/sa/component/ILutSa.idl</code> + <code>ohos/sa/QEMU-DEPLOY.md</code>。
+重跑生成：<code>python3 ohos/sa/visual/gen_visual.py</code>。</p>
+</div>
+<script>
+const els=[...document.querySelectorAll('.el')],rows=[...document.querySelectorAll('tbody tr')];
+function mark(i,on){els.forEach(e=>e.dataset.i===i&&e.classList.toggle('hi',on));
+  rows.forEach(r=>r.dataset.i===i&&r.classList.toggle('hi',on));}
+els.forEach(e=>{e.onmouseenter=()=>mark(e.dataset.i,true);e.onmouseleave=()=>mark(e.dataset.i,false);});
+rows.forEach(r=>{r.onmouseenter=()=>mark(r.dataset.i,true);r.onmouseleave=()=>mark(r.dataset.i,false);});
+</script></body></html>
