@@ -184,6 +184,9 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   # FIX-76 第三次：head -90 把 271 行的 [13] 段砍断了 —— 探针段用**整段**（271 行），不设小上限
   sed -n '/\[13\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -400
   echo
+  echo "--- [16..19] S7-2-0 动作可行性 / 可交互界面 / 解锁 / 收口测量 ---"
+  sed -n '/\[16\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -320   # FIX-76：行数要跟分段增长（[16..20]）
+  echo
   echo "----- [14] S7-1b SA 读屏（ReadScreen：感知方向，独立 IDL 方法）-----"
   sed -n '/\[14\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -60
   echo

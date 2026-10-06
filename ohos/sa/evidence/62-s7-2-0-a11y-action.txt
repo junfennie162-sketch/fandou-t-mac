@@ -1,0 +1,921 @@
+===== LUT-SA SystemAbility 真推理（STA-3）=====
+环境: OpenHarmony 标准系统镜像（QEMU x86_64_virt）; SA 进程内经 IPC 真跑 llama.cpp
+抓取: 2026-10-07 01:02:22
+
+--- 引擎形态 ---
+静态库 libllama_engine.a：llama.cpp + ggml + t-mac LUT 内核，用 OH 树自己的 clang 编
+（仓库里的预编译 libllama.a/libggml.a 是 DevEco 工具链编的，引用 std::__n1::*，
+ 而 OH libc++ 是 std::__h::* → ABI 不同，链不了；见 QEMU-DEPLOY.md FIX-53）
+
+--- [1] t-mac 2bit 模型（形状表不匹配 → 优雅失败，不再打死 SA）---
+--- [1] 客户端经 samgr 调用 SA 6901（真推理：LoadModel + Generate×3）---
+=====LUTSA-CLIENT-START=====
+  client pid=2155 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f4446a92cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 485.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=1193.9 MB, session=3, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 485.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(0) → connected | quota: model<=2048MB (quota: ok) | engine=absent n_ctx=0 threads=0 infer=0 model= | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 threads=4)  | llama_log:  '</s>' llm_load_print_meta: UNK token        = 0 '<unk>' llm_load_print_meta: PAD token        = 32000 '<pad>' llm_load_print_meta: LF token         = 13 '<0x0A>' llm_load_print_meta: EOG token        = 2 '</s>' llm_load_print_meta: max token length = 48 llm_load_tensors: ggml ctx size =    0.13 MiB llm_load_tensors:        CPU buffer size =   965.22 MiB ................................................................................. [shim] load: model ok [shim] load: new_context llama_new_context_with_model: n_ctx      = 512 llama_new_context_with_model: n_batch    = 512 llama_new_context_with_model: n_ubatch   = 512 llama_new_context_with_model: flash_attn = 0 llama_new_context_with_model: freq_base  = 10000.0 llama_new_context_with_model: freq_scale = 1 llama_kv_cache_init:        CPU KV buffer size =   162.50 MiB llama_new_context_with_model: KV self size  =  162.50 MiB, K (f16):   81.25 MiB, V (f16):   81.25 MiB llama_new_context_with_model:        CPU  output buffer size =     0.12 MiB llama_new_context_with_model:        CPU compute buffer size =    68.75 MiB llama_new_context_with_model: graph nodes  = 942 llama_new_context_with_model: graph splits = 1 [shim] load: ready 
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0 (370 ms)
+  [Generate#1(sampling)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [Generate#2(同 prompt 复现)] ErrCode=0  ->  Nice Korea observckeRead worth Threelieless Asiawellfriend Victorlev lun tenlsatelshift ref vieega Coulang
+  [determinism] 两次同 prompt 输出一致: yes
+  [Generate#3(贪心/换 prompt)] ErrCode=0  ->  Justice Nichija Nam brothersrodalandQL forum‎ slashöl acid splglgl
+  [non-constant] 换 prompt 输出不同: yes
+  [GetMetrics(引擎态)] ErrCode=0  -> peak_rss=1209.1 MB, session=3, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 485.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=Generate | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(0) → connected | quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=3 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 369 ms (n_ctx=512 threads=4)  | llama_log:  prompt decode [shim] diag: after_prompt_decode min=-8.4864 max=7.9781 mean=-0.4306 nan_or_inf=0 n_vocab=32002 argmax=6038 top: [id=6038 logit=7.9781 piece="rain"] [id=22904 logit=7.2532 piece=" Diam"] [id=27523 logit=7.0461 piece=" filling"] [id=6726 logit=6.9808 piece=" Book"] [id=6982 logit=6.9431 piece="Reader"] [shim] gen: sampling [shim] diag: step 0 argmax=20103 piece_len=5 piece=" Nice" [shim] diag: step 1 argmax=19109 piece_len=6 piece=" Korea" [shim] diag: step 2 argmax=5820 piece_len=7 piece=" observ" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=7 ids=[1 29871 29906 718 29871 29906 353 ] text="<s> 2 + 2 =" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-8.1406 max=9.2544 mean=0.5023 nan_or_inf=0 n_vocab=32002 argmax=17181 top: [id=17181 logit=9.2544 piece=" Justice"] [id=13282 logit=8.2037 piece="EY"] [id=21416 logit=8.0991 piece="agt"] [id=3305 logit=8.0194 piece="ety"] [id=4492 logit=7.4252 piece="isf"] [shim] gen: sampling [shim] diag: step 0 argmax=17181 piece_len=8 piece=" Justice" [shim] diag: step 1 argmax=16371 piece_len=5 piece=" Nich" [shim] diag: step 2 argmax=8044 piece_len=3 piece="ija" [shim] gen: done 16 tokens 
+  [Release] ErrCode=0  -> ok: session released, engine memory returned to system
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+
+--- [1b] 标准 ggml 模型（Qwen2.5-0.5B q4_k_m）：真加载 + 真出 token ---
+--- [1b] 第二个模型：标准 ggml 量化（不带 t-mac 类型，走 ggml 通用内核）---
+=====LUTSA-CLIENT-START=====
+  client pid=2381 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f78101fdcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/qwen.gguf]
+  [LoadModel] ErrCode=0
+  [metrics] quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=3 model=/data/local/tmp/qwen.gguf | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 thr
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---
+[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）
+=====LUTSA-CLIENT-START=====
+  client pid=2388 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f16765adcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2469 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2ace974cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load-keep /data/local/tmp/model.gguf] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+[1d2] 另起一个客户端进程，只读指标 → 看 engine= 是否还是 ready
+=====LUTSA-CLIENT-START=====
+  client pid=2472 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fc764a1bcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--metrics] ErrCode=0  -> peak_rss=1223.3 MB, session=6, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 485.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=LoadModel | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=4 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 369 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 5262 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1054 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 99 ms (n_ctx=512 threads=4)  | llama_log:  '</s>' llm_load_print_meta: UNK token        = 0 '<unk>' llm_load_print_meta: PAD token        = 32000 '<pad>' llm_load_print_meta: LF token         = 13 '<0x0A>' llm_load_print_meta: EOG token        = 2 '</s>' llm_load_print_meta: max token length = 48 llm_load_tensors: ggml ctx size =    0.13 MiB llm_load_tensors:        CPU buffer size =   965.22 MiB ................................................................................. [shim] load: model ok [shim] load: new_context llama_new_context_with_model: n_ctx      = 512 llama_new_context_with_model: n_batch    = 512 llama_new_context_with_model: n_ubatch   = 512 llama_new_context_with_model: flash_attn = 0 llama_new_context_with_model: freq_base  = 10000.0 llama_new_context_with_model: freq_scale = 1 llama_kv_cache_init:        CPU KV buffer size =   162.50 MiB llama_new_context_with_model: KV self size  =  162.50 MiB, K (f16):   81.25 MiB, V (f16):   81.25 MiB llama_new_context_with_model:        CPU  output buffer size =     0.12 MiB llama_new_context_with_model:        CPU compute buffer size =    68.75 MiB llama_new_context_with_model: graph nodes  = 942 llama_new_context_with_model: graph splits = 1 [shim] load: ready 
+=====LUTSA-CLIENT-END (rc=0)=====
+[1d3] 再问一次意图（同一个已加载引擎）→ 期望 source=model 或带原因的 keyword
+=====LUTSA-CLIENT-START=====
+  client pid=2475 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f48d21eacb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+
+--- [6] 接口鲁棒性 ---
+--- [6] 接口鲁棒性（--stress：重复调用/坏路径/未加载推理/Release 后调用）---
+=====LUTSA-CLIENT-START=====
+  client pid=2556 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fed9df3dcb0
+  [iface_cast] ok —— IPC 代理已建立
+=====LUTSA-STRESS-START=====
+  [repeat] NativeVersion x3 -> ok 3/3
+  [repeat] SelfTest #1 rc=0
+  [repeat] SelfTest #2 rc=0
+  [generate-without-load] rc=0 (expect non-zero)
+  [load-bad-path] rc=22 (expect non-zero)
+  [release] rc=0
+  [metrics-after-release] rc=0 -> peak_rss=1223.9 MB, session=0, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 203.9 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=Release | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB (quota: ok) | engine=absent n_ctx=0 threads=0 infer=6 model= | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 369 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 5262 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1054 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 99 ms (n_ctx=512 threads=4) [sa] LoadModel: path not readable: /data/local/tmp/definitely-not-exist.gguf  | llama_log: ????????????" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-7.5922 max=7.1111 mean=-0.0857 nan_or_inf=0 n_vocab=32002 argmax=11486 top: [id=11486 logit=7.1111 piece=" notes"] [id=7429 logit=6.9219 piece=" desired"] [id=24909 logit=6.8476 piece=" fans"] [id=8954 logit=6.7746 piece=" representation"] [id=12260 logit=6.4977 piece="aris"] [shim] gen: sampling [shim] diag: step 0 argmax=11486 piece_len=6 piece=" notes" [shim] diag: step 1 argmax=9664 piece_len=4 piece=" Rot" [shim] diag: step 2 argmax=8050 piece_len=2 piece="TV" [shim] gen: done 24 tokens [shim] gen: tokenize [shim] diag: prompt n_tok=2 ids=[1 22172 ] text="<s> hello" [shim] gen: prompt decode [shim] diag: after_prompt_decode min=-8.8019 max=8.3920 mean=-0.0511 nan_or_inf=0 n_vocab=32002 argmax=3173 top: [id=3173 logit=8.3920 piece="ias"] [id=16577 logit=7.4064 piece="eti"] [id=1660 logit=7.0458 piece="SE"] [id=20666 logit=6.8720 piece="eton"] [id=15810 logit=6.5991 piece="emo"] [shim] gen: sampling [shim] diag: step 0 argmax=23077 piece_len=8 piece=" evangel" [shim] diag: step 1 argmax=18806 piece_len=5 piece=" tang" [shim] diag: step 2 argmax=22792 piece_len=5 piece=" summ" [shim] gen: done 4 tokens 
+  [alive-after-abuse] SelfTest rc=0 PASS
+  ---- robustness summary: bad=1 ----
+
+--- [1c] 模型路径的意图解析 ---
+--- [1c] 模型路径的意图解析（S6-2）：模型已加载后再问一次 ---
+[1c1] “打开设置” → 期望 ErrCode=0；source 应为 model（模型路径）或 keyword（回退，均需如实）
+=====LUTSA-CLIENT-START=====
+  client pid=2388 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f16765adcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [LoadModel(/data/local/tmp/model.gguf)] ErrCode=0
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2469 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2ace974cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load-keep /data/local/tmp/model.gguf] ErrCode=0
+
+--- [1d] 引擎存活性隔离实验 ---
+--- [1d] 引擎存活性实验：跨 IPC 调用引擎还在不在（隔离模型分类这件事）---
+[1d1] 只加载不释放
+=====LUTSA-CLIENT-START=====
+  client pid=2469 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2ace974cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load-keep /data/local/tmp/model.gguf] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+[1d2] 另起一个客户端进程，只读指标 → 看 engine= 是否还是 ready
+=====LUTSA-CLIENT-START=====
+  client pid=2472 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fc764a1bcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--metrics] ErrCode=0  -> peak_rss=1223.3 MB, session=6, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 485.0 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671283218 last_method=LoadModel | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":" notes RotTV abroadTC foreverDATA given Resolnih absolute assumptionenahos et Twe given Resol Kob ecc Navigation readers"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=4 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 369 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 5262 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 1054 ms (n_ctx=512 threads=4) [sa] LoadModel ok in 99 ms (n_ctx=512 threads=4)  | llama_log:  '</s>' llm_load_print_meta: UNK token        = 0 '<unk>' llm_load_print_meta: PAD token        = 32000 '<pad>' llm_load_print_meta: LF token         = 13 '<0x0A>' llm_load_print_meta: EOG token        = 2 '</s>' llm_load_print_meta: max token length = 48 llm_load_tensors: ggml ctx size =    0.13 MiB llm_load_tensors:        CPU buffer size =   965.22 MiB ................................................................................. [shim] load: model ok [shim] load: new_context llama_new_context_with_model: n_ctx      = 512 llama_new_context_with_model: n_batch    = 512 llama_new_context_with_model: n_ubatch   = 512 llama_new_context_with_model: flash_attn = 0 llama_new_context_with_model: freq_base  = 10000.0 llama_new_context_with_model: freq_scale = 1 llama_kv_cache_init:        CPU KV buffer size =   162.50 MiB llama_new_context_with_model: KV self size  =  162.50 MiB, K (f16):   81.25 MiB, V (f16):   81.25 MiB llama_new_context_with_model:        CPU  output buffer size =     0.12 MiB llama_new_context_with_model:        CPU compute buffer size =    68.75 MiB llama_new_context_with_model: graph nodes  = 942 llama_new_context_with_model: graph splits = 1 [shim] load: ready 
+=====LUTSA-CLIENT-END (rc=0)=====
+[1d3] 再问一次意图（同一个已加载引擎）→ 期望 source=model 或带原因的 keyword
+=====LUTSA-CLIENT-START=====
+  client pid=2475 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f48d21eacb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(打开设置)]
+
+--- [7] 调用方准入（S5-1）：默认档位 / 白名单拒绝 / 删表恢复 ---
+--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---
+[7a] 默认档位（root 属特权 uid）→ 期望 SelfTest 放行、失败项 0
+=====LUTSA-CLIENT-START=====
+  client pid=2108 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f33deeddcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 861.7 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=57.0 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 861.7 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(0) → connected | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7b] 写白名单只放 uid 12345（root 不在内）→ 期望 SelfTest 返回 201、失败项 ≥1
+=====LUTSA-CLIENT-START=====
+  client pid=2112 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f668dfd9cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=201
+  [GetMetrics] ErrCode=0  -> peak_rss=57.0 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 861.7 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: whitelist(1 uids in /data/lut_sa/allow_uids.txt) | last_action: ReadScreen(0) → connected | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 1 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+[7c] 删掉白名单恢复默认档位 → 期望重新放行（证明策略每次调用都重读）
+=====LUTSA-CLIENT-START=====
+  client pid=2116 argc=1
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fcc5da69cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [NativeVersion] ErrCode=0  -> LUT-SA native | SA mode | tfloat=2 B | kcfg embedded | static llama.cpp + LUT kernels
+  [SelfTest] ErrCode=0  -> PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 231.6 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0)
+  [GetMetrics] ErrCode=0  -> peak_rss=57.1 MB, session=1, sa_id=6901, selftest: PASS: LUT kernel warm-up (m128-k3200 b2, 调优内核, 231.6 us) | PASS: ref LUT kernel numeric check (k=8 bits=2 got=8.000 expect=8.0) | caller: uid=0 token=671903834 last_method=SelfTest | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(0) → connected | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [LoadModel/Generate/Release] 跳过（未给模型路径）
+  ---- 调用汇总：失败项 0 ----
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [8] 配额（S5-2）：可加载模型大小上限 ---
+[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活
+=====LUTSA-CLIENT-START=====
+
+--- [8] 配额（S5-2）：model_mb 上限 / 删配置恢复 ---
+--- [8] 配额（S5-2）：可加载模型大小上限 ---
+[8a] 写 model_mb=1（上限 1MB）+ 一次 966MB 模型的加载 → 期望 LoadModel 拒绝、SA 存活
+=====LUTSA-CLIENT-START=====
+  client pid=2119 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f678d332cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/model.gguf]
+  [LoadModel] ErrCode=22
+  [metrics] quota: model<=1MB (quota: model 965 MB > limit 1 MB (文件 /data/local/tmp/model.gguf)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=1)=====
+[8b] 删掉配额配置 → 期望重新加载成功（ErrCode=0）
+=====LUTSA-CLIENT-START=====
+  client pid=2123 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f1db9667cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--load /data/local/tmp/model.gguf]
+  [LoadModel] ErrCode=0
+  [metrics] quota: model<=2048MB (quota: ok) | engine=ready n_ctx=512 threads=4 infer=0 model=/data/local/tmp/model.gguf | diag: [sa] LoadModel ok in 14017 ms (n_ctx=512 th
+  [Release] ErrCode=0
+=====LUTSA-CLIENT-END (rc=0)=====
+#####LUT-EV-END#####
+
+--- [9] 系统级动作执行（S6-1b）：start_ability + 动作白名单 ---
+--- [9] 系统级动作执行（S6-1b-2）：start_ability 参数变体一轮试完 ---
+[9a1] 只给 bundle（基线，已知 AMS=22）
+=====LUTSA-CLIENT-START=====
+  client pid=1955 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fc92d7a7cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 thread
+=====LUTSA-CLIENT-END (rc=0)=====
+[9a2] 显式 ability（入口 com.ohos.settings.MainAbility）→ 期望 AMS 受理
+=====LUTSA-CLIENT-START=====
+  client pid=1960 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f9339623cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings/com.ohos.settings.MainAbility)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":-1,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":-1,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) |
+=====LUTSA-CLIENT-END (rc=0)=====
+[9a3] 显式 ability + userId=100
+=====LUTSA-CLIENT-START=====
+  client pid=1963 argc=4
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fc37eb75cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteAction(start_ability, com.ohos.settings/com.ohos.settings.MainAbility@100)]
+  [ExecuteAction] ErrCode=0  -> action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":100,"ams_try":22} ams=22
+  [metrics] last_action: action={"action":"start_ability","bundle":"com.ohos.settings","ability":"com.ohos.settings.MainAbility","module":"","userId":100,"ams_try":22} ams=22 | quota: model<=2048MB ((未判定)) 
+
+--- [10] 自然语言 → 动作（source 如实）---
+--- [10] 自然语言 → 动作（S6-2）：source 字段如实标注 ---
+[10a] “打开设置” → 期望 ErrCode=0 且 bundle=com.ohos.settings（轻活服务里没加载模型 → source=keyword）
+=====LUTSA-CLIENT-START=====
+  client pid=1992 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fe7b7e94cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"打开设置","bundle":"com.ohos.settings","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} action={"action":"start_ability","bundle":"com.ohos.settings","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+=====LUTSA-CLIENT-END (rc=0)=====
+[10b] “打开相机” → 期望拒绝（动作表没匹配）
+=====LUTSA-CLIENT-START=====
+  client pid=1995 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fa1eda1acb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(打开相机)]
+  [ExecuteIntent] ErrCode=201  -> 
+=====LUTSA-CLIENT-END (rc=1)=====
+[10c] 自定义动作表把“打开设置”指向未授权 bundle(com.ohos.camera) → 期望 201（动作白名单仍然生效）
+=====LUTSA-CLIENT-START=====
+  client pid=1999 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f7dffb02cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(打开设置)]
+  [ExecuteIntent] ErrCode=201  -> 
+=====LUTSA-CLIENT-END (rc=1)=====
+[10d] 删表回默认 → 期望再回到 0
+=====LUTSA-CLIENT-START=====
+
+--- [11] 动作白名单「正向授权」双证明 ---
+--- [11] 动作白名单「正向授权」双证明（S6-4）：放行 + 收回 ---
+[11a] 意图表 + 动作白名单都放 camera → 期望 ErrCode=0 且 JSON 里 bundle=com.ohos.camera
+=====LUTSA-CLIENT-START=====
+  client pid=2011 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7fb559603cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(看相机)]
+  [ExecuteIntent] ErrCode=0  -> intent={"utterance":"看相机","bundle":"com.ohos.camera","source":"keyword","model_said":"(engine not ready: engine=absent n_ctx=0 threads=0 infer=0 model=)"} action={"action":"start_ability","bundle":"com.ohos.camera","ability":"","module":"","userId":-1,"ams_try":22} ams=22
+=====LUTSA-CLIENT-END (rc=0)=====
+[11b] 收回动作白名单（只放 settings）→ 同一条说法应回到 201（对照）
+=====LUTSA-CLIENT-START=====
+  client pid=2015 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f04602aacb0
+  [iface_cast] ok —— IPC 代理已建立
+  [ExecuteIntent(看相机)]
+  [ExecuteIntent] ErrCode=201  -> 
+=====LUTSA-CLIENT-END (rc=1)=====
+--- [12] S7-0 侦察：无障碍服务在本镜像里吗 ---
+
+--- [12] S7-0 侦察：无障碍服务状态 ---
+--- [12] S7-0 侦察：无障碍服务在本镜像里吗 ---
+  ps(accessib): accessibility  306     1 1 01:00:37 ?     00:00:00 accessibility
+  profile     : "process": "accessibility"
+  libs        : 2 个无障碍库
+  cfg         : 1 个 init cfg
+--- [13] S7-1a 探针：独立原生进程能不能拿到无障碍元素树（v2 走 AccessibilityUITestAbility）---
+  v1 教训：普通客户端 GetWindows/GetRoot 一律 4004=RET_ERR_NO_CONNECTION（必须有系统下发的 channel）
+  v2 路径：RegisterAbilityListener → Connect(userId) → 等 channel 回调 → GetWindows/GetRoot/GetChildren
+
+--- [13] S7-1a 无障碍探针：独立进程拿不拿得到元素树（真错误码是结论）---
+--- [13] S7-1a 探针：独立原生进程能不能拿到无障碍元素树（v2 走 AccessibilityUITestAbility）---
+  v1 教训：普通客户端 GetWindows/GetRoot 一律 4004=RET_ERR_NO_CONNECTION（必须有系统下发的 channel）
+  v2 路径：RegisterAbilityListener → Connect(userId) → 等 channel 回调 → GetWindows/GetRoot/GetChildren
+  权限来源：本服务 cfg 的 permission 字段（init 按它给进程设 native token，见 QEMU-DEPLOY FIX-83）
+  默认模式会把**所有窗口**都走一遍（实测：顶层桌面窗口 4 层内全是容器、没有文本）
+  每一步的真实返回值都是证据；退出码 0=有文本 1=有树无文本 2=句柄空 3=没连上 4=连上没树
+[13a] 默认（无参数，走所有窗口）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~600 ms
+[a11y] connected=1 currentUserId=100
+[a11y] GetWindows ret=0 count=5
+[a11y] win[0] id=7 type=2110 layer=5
+[a11y] win[1] id=5 type=2112 layer=4
+[a11y] win[2] id=6 type=2111 layer=3
+[a11y] win[3] id=10 type=2108 layer=2
+[a11y] win[4] id=2 type=2001 layer=1
+[a11y] GetRoot ret=0 type="root" text="" kids=1 a11yId=2
+[a11y] tree-begin(GetRoot)
+  {"n":0,"d":0,"a11yId":2,"winId":7,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":27,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":30,"winId":7,"type":"Stack","container":1,"kids":3}
+  {"n":3,"d":3,"a11yId":31,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":4,"d":3,"a11yId":33,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":5,"d":3,"a11yId":36,"winId":7,"type":"Flex","container":1,"kids":5}
+  {"n":6,"d":4,"a11yId":49,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":7,"d":4,"a11yId":34,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":8,"d":4,"a11yId":37,"winId":7,"type":"Column","container":1,"kids":0}
+  {"n":9,"d":4,"a11yId":38,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":10,"d":4,"a11yId":42,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":11,"d":4,"a11yId":44,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":12,"d":4,"a11yId":46,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":13,"d":5,"a11yId":50,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":14,"d":5,"a11yId":39,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":15,"d":5,"a11yId":81,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":16,"d":5,"a11yId":84,"winId":7,"type":"Column","container":1,"kids":3}
+  {"n":17,"d":5,"a11yId":93,"winId":7,"type":"List","container":1,"kids":0}
+  {"n":18,"d":6,"a11yId":51,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":19,"d":6,"a11yId":54,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":20,"d":6,"a11yId":40,"winId":7,"type":"Blank","container":1,"kids":0}
+  {"n":21,"d":6,"a11yId":79,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":22,"d":6,"a11yId":82,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":23,"d":6,"a11yId":83,"winId":7,"type":"Text","text":"上滑解锁","click":0,"focus":0,"vis":1,"kids":0,"box":[493,168,546,183]}
+  {"n":24,"d":6,"a11yId":85,"winId":7,"type":"Text","text":"01:01","click":0,"focus":0,"vis":1,"kids":0,"box":[428,200,596,279]}
+  {"n":25,"d":6,"a11yId":87,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":26,"d":6,"a11yId":91,"winId":7,"type":"Row","container":1,"kids":1}
+  {"n":27,"d":7,"a11yId":57,"winId":7,"type":"Row","container":1,"kids":5}
+  {"n":28,"d":7,"a11yId":65,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":29,"d":7,"a11yId":67,"winId":7,"type":"Row","container":1,"kids":5}
+  {"n":30,"d":7,"a11yId":89,"winId":7,"type":"Text","text":"2026年10月7日","click":0,"focus":0,"vis":1,"kids":0,"box":[428,282,546,302]}
+  {"n":31,"d":7,"a11yId":90,"winId":7,"type":"Text","text":"星期三","click":0,"focus":0,"vis":1,"kids":0,"box":[546,282,597,302]}
+  {"n":32,"d":7,"a11yId":92,"winId":7,"type":"Text","text":"丙午年八月廿七","click":0,"focus":0,"vis":1,"kids":0,"box":[466,309,558,327]}
+  {"n":33,"d":8,"a11yId":58,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":34,"d":8,"a11yId":59,"winId":7,"type":"Text","text":"没有 SIM 卡","click":0,"focus":0,"vis":1,"kids":0,"box":[22,8,82,21]}
+  {"n":35,"d":8,"a11yId":60,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":36,"d":8,"a11yId":61,"winId":7,"type":"Stack","container":1,"kids":2}
+  {"n":37,"d":8,"a11yId":64,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":38,"d":8,"a11yId":68,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":39,"d":8,"a11yId":73,"winId":7,"type":"Text","text":"100%","click":0,"focus":0,"vis":1,"kids":0,"box":[951,8,980,21]}
+  {"n":40,"d":8,"a11yId":70,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":41,"d":8,"a11yId":74,"winId":7,"type":"Row","container":1,"kids":3}
+  {"n":42,"d":8,"a11yId":72,"winId":7,"type":"Row","container":1,"kids":0}
+[a11y] tree-end(GetRoot) printed=43 withText=7
+[a11y] tree-begin(win7/type2110)
+  {"n":0,"d":0,"a11yId":2,"winId":7,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":27,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":30,"winId":7,"type":"Stack","container":1,"kids":3}
+  {"n":3,"d":3,"a11yId":31,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":4,"d":3,"a11yId":33,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":5,"d":3,"a11yId":36,"winId":7,"type":"Flex","container":1,"kids":5}
+  {"n":6,"d":4,"a11yId":49,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":7,"d":4,"a11yId":34,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":8,"d":4,"a11yId":37,"winId":7,"type":"Column","container":1,"kids":0}
+  {"n":9,"d":4,"a11yId":38,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":10,"d":4,"a11yId":42,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":11,"d":4,"a11yId":44,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":12,"d":4,"a11yId":46,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":13,"d":5,"a11yId":50,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":14,"d":5,"a11yId":39,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":15,"d":5,"a11yId":81,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":16,"d":5,"a11yId":84,"winId":7,"type":"Column","container":1,"kids":3}
+  {"n":17,"d":5,"a11yId":93,"winId":7,"type":"List","container":1,"kids":0}
+  {"n":18,"d":6,"a11yId":51,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":19,"d":6,"a11yId":54,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":20,"d":6,"a11yId":40,"winId":7,"type":"Blank","container":1,"kids":0}
+  {"n":21,"d":6,"a11yId":79,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":22,"d":6,"a11yId":82,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":23,"d":6,"a11yId":83,"winId":7,"type":"Text","text":"上滑解锁","click":0,"focus":0,"vis":1,"kids":0,"box":[493,168,546,183]}
+  {"n":24,"d":6,"a11yId":85,"winId":7,"type":"Text","text":"01:01","click":0,"focus":0,"vis":1,"kids":0,"box":[428,200,596,279]}
+  {"n":25,"d":6,"a11yId":87,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":26,"d":6,"a11yId":91,"winId":7,"type":"Row","container":1,"kids":1}
+  {"n":27,"d":7,"a11yId":57,"winId":7,"type":"Row","container":1,"kids":5}
+  {"n":28,"d":7,"a11yId":65,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":29,"d":7,"a11yId":67,"winId":7,"type":"Row","container":1,"kids":5}
+  {"n":30,"d":7,"a11yId":89,"winId":7,"type":"Text","text":"2026年10月7日","click":0,"focus":0,"vis":1,"kids":0,"box":[428,282,546,302]}
+  {"n":31,"d":7,"a11yId":90,"winId":7,"type":"Text","text":"星期三","click":0,"focus":0,"vis":1,"kids":0,"box":[546,282,597,302]}
+  {"n":32,"d":7,"a11yId":92,"winId":7,"type":"Text","text":"丙午年八月廿七","click":0,"focus":0,"vis":1,"kids":0,"box":[466,309,558,327]}
+  {"n":33,"d":8,"a11yId":58,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":34,"d":8,"a11yId":59,"winId":7,"type":"Text","text":"没有 SIM 卡","click":0,"focus":0,"vis":1,"kids":0,"box":[22,8,82,21]}
+  {"n":35,"d":8,"a11yId":60,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":36,"d":8,"a11yId":61,"winId":7,"type":"Stack","container":1,"kids":2}
+  {"n":37,"d":8,"a11yId":64,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":38,"d":8,"a11yId":68,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":39,"d":8,"a11yId":73,"winId":7,"type":"Text","text":"100%","click":0,"focus":0,"vis":1,"kids":0,"box":[951,8,980,21]}
+  {"n":40,"d":8,"a11yId":70,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":41,"d":8,"a11yId":74,"winId":7,"type":"Row","container":1,"kids":3}
+  {"n":42,"d":8,"a11yId":72,"winId":7,"type":"Row","container":1,"kids":0}
+[a11y] tree-end(win7/type2110) printed=43 withText=14
+[a11y] tree-begin(win5/type2112)
+  {"n":0,"d":0,"a11yId":4,"winId":5,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":98,"winId":5,"type":"Flex","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":101,"winId":5,"type":"Grid","container":1,"kids":3}
+  {"n":3,"d":3,"a11yId":104,"winId":5,"type":"GridItem","container":1,"kids":1}
+  {"n":4,"d":3,"a11yId":108,"winId":5,"type":"GridItem","container":1,"kids":1}
+  {"n":5,"d":3,"a11yId":112,"winId":5,"type":"GridItem","container":1,"kids":1}
+  {"n":6,"d":4,"a11yId":105,"winId":5,"type":"Row","container":1,"kids":1}
+  {"n":7,"d":4,"a11yId":109,"winId":5,"type":"Row","container":1,"kids":1}
+  {"n":8,"d":4,"a11yId":113,"winId":5,"type":"Row","container":1,"kids":1}
+  {"n":9,"d":5,"a11yId":115,"winId":5,"type":"Stack","container":1,"kids":2}
+  {"n":10,"d":5,"a11yId":118,"winId":5,"type":"Stack","container":1,"kids":2}
+  {"n":11,"d":5,"a11yId":121,"winId":5,"type":"Stack","container":1,"kids":2}
+  {"n":12,"d":6,"a11yId":116,"winId":5,"type":"Flex","container":1,"kids":0}
+  {"n":13,"d":6,"a11yId":117,"winId":5,"type":"Image","container":1,"kids":0}
+  {"n":14,"d":6,"a11yId":119,"winId":5,"type":"Flex","container":1,"kids":0}
+  {"n":15,"d":6,"a11yId":120,"winId":5,"type":"Image","container":1,"kids":0}
+  {"n":16,"d":6,"a11yId":122,"winId":5,"type":"Flex","container":1,"kids":0}
+  {"n":17,"d":6,"a11yId":123,"winId":5,"type":"Image","container":1,"kids":0}
+[a11y] tree-end(win5/type2112) printed=18 withText=14
+[a11y] tree-begin(win6/type2111)
+  {"n":0,"d":0,"a11yId":6,"winId":6,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":126,"winId":6,"type":"Row","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":127,"winId":6,"type":"Text","container":1,"kids":0}
+[a11y] tree-end(win6/type2111) printed=3 withText=14
+[a11y] tree-begin(win10/type2108)
+  {"n":0,"d":0,"a11yId":12,"winId":10,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":143,"winId":10,"type":"Flex","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":144,"winId":10,"type":"Flex","container":1,"kids":1}
+  {"n":3,"d":3,"a11yId":146,"winId":10,"type":"Stack","text":"","click":1,"focus":1,"vis":1,"kids":2,"box":[0,0,1024,57]}
+  {"n":4,"d":4,"a11yId":154,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":5,"d":4,"a11yId":149,"winId":10,"type":"Row","container":1,"kids":3}
+  {"n":6,"d":5,"a11yId":158,"winId":10,"type":"Column","container":1,"kids":0}
+  {"n":7,"d":5,"a11yId":164,"winId":10,"type":"Column","container":1,"kids":1}
+  {"n":8,"d":5,"a11yId":205,"winId":10,"type":"Column","container":1,"kids":1}
+  {"n":9,"d":5,"a11yId":209,"winId":10,"type":"Column","container":1,"kids":1}
+  {"n":10,"d":6,"a11yId":165,"winId":10,"type":"Row","container":1,"kids":4}
+  {"n":11,"d":6,"a11yId":206,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":12,"d":6,"a11yId":210,"winId":10,"type":"Row","container":1,"kids":7}
+  {"n":13,"d":7,"a11yId":175,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":14,"d":7,"a11yId":187,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":15,"d":7,"a11yId":192,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":16,"d":7,"a11yId":196,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":17,"d":7,"a11yId":226,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":18,"d":7,"a11yId":231,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":19,"d":7,"a11yId":236,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":20,"d":7,"a11yId":241,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":21,"d":7,"a11yId":244,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":22,"d":7,"a11yId":249,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":23,"d":7,"a11yId":264,"winId":10,"type":"Row","container":1,"kids":1}
+  {"n":24,"d":8,"a11yId":178,"winId":10,"type":"Row","container":1,"kids":5}
+  {"n":25,"d":8,"a11yId":190,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":26,"d":8,"a11yId":199,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":27,"d":8,"a11yId":229,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":28,"d":8,"a11yId":234,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":29,"d":8,"a11yId":239,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":30,"d":8,"a11yId":247,"winId":10,"type":"Row","container":1,"kids":0}
+  {"n":31,"d":8,"a11yId":252,"winId":10,"type":"Row","container":1,"kids":5}
+  {"n":32,"d":8,"a11yId":267,"winId":10,"type":"Row","container":1,"kids":3}
+[a11y] tree-end(win10/type2108) printed=33 withText=14
+[a11y] tree-begin(win2/type2001)
+  {"n":0,"d":0,"a11yId":0,"winId":2,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":6,"winId":2,"type":"Stack","container":1,"kids":2}
+  {"n":2,"d":2,"a11yId":13,"winId":2,"type":"Flex","container":1,"kids":2}
+  {"n":3,"d":2,"a11yId":19,"winId":2,"type":"Stack","text":"","click":1,"focus":0,"vis":0,"kids":2,"box":[0,0,0,0]}
+  {"n":4,"d":3,"a11yId":14,"winId":2,"type":"Column","container":1,"kids":1}
+  {"n":5,"d":3,"a11yId":16,"winId":2,"type":"Column","container":1,"kids":1}
+  {"n":6,"d":3,"a11yId":21,"winId":2,"type":"Column","container":1,"kids":0}
+  {"n":7,"d":3,"a11yId":22,"winId":2,"type":"Flex","container":1,"kids":2}
+  {"n":8,"d":4,"a11yId":30,"winId":2,"type":"__Common__","container":1,"kids":1}
+  {"n":9,"d":4,"a11yId":35,"winId":2,"type":"List","container":1,"kids":2}
+  {"n":10,"d":4,"a11yId":23,"winId":2,"type":"Stack","container":1,"kids":1}
+  {"n":11,"d":4,"a11yId":26,"winId":2,"type":"Stack","container":1,"kids":1}
+  {"n":12,"d":5,"a11yId":32,"winId":2,"type":"Column","container":1,"kids":1}
+  {"n":13,"d":5,"a11yId":37,"winId":2,"type":"ListItem","container":1,"kids":1}
+  {"n":14,"d":5,"a11yId":38,"winId":2,"type":"ListItem","container":1,"kids":1}
+  {"n":15,"d":5,"a11yId":25,"winId":2,"type":"Text","text":"","click":1,"focus":0,"vis":1,"kids":0,"box":[368,131,655,131]}
+  {"n":16,"d":5,"a11yId":27,"winId":2,"type":"Swiper","text":"","click":1,"focus":0,"vis":1,"kids":1,"box":[368,178,655,629]}
+  {"n":17,"d":6,"a11yId":83,"winId":2,"type":"Swiper","container":1,"kids":2}
+  {"n":18,"d":6,"a11yId":41,"winId":2,"type":"Row","container":1,"kids":1}
+  {"n":19,"d":6,"a11yId":45,"winId":2,"type":"List","container":1,"kids":0}
+  {"n":20,"d":6,"a11yId":29,"winId":2,"type":"SwiperIndicator","text":"","click":1,"focus":0,"vis":1,"kids":0,"box":[500,599,523,629]}
+  {"n":21,"d":7,"a11yId":87,"winId":2,"type":"Column","container":1,"kids":1}
+  {"n":22,"d":7,"a11yId":90,"winId":2,"type":"SwiperIndicator","text":"","click":1,"focus":1,"vis":1,"kids":0,"box":[493,627,530,657]}
+  {"n":23,"d":7,"a11yId":42,"winId":2,"type":"List","container":1,"kids":4}
+  {"n":24,"d":8,"a11yId":88,"winId":2,"type":"__Common__","container":1,"kids":1}
+  {"n":25,"d":8,"a11yId":48,"winId":2,"type":"ListItem","container":1,"kids":1}
+  {"n":26,"d":8,"a11yId":50,"winId":2,"type":"ListItem","container":1,"kids":1}
+  {"n":27,"d":8,"a11yId":52,"winId":2,"type":"ListItem","container":1,"kids":1}
+  {"n":28,"d":8,"a11yId":54,"winId":2,"type":"ListItem","container":1,"kids":1}
+[a11y] tree-end(win2/type2001) printed=29 withText=14
+[a11y] summary: withText=14 clickable=6
+[a11y] texts=["上滑解锁","01:01","2026年10月7日","星期三","丙午年八月廿七","没有 SIM 卡","100%"]
+[a11y] DONE connected=1 printed=169 withText=14 verdict=TREE-OK-WITH-TEXT
+  exit=0
+[13b] 只走指定窗口（上轮的顶层窗口 winId=6）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y] GetWindows ret=0 count=5
+[a11y] win[0] id=7 type=2110 layer=5
+[a11y] win[1] id=5 type=2112 layer=4
+[a11y] win[2] id=6 type=2111 layer=3
+[a11y] win[3] id=10 type=2108 layer=2
+[a11y] win[4] id=2 type=2001 layer=1
+[a11y] GetRoot ret=0 type="root" text="" kids=1 a11yId=2
+[a11y] GetRootByWindow(winId=6) ret=0 type="root" text="" kids=1
+[a11y] tree-begin(GetRootByWindow)
+  {"n":0,"d":0,"a11yId":6,"winId":6,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":126,"winId":6,"type":"Row","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":127,"winId":6,"type":"Text","container":1,"kids":0}
+[a11y] tree-end(GetRootByWindow) printed=3 withText=0
+[a11y] summary: withText=0 clickable=0
+[a11y] texts=[]
+[a11y] DONE connected=1 printed=3 withText=0 verdict=TREE-OK-NO-TEXT
+  exit=1
+  注意：「没拿到」也是结论 —— 但要留下**真实错误码**，不许写成「大概不行」
+--- [14] S7-1b 读屏：SA 的 ReadScreen（感知方向，独立 IDL 方法）---
+  门：与其它方法同一套准入（默认档位 / allow_uids.txt 白名单）—— 先证拒绝、再证放行
+[14a] 写白名单只放 uid 12345（root 不在内）→ 期望 ErrCode=201（准入拒绝，且 SA 不回传结果串）
+=====LUTSA-CLIENT-START=====
+  client pid=2051 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2e6683ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=201
+  （被拒/失败时 SA 不回传结果串；错误码即结论：0=成功 201=准入拒绝）
+=====LUTSA-CLIENT-END (rc=1)=====
+[14b] 删掉白名单恢复默认档位 → 期望 ErrCode=0，且 JSON 里 ok=1 与 counts.withText>0
+=====LUTSA-CLIENT-START=====
+  client pid=2055 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f9720ec4cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":685,"getwin_ret":0,"budget":40,"truncated":0,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":13,"withText":7,"clickable":6},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]},{"d":2,"win":2,"a11yId":19,"type":"Stack","text":"","click":1,"vis":0,"box":[0,0,0,0]},{"d":5,"win":2,"a11yId":25,"type":"Text","text":"","click":1,"vis":1,"box":[368,131,655,131]},{"d":5,"win":2,"a11yId":27,"type":"Swiper","text":"","click":1,"vis":1,"box":[368,178,655,629]},{"d":6,"win":2,"a11yId":29,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[500,599,523,629]},{"d":7,"win":2,"a11yId":90,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[493,627,530,657]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+[14c] 有界性：上限 8 → 期望 ok=1 且 counts.nodes<=8（截断标记 truncated=1）
+=====LUTSA-CLIENT-START=====
+  client pid=2060 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f3f441d4cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 8] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":31,"getwin_ret":0,"budget":8,"truncated":1,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":8,"withText":7,"clickable":1},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+[14d] 指标里的 screen 状态（只记连接状态，不含屏幕原文 —— 隐私纪律）
+=====LUTSA-CLIENT-START=====
+  client pid=2063 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f5b5de6bcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--metrics] ErrCode=0  -> peak_rss=56.9 MB, session=1, sa_id=6901, selftest: (selftest not run yet) | caller: uid=0 token=671903834 last_method=ReadScreen | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(8) → connected | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [15] 真机屏幕可视：真屏截图 + 同一时刻的 ReadScreen（配成一对，供叠框）---
+  用镜像里的 snapshot_display（foundation/window/window_manager/snapshot）；要 CAPTURE_SCREEN 权限
+[15a] 截屏 → /data/local/tmp/lut_screen.png
+fileType: png
+process: display 0, file type: png, width: 1024, height: 768
+
+success: snapshot display 0 , write to /data/local/tmp/lut_screen.png as png, width: 1024, height: 768
+  exit=0
+-rw-r--r-- 1 root root 479630 2026-10-07 01:01 /data/local/tmp/lut_screen.png
+  截图时刻: 1791306070
+[15b] 紧接着读屏（与截图同一时刻的元素树）
+=====LUTSA-CLIENT-START=====
+  client pid=2071 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f98964dbcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":58,"getwin_ret":0,"budget":40,"truncated":0,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":13,"withText":7,"clickable":6},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]},{"d":2,"win":2,"a11yId":19,"type":"Stack","text":"","click":1,"vis":0,"box":[0,0,0,0]},{"d":5,"win":2,"a11yId":25,"type":"Text","text":"","click":1,"vis":1,"box":[368,131,655,131]},{"d":5,"win":2,"a11yId":27,"type":"Swiper","text":"","click":1,"vis":1,"box":[368,178,655,629]},{"d":6,"win":2,"a11yId":29,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[500,599,523,629]},{"d":7,"win":2,"a11yId":90,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[493,627,530,657]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+  读屏时刻: 1791306070
+--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---
+  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）
+  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret
+[16a] click：点第一个可点元素（先打印它是什么，再前后 diff）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=click target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 6 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=146 type=Stack text="" click=1 box=[0,0,1024,57]
+[a11y-act] exec : ExecuteAction(0x10) on a11yId=146 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=click ret=0
+[a11y-act] DONE kind=click rc=0
+  exit=0
+[16b] back：对根元素发 ACTION_BACK(0x20000)
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=back target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 0 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=2 type=root text="" click=0 box=[0,0,1024,768]
+[a11y-act] exec : ExecuteAction(0x20000) on a11yId=2 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=back ret=0
+[a11y-act] DONE kind=back rc=0
+  exit=0
+[16c] scroll：对第一个可滚动元素发 ACTION_SCROLL_FORWARD(0x100)
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=scroll target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 1 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=45 type=List text="" click=0 box=[0,0,0,0]
+[a11y-act] exec : ExecuteAction(0x100) on a11yId=45 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=scroll ret=0
+[a11y-act] DONE kind=scroll rc=0
+  exit=0
+[16d] swipe：InjectGesture 上滑 (512,600)->(512,200) 300ms（解锁可行性）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=swipe target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 0 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] exec : InjectGesture (512,600)->(512,200) 300ms → ret=4006（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=swipe ret=4006
+[a11y-act] DONE kind=swipe rc=4
+  exit=4
+[16e] 动作后再看一次元素树（确认界面是否已变/是否离开锁屏）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y] GetWindows ret=0 count=5
+[a11y] win[0] id=7 type=2110 layer=5
+[a11y] win[1] id=5 type=2112 layer=4
+[a11y] win[2] id=6 type=2111 layer=3
+[a11y] win[3] id=10 type=2108 layer=2
+[a11y] win[4] id=2 type=2001 layer=1
+[a11y] GetRoot ret=0 type="root" text="" kids=1 a11yId=2
+[a11y] tree-begin(GetRoot)
+  {"n":0,"d":0,"a11yId":2,"winId":7,"type":"root","container":1,"kids":1}
+  {"n":1,"d":1,"a11yId":27,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":2,"d":2,"a11yId":30,"winId":7,"type":"Stack","container":1,"kids":3}
+  {"n":3,"d":3,"a11yId":31,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":4,"d":3,"a11yId":33,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":5,"d":3,"a11yId":36,"winId":7,"type":"Flex","container":1,"kids":5}
+  {"n":6,"d":4,"a11yId":49,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":7,"d":4,"a11yId":34,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":8,"d":4,"a11yId":37,"winId":7,"type":"Column","container":1,"kids":0}
+  {"n":9,"d":4,"a11yId":38,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":10,"d":4,"a11yId":42,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":11,"d":4,"a11yId":44,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":12,"d":4,"a11yId":46,"winId":7,"type":"Column","container":1,"kids":1}
+  {"n":13,"d":5,"a11yId":50,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":14,"d":5,"a11yId":39,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":15,"d":5,"a11yId":81,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":16,"d":5,"a11yId":84,"winId":7,"type":"Column","container":1,"kids":3}
+  {"n":17,"d":5,"a11yId":93,"winId":7,"type":"List","container":1,"kids":0}
+  {"n":18,"d":6,"a11yId":51,"winId":7,"type":"Flex","container":1,"kids":2}
+  {"n":19,"d":6,"a11yId":54,"winId":7,"type":"Flex","container":1,"kids":1}
+  {"n":20,"d":6,"a11yId":40,"winId":7,"type":"Blank","container":1,"kids":0}
+  {"n":21,"d":6,"a11yId":79,"winId":7,"type":"Row","container":1,"kids":0}
+  {"n":22,"d":6,"a11yId":82,"winId":7,"type":"Image","container":1,"kids":0}
+  {"n":23,"d":6,"a11yId":83,"winId":7,"type":"Text","text":"上滑解锁","click":0,"focus":0,"vis":1,"kids":0,"box":[493,168,546,183]}
+  {"n":24,"d":6,"a11yId":85,"winId":7,"type":"Text","text":"01:01","click":0,"focus":0,"vis":1,"kids":0,"box":[428,200,596,279]}
+  {"n":25,"d":6,"a11yId":87,"winId":7,"type":"Row","container":1,"kids":2}
+  {"n":26,"d":6,"a11yId":91,"winId":7,"type":"Row","container":1,"kids":1}
+  {"n":27,"d":7,"a11yId":57,"winId":7,"type":"Row","container":1,"kids":5}
+
+--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe）---
+--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---
+  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）
+  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret
+[16a] click：点第一个可点元素（先打印它是什么，再前后 diff）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=click target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 6 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=146 type=Stack text="" click=1 box=[0,0,1024,57]
+[a11y-act] exec : ExecuteAction(0x10) on a11yId=146 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=click ret=0
+[a11y-act] DONE kind=click rc=0
+  exit=0
+[16b] back：对根元素发 ACTION_BACK(0x20000)
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=back target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 0 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=2 type=root text="" click=0 box=[0,0,1024,768]
+[a11y-act] exec : ExecuteAction(0x20000) on a11yId=2 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=back ret=0
+[a11y-act] DONE kind=back rc=0
+  exit=0
+[16c] scroll：对第一个可滚动元素发 ACTION_SCROLL_FORWARD(0x100)
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=scroll target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 1 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] pick : a11yId=45 type=List text="" click=0 box=[0,0,0,0]
+[a11y-act] exec : ExecuteAction(0x100) on a11yId=45 → ret=0（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=scroll ret=0
+[a11y-act] DONE kind=scroll rc=0
+  exit=0
+[16d] swipe：InjectGesture 上滑 (512,600)->(512,200) 300ms（解锁可行性）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y-act] kind=swipe target=(auto)
+[a11y-act] before: windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] 候选: 0 个（支持该动作，或 click 模式下 IsClickable）
+[a11y-act] exec : InjectGesture (512,600)->(512,200) 300ms → ret=4006（RET_OK=0）
+[a11y-act] after : windows=5 ids=[7 5 6 10 2 ] nodes=126 withText=7 clickable=6 texts=[没有 SIM 卡 | 100% | 上滑解锁 | 01:01 | 2026年10月7日 | 星期三 | 丙午年八月廿七]
+[a11y-act] diff  : windows=同 nodes=126→126 withText=7→7 新文本[] 消失[]
+[a11y-act] verdict=UNCHANGED kind=swipe ret=4006
+[a11y-act] DONE kind=swipe rc=4
+  exit=4
+[16e] 动作后再看一次元素树（确认界面是否已变/是否离开锁屏）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+[a11y] GetWindows ret=0 count=5
+[a11y] win[0] id=7 type=2110 layer=5
+[a11y] win[1] id=5 type=2112 layer=4
+
+--- [14] S7-1b SA 读屏（ReadScreen：感知方向，独立 IDL 方法）---
+--- [14] S7-1b 读屏：SA 的 ReadScreen（感知方向，独立 IDL 方法）---
+  门：与其它方法同一套准入（默认档位 / allow_uids.txt 白名单）—— 先证拒绝、再证放行
+[14a] 写白名单只放 uid 12345（root 不在内）→ 期望 ErrCode=201（准入拒绝，且 SA 不回传结果串）
+=====LUTSA-CLIENT-START=====
+  client pid=2051 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f2e6683ccb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=201
+  （被拒/失败时 SA 不回传结果串；错误码即结论：0=成功 201=准入拒绝）
+=====LUTSA-CLIENT-END (rc=1)=====
+[14b] 删掉白名单恢复默认档位 → 期望 ErrCode=0，且 JSON 里 ok=1 与 counts.withText>0
+=====LUTSA-CLIENT-START=====
+  client pid=2055 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f9720ec4cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":685,"getwin_ret":0,"budget":40,"truncated":0,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":13,"withText":7,"clickable":6},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]},{"d":2,"win":2,"a11yId":19,"type":"Stack","text":"","click":1,"vis":0,"box":[0,0,0,0]},{"d":5,"win":2,"a11yId":25,"type":"Text","text":"","click":1,"vis":1,"box":[368,131,655,131]},{"d":5,"win":2,"a11yId":27,"type":"Swiper","text":"","click":1,"vis":1,"box":[368,178,655,629]},{"d":6,"win":2,"a11yId":29,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[500,599,523,629]},{"d":7,"win":2,"a11yId":90,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[493,627,530,657]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+[14c] 有界性：上限 8 → 期望 ok=1 且 counts.nodes<=8（截断标记 truncated=1）
+=====LUTSA-CLIENT-START=====
+  client pid=2060 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f3f441d4cb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 8] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":31,"getwin_ret":0,"budget":8,"truncated":1,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":8,"withText":7,"clickable":1},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+[14d] 指标里的 screen 状态（只记连接状态，不含屏幕原文 —— 隐私纪律）
+=====LUTSA-CLIENT-START=====
+  client pid=2063 argc=2
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f5b5de6bcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--metrics] ErrCode=0  -> peak_rss=56.9 MB, session=1, sa_id=6901, selftest: (selftest not run yet) | caller: uid=0 token=671903834 last_method=ReadScreen | policy: default-tiers(uid 0/1000/2000/<10000 allowed) | last_action: ReadScreen(8) → connected | quota: model<=2048MB ((未判定)) | engine=absent n_ctx=0 threads=0 infer=0 model=
+=====LUTSA-CLIENT-END (rc=0)=====
+--- [15] 真机屏幕可视：真屏截图 + 同一时刻的 ReadScreen（配成一对，供叠框）---
+  用镜像里的 snapshot_display（foundation/window/window_manager/snapshot）；要 CAPTURE_SCREEN 权限
+[15a] 截屏 → /data/local/tmp/lut_screen.png
+fileType: png
+process: display 0, file type: png, width: 1024, height: 768
+
+success: snapshot display 0 , write to /data/local/tmp/lut_screen.png as png, width: 1024, height: 768
+  exit=0
+-rw-r--r-- 1 root root 479630 2026-10-07 01:01 /data/local/tmp/lut_screen.png
+  截图时刻: 1791306070
+[15b] 紧接着读屏（与截图同一时刻的元素树）
+=====LUTSA-CLIENT-START=====
+  client pid=2071 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f98964dbcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":58,"getwin_ret":0,"budget":40,"truncated":0,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":13,"withText":7,"clickable":6},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]},{"d":2,"win":2,"a11yId":19,"type":"Stack","text":"","click":1,"vis":0,"box":[0,0,0,0]},{"d":5,"win":2,"a11yId":25,"type":"Text","text":"","click":1,"vis":1,"box":[368,131,655,131]},{"d":5,"win":2,"a11yId":27,"type":"Swiper","text":"","click":1,"vis":1,"box":[368,178,655,629]},{"d":6,"win":2,"a11yId":29,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[500,599,523,629]},{"d":7,"win":2,"a11yId":90,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[493,627,530,657]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+  读屏时刻: 1791306070
+--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---
+  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）
+  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret
+
+--- [15] 真机屏幕可视化：截图 + 同步读屏（叠框页面的数据源）---
+--- [15] 真机屏幕可视：真屏截图 + 同一时刻的 ReadScreen（配成一对，供叠框）---
+  用镜像里的 snapshot_display（foundation/window/window_manager/snapshot）；要 CAPTURE_SCREEN 权限
+[15a] 截屏 → /data/local/tmp/lut_screen.png
+fileType: png
+process: display 0, file type: png, width: 1024, height: 768
+
+success: snapshot display 0 , write to /data/local/tmp/lut_screen.png as png, width: 1024, height: 768
+  exit=0
+-rw-r--r-- 1 root root 479630 2026-10-07 01:01 /data/local/tmp/lut_screen.png
+  截图时刻: 1791306070
+[15b] 紧接着读屏（与截图同一时刻的元素树）
+=====LUTSA-CLIENT-START=====
+  client pid=2071 argc=3
+  [samgr] ok
+  [GetSystemAbility(6901)] ok, remote=0x7f98964dbcb0
+  [iface_cast] ok —— IPC 代理已建立
+  [--screen 0] ErrCode=0
+  {"ok":1,"connected":1,"user":100,"elapsed_ms":58,"getwin_ret":0,"budget":40,"truncated":0,"windows":[{"id":7,"type":2110,"layer":5},{"id":5,"type":2112,"layer":4},{"id":6,"type":2111,"layer":3},{"id":10,"type":2108,"layer":2},{"id":2,"type":2001,"layer":1}],"counts":{"nodes":13,"withText":7,"clickable":6},"nodes":[{"d":6,"win":7,"a11yId":83,"type":"Text","text":"上滑解锁","click":0,"vis":1,"box":[493,168,546,183]},{"d":6,"win":7,"a11yId":85,"type":"Text","text":"01:01","click":0,"vis":1,"box":[428,200,596,279]},{"d":7,"win":7,"a11yId":89,"type":"Text","text":"2026年10月7日","click":0,"vis":1,"box":[428,282,546,302]},{"d":7,"win":7,"a11yId":90,"type":"Text","text":"星期三","click":0,"vis":1,"box":[546,282,597,302]},{"d":7,"win":7,"a11yId":92,"type":"Text","text":"丙午年八月廿七","click":0,"vis":1,"box":[466,309,558,327]},{"d":8,"win":7,"a11yId":59,"type":"Text","text":"没有 SIM 卡","click":0,"vis":1,"box":[22,8,82,21]},{"d":8,"win":7,"a11yId":73,"type":"Text","text":"100%","click":0,"vis":1,"box":[951,8,980,21]},{"d":3,"win":10,"a11yId":146,"type":"Stack","text":"","click":1,"vis":1,"box":[0,0,1024,57]},{"d":2,"win":2,"a11yId":19,"type":"Stack","text":"","click":1,"vis":0,"box":[0,0,0,0]},{"d":5,"win":2,"a11yId":25,"type":"Text","text":"","click":1,"vis":1,"box":[368,131,655,131]},{"d":5,"win":2,"a11yId":27,"type":"Swiper","text":"","click":1,"vis":1,"box":[368,178,655,629]},{"d":6,"win":2,"a11yId":29,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[500,599,523,629]},{"d":7,"win":2,"a11yId":90,"type":"SwiperIndicator","text":"","click":1,"vis":1,"box":[493,627,530,657]}]}
+=====LUTSA-CLIENT-END (rc=0)=====
+  读屏时刻: 1791306070
+--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---
+  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）
+  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret
+[16a] click：点第一个可点元素（先打印它是什么，再前后 diff）
+[a11y] lut_a11y_dump begin (S7-1a v2: via AccessibilityUITestAbility, read-only, max 200 nodes / depth 8)
+[a11y] RegisterAbilityListener ret=0
+[a11y] Connect(0) ret=0
+[a11y] callback: OnAbilityConnected
+[a11y] connected after ~500 ms
+[a11y] connected=1 currentUserId=100
+  截图文件: 479630 字节 /mnt/ud2/local/tmp/lut_screen.png
+
+--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.25.attn_output.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.25.ffn_gate.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.25.ffn_down.weight (m: 3200, k: 8640, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=135, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.25.ffn_up.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+[shim] load: model ok
+[shim] load: new_context
+[shim] load: ready
+[shim] gen: tokenize
+[shim] diag: prompt n_tok=91 ids=[1 29871 31557 31573 30544 30287 30502 4390 30214 30413 30698 31201 236 138 141 30383 ] text="<s> ??????????????? json??????????????????"
+[shim] gen: prompt decode
+[shim] diag: after_prompt_decode min=-7.5922 max=7.1111 mean=-0.0857 nan_or_inf=0 n_vocab=32002 argmax=11486 top: [id=11486 logit=7.1111 piece=" notes"] [id=7429 logit=6.9219 piece=" desired"] [id=24909 logit=6.8476 piece=" fans"] [id=8954 logit=6.7746 piece=" representation"] [id=12260 logit=6.4977 piece="aris"]
+[shim] gen: sampling
+[shim] diag: step 0 argmax=11486 piece_len=6 piece=" notes"
+[shim] diag: step 1 argmax=9664 piece_len=4 piece=" Rot"
+[shim] diag: step 2 argmax=8050 piece_len=2 piece="TV"
+[shim] gen: done 24 tokens
+[shim] gen: tokenize
+[shim] diag: prompt n_tok=2 ids=[1 22172 ] text="<s> hello"
+[shim] gen: prompt decode
+[shim] diag: after_prompt_decode min=-8.8019 max=8.3920 mean=-0.0511 nan_or_inf=0 n_vocab=32002 argmax=3173 top: [id=3173 logit=8.3920 piece="ias"] [id=16577 logit=7.4064 piece="eti"] [id=1660 logit=7.0458 piece="SE"] [id=20666 logit=6.8720 piece="eton"] [id=15810 logit=6.5991 piece="emo"]
+[shim] gen: sampling
+[shim] diag: step 0 argmax=23077 piece_len=8 piece=" evangel"
+[shim] diag: step 1 argmax=18806 piece_len=5 piece=" tang"
+[shim] diag: step 2 argmax=22792 piece_len=5 piece=" summ"
+[shim] gen: done 4 tokens

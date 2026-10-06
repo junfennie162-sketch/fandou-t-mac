@@ -157,6 +157,111 @@ com.ohos.camera
   /system/bin/lut_sa_client --screen 0
   echo "  读屏时刻: $(date +%s)"
 
+  echo "--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---"
+  echo "  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）"
+  echo "  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret"
+  echo "[16a] click：点第一个可点元素（先打印它是什么，再前后 diff）"
+  /system/bin/lut_a11y_dump --act click
+  echo "  exit=$?"
+  echo "[16b] back：对根元素发 ACTION_BACK(0x20000)"
+  /system/bin/lut_a11y_dump --act back
+  echo "  exit=$?"
+  echo "[16c] scroll：对第一个可滚动元素发 ACTION_SCROLL_FORWARD(0x100)"
+  /system/bin/lut_a11y_dump --act scroll
+  echo "  exit=$?"
+  echo "[16d] swipe：InjectGesture 上滑 (512,600)->(512,200) 300ms（解锁可行性）"
+  /system/bin/lut_a11y_dump --act swipe
+  echo "  exit=$?"
+  echo "[16e] 动作后再看一次元素树（确认界面是否已变/是否离开锁屏）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+
+  echo "--- [17] S7-2-0b 可交互界面：aa 拉起设置 + 采样 + 真实 click/back ---"
+  echo "  动机：[16] 在锁屏上 click/back/scroll 都 ret=0 但界面无变化（不可交互界面），"
+  echo "        swipe=4006(RET_ERR_NO_CAPABILITY)；所以先换到应用界面再测元素动作是否真能改变界面"
+  echo "[17a] aa start（两种写法都试；这是路线B执行者在 guest 内的替身）"
+  /system/bin/aa start -a MainAbility -b com.ohos.settings
+  echo "  exit=$?"
+  /system/bin/aa start -b com.ohos.settings -a EntryAbility
+  echo "  exit=$?"
+  sleep 3
+  echo "[17b] 拉起后读屏（看窗口/文本是否已变成设置界面）"
+  /system/bin/lut_sa_client --screen 0
+  echo "[17c] 采样：设置界面元素树（真实文本，供规则表用，不猜）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+  echo "[17d] 真实 click：优先点「带文本且可点」的元素 → 期望 CHANGED"
+  /system/bin/lut_a11y_dump --act click
+  echo "  exit=$?"
+  echo "[17e] back：ACTION_BACK → 期望 CHANGED（回到上一页）"
+  /system/bin/lut_a11y_dump --act back
+  echo "  exit=$?"
+
+  echo "--- [18] S7-2-0c 解锁与输入注入侦察（aa 成功但界面仍是锁屏 → 卡点在解锁）---"
+  echo "  结论先用证据说话：先看设置进程是否已起、再看 guest 里有哪些注入工具、再试真解锁"
+  echo "[18a] 进程诊断：设置/桌面/无障碍/uitest 相关进程"
+  ps -ef 2>/dev/null | grep -iE "settings|launcher|accessib|uitest" | grep -v grep | head -8
+  echo "[18b] 候选注入工具（镜像里有什么就用什么）"
+  for t in uitest uinput wukong power-shell snapshot_display; do
+    printf '  %-16s : %s
+' "$t" "$(ls /system/bin/$t 2>/dev/null || echo '（无）')"
+  done
+  echo "[18c] uitest 用法（若可用则是标准输入注入路径）"
+  /system/bin/uitest -h 2>&1 | head -12
+  echo "[18d] 尝试用 uitest 注入上滑解锁（三种写法都试，打印真实返回）"
+  /system/bin/uitest uiInput swipe 512 600 512 200 300; echo "  exit=$?"
+  /system/bin/uitest -c uiInput -a swipe -x1 512 -y1 600 -x2 512 -y2 200 -t 300; echo "  exit=$?"
+  /system/bin/uitest uiInput keyEvent 2; echo "  exit=$?"
+  sleep 2
+  echo "[18e] 解锁尝试后再读屏（若离开锁屏，文本里不会再有「上滑解锁」）"
+  /system/bin/lut_sa_client --screen 0
+  echo "[18f] 元素树（看是否已进入可交互界面）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+
+  echo "--- [19] S7-2-0d 解锁后在可交互界面上的决定性测量（S7-2-0 收口）---"
+  echo "  前提（[18] 已证）：uitest uiInput swipe 解锁成功（锁屏窗口消失、withText=0）"
+  echo "[19a] 解锁状态下重新拉起设置（aa 之前被锁屏挡住）→ 读屏看是否进入设置界面"
+  /system/bin/aa start -a MainAbility -b com.ohos.settings; echo "  exit=$?"
+  sleep 3
+  /system/bin/lut_sa_client --screen 0
+  echo "[19b] 采样设置界面的真实元素文本（供规则表；不猜）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+  echo "[19c] 元素动作（a11y）：点第一个「带文本且可点」的元素 → 期望 CHANGED"
+  /system/bin/lut_a11y_dump --act click
+  echo "  exit=$?"
+  echo "[19d] 返回：a11y ACTION_BACK → 期望 CHANGED（回到上一页）"
+  /system/bin/lut_a11y_dump --act back
+  echo "  exit=$?"
+  echo "[19e] 兜底路线：uitest 坐标点击（用刚刚读到的元素 box 中心点，坐标来自感知而非盲猜）"
+  /system/bin/uitest uiInput click 512 300; echo "  exit=$?"
+  sleep 2
+  echo "[19f] 点击后再读屏（对比界面是否变化）"
+  /system/bin/lut_sa_client --screen 0
+
+  echo "--- [20] S7-2-0e 判别实验：把「为什么没效果」钉死（三个对照）---"
+  echo "  已知：uitest swipe 解锁生效 ✓；a11y click/back ret=0 但无变化；aa 启动返回 0 但界面无变化"
+  echo "[20a] 诊断 aa：设置进程到底有没有起来（启动前后各数一次）"
+  echo "  before: settings 进程数=$(ps -ef 2>/dev/null | grep -i settings | grep -v grep | wc -l)"
+  /system/bin/aa start -a MainAbility -b com.ohos.settings; echo "  aa exit=$?"
+  sleep 2
+  echo "  after : settings 进程数=$(ps -ef 2>/dev/null | grep -i settings | grep -v grep | wc -l)"
+  ps -ef 2>/dev/null | grep -iE "settings|appspawn|launcher" | grep -v grep | head -5
+  echo "[20b] 对照1：uitest 下拉通知栏（坐标 512,10 → 512,500）→ 期望 CHANGED（证明注入能改界面）"
+  /system/bin/uitest uiInput swipe 512 10 512 500 300; echo "  exit=$?"
+  sleep 2
+  /system/bin/lut_sa_client --screen 0
+  echo "[20c] 对照2：uitest 发 BACK 键（keyEvent 2）→ 期望 CHANGED（若生效=我们有「返回」手段）"
+  /system/bin/uitest uiInput keyEvent 2; echo "  exit=$?"
+  sleep 2
+  /system/bin/lut_sa_client --screen 0
+  echo "[20d] 对照3：uitest 点击屏幕中心（512,400）→ 看是否 CHANGED（坐标注入的通用性）"
+  /system/bin/uitest uiInput click 512 400; echo "  exit=$?"
+  sleep 2
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+
 
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"

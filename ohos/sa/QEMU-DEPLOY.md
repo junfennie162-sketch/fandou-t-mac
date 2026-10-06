@@ -329,6 +329,12 @@ Tier-B 想用推理就走"申请权限 + 配额（会话数/内存水位/并发�
 
 | **FIX-89** | 整轮**静默死亡**的第三种原因：WSL 在轮次运行中被重启（不是脚本、不是代码） | `wsl/sta3.txt` 只有 1.5KB，停在 `=== 2. 重建 gn…` 之后；连 `=== 整轮结束` 都没打；无 error、无 ninja 输出 | `who -b` 显示 **WSL 启动时间（17:46）晚于该轮开始时间（17:42）** → 轮次跑到一半被外部重启杀掉；`dmesg` 里还能看到 `WSL ERROR: CheckConnection: getaddrinfo() failed`（同时段 github 推送也在 SSL 层失败）→ 那段时间宿主网络/虚拟化层有变动 | **排查顺序固定成三步**（写进这里，下次别再从代码找起）：① `ls -la wsl/sta3.txt` 看大小/时间 → 只有头部就是早死；② `who -b` + `date` 比对轮次起止时间 → 被重启就重跑，不改代码；③ 都不是，再按 FIX-87 查语法/CR。重跑后一次通过（`evidence/62`） |
 
+| **FIX-90** | **元素动作在锁屏上"受理但不生效"**：click/back/scroll 全 ret=0、界面零变化；swipe 直接 4006 | `evidence/62` `[16a-d]`：`ExecuteAction(0x10) on Stack#146 → ret=0` 但 `nodes 126→126 withText 7→7`；`ACTION_BACK(0x20000)`、`ACTION_SCROLL_FORWARD(0x100)` 同样 ret=0 无变化；`InjectGesture` → **ret=4006** | ① 当时屏幕是**锁屏**（`上滑解锁`/`没有 SIM 卡`），不可交互界面 → 动作无效属合理；② **4006 = `RET_ERR_NO_CAPABILITY`**（`accessibility_def.h` 的 4001..4008 段）→ 这条 "UITest ability" 通道**没有 gesture 能力登记**，手势注入不可用；③ 枚举里另有 `4007 RET_ERR_INVALID_ELEMENT_INFO_FROM_ACE` / `4008 RET_ERR_PERFORM_ACTION_FAILED_BY_ACE`，而实测回的是 0 —— **"受理≠生效"** 需要辨别（是否异步/回调路径未实现） | 换到**可交互界面**复测（见 FIX-91/92），并把"受理≠生效"写进设计约束：**任何执行通道都必须以"界面确实变化"为判据**，不能拿 ret=0 当成功 |
+
+| **FIX-91** | **解锁手段的实测定位**：a11y 手势不可用，但输入注入可用（这是 S7 Agent 的第一把"手"） | `evidence/64` `[18d]/[18e]`：`uitest uiInput swipe 512 600 512 200 300` → **No Error / exit=0**，随后 ReadScreen 显示 **锁屏窗口(type 2110)从窗口列表消失**、`counts` 从 `13 节点/7 文本` 变为 `6 节点/0 文本`（`上滑解锁` 等文本全部消失） | `InjectGesture` 走的是 a11y 的手指通道（需 gesture 能力，4006）；`uitest` 走的是**输入注入（MMI）**路径，与 a11y 通道不同，因此在同一进程权限下可用 | **把输入注入定为 guest 内的执行者候选**；`[19]` 复测表明：解锁后 `aa start` 与 a11y 元素动作仍不改变界面 → 执行者设计改为"**坐标注入（坐标来自刚读到的元素 box）**"为主路径，a11y 元素动作列为待进一步判别的备选（需查是否要 `SetTargetBundleName` 或能力登记）。镜像里可用的注入/诊断工具：`uitest` / `uinput` / `wukong` / `power-shell` / `snapshot_display`
+
+| **FIX-92** | 打包器 `head` 上限**第四次**截断（这次把 `[18e]` 之后整段砍掉） | 我读 `evidence/64` 时 `[18e]/[18f]` 解析为空 | 每轮往取证脚本加一段（`[16]..[20]`），但打包器的 `sed -n '/\[16\]/,/\[7\]/p' | head -80` 上限没同步改 | ① 上限提到 320（已改两处打包器）；② **立纪律**：取证脚本每加一段，同步检查打包上限（或干脆去掉 head、只按段名切）；③ 复核手段：直接从 userdata 镜像读 `local/tmp/lut_evidence.txt`（本轮就是这么把 [18e] 捞回来的）
+
 ### 往「系统能力级」还差什么（按优先级）
 
 | # | 项 | 现状 | 下一步 |
