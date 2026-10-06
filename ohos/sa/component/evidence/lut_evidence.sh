@@ -139,6 +139,24 @@ com.ohos.camera
   echo "[14d] 指标里的 screen 状态（只记连接状态，不含屏幕原文 —— 隐私纪律）"
   /system/bin/lut_sa_client --metrics
 
+  echo "--- [15] 真机屏幕可视：真屏截图 + 同一时刻的 ReadScreen（配成一对，供叠框）---"
+  echo "  用镜像里的 snapshot_display（foundation/window/window_manager/snapshot）；要 CAPTURE_SCREEN 权限"
+  echo "[15a] 截屏 → /data/local/tmp/lut_screen.png"
+  # 实测（evidence/62）：-f 的**文件名必须自带与 -t 一致的后缀**，
+  # 否则报 "fileName /data/local/tmp/lut_screen invalid, suffix must be .png"（exit=255）
+  /system/bin/snapshot_display -f /data/local/tmp/lut_screen.png -t png
+  echo "  exit=$?"
+  if [ ! -s /data/local/tmp/lut_screen.png ]; then
+    echo "  png 方式失败 → 退回 jpeg"
+    /system/bin/snapshot_display -f /data/local/tmp/lut_screen.jpeg -t jpeg
+    echo "  exit=$?"
+  fi
+  ls -l /data/local/tmp/lut_screen.* 2>/dev/null
+  echo "  截图时刻: $(date +%s)"
+  echo "[15b] 紧接着读屏（与截图同一时刻的元素树）"
+  /system/bin/lut_sa_client --screen 0
+  echo "  读屏时刻: $(date +%s)"
+
 
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"

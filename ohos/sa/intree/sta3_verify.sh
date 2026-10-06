@@ -186,6 +186,10 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   echo
   echo "----- [14] S7-1b SA 读屏（ReadScreen：感知方向，独立 IDL 方法）-----"
   sed -n '/\[14\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -60
+  echo
+  echo "--- [15] 真机屏幕可视化：截图 + 同步读屏（叠框页面的数据源）---"
+  sed -n '/\[15\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -30
+  ls -l /mnt/ud2/local/tmp/lut_screen.* 2>/dev/null | awk '{print "  截图文件:", $5, "字节", $9}'
     echo
     echo "--- SA 进程运行期日志（引擎壳的阶段标记；崩溃原因就在这条通道上）---"
     tail -30 /mnt/ud2/lut_sa/rt_stderr.txt 2>/dev/null
