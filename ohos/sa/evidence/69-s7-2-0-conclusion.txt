@@ -1,0 +1,43 @@
+===== S7-2-0 结论：无障碍动作可行性（跨 7 轮实测汇总）=====
+来源：evidence/62 [16] · 63-67 [17..21] · 68 [22]；探针 lut_a11y_dump --act（本仓库 component/lut_a11y_dump.cpp）
+原则：以下每条都有真返回值/真错误码；"受理≠生效"是本次最重要的判据纪律。
+
+【通道一】输入注入（uitest uiInput）—— ✅ 可用（唯一被三次独立证明的执行通道）
+  · 解锁：`uitest uiInput swipe 512 600 512 200 300` → No Error；随后窗口列表丢掉锁屏窗口
+    （type 2110 消失），counts 从 13 节点/7 文本 → 6 节点/0 文本（evidence/64 [18d]/[18e]）
+  · 下拉通知栏：`uitest uiInput swipe 512 10 512 500 300` → 新增窗口 win8(type 2109)，
+    counts 10 节点/3 文本（evidence/66 [20b]）
+  · 收起通知栏：`uitest uiInput swipe 512 500 512 50 300` → win8 消失，回到 6 节点/0 文本（evidence/67 [21d]）
+  · 判据：三次都是"窗口列表/节点数/文本"确实变化 —— 不是看退出码
+
+【通道二】无障碍元素动作 ExecuteAction（click/back/scroll）—— ❌ 当前不产生任何界面变化
+  · `ExecuteAction(0x10) on Stack#146 → ret=0` 但 nodes 126→126 / withText 7→7（evidence/62 [16a]）
+  · `ACTION_BACK(0x20000) on root#2 → ret=0`，零变化（[16b]）
+  · `ACTION_SCROLL_FORWARD(0x100) on List#45 → ret=0`，零变化（[16c]，且该元素 box=[0,0,0,0]）
+  · 换到解锁后的界面复测（SwiperIndicator#90 / root#0）→ 同样 ret=0 零变化（evidence/65 [19c]/[19d]）
+  · 结论：这条 "UITest ability" 通道**受理动作但界面不变**。枚举里存在
+    4007 RET_ERR_INVALID_ELEMENT_INFO_FROM_ACE / 4008 RET_ERR_PERFORM_ACTION_FAILED_BY_ACE，
+    而实测回 0 → 疑似"异步受理、结果走回调（本探针未实现回调）"，或该通道仅授予读能力。
+    待判别实验（留给 S7-3 或真机）：① 先 SetTargetBundleName 指定目标 bundle 再 ExecuteAction；
+    ② 查该通道的能力登记（gesture 已被 4006 证明受限）。
+  · **纪律**：ret=0 不能当成功；一切以"界面确实变化"为判据。
+
+【通道三】无障碍手势 InjectGesture —— ❌ ret=4006 = RET_ERR_NO_CAPABILITY
+  · `InjectGesture (512,600)->(512,200) 300ms → ret=4006`（evidence/62 [16d]）
+  · 说明这条通道没有 gesture 能力登记（与通道二"只读"的判断一致）
+
+【通道四】拉起 Ability（aa / AMS）—— ❌ 本环境不可用，且真因是"包名/ability 不存在"
+  · `aa start -a MainAbility -b com.ohos.settings` → **10104001** The specified ability does not exist（evidence/66 [20a]）
+  · `aa start -b com.ohos.settings` → **10103601** The specified bundleName does not exist（evidence/67 [21a]）
+  · `bm dump -a` → "failed to get information and the parameters may be wrong"（evidence/68 [22a]）
+  · 但 `ls /system/app` 里 com.ohos.settings / com.ohos.launcher **目录存在**（[22b]）
+  · 结论：**本 qemu 产品的 bundle manager / aa 路径当前不可用**（与 S6-1 的 AMS 对 system caller 返 22 一致）。
+    注意历史坑：`aa` 命令的 **shell 退出码是 0**，必须看它打印的 Error Code（FIX-90/91 已记）
+
+【对 S7-2-A / S7-3 的直接影响（设计调整，已获方向确认）】
+  1. **executor 定为"坐标注入"**：SA 产出元素级意图 {action:click, a11yId}，执行时用**刚读到的元素 box 中心**
+     发坐标注入。这不是盲点坐标 —— 坐标来自感知（Computer Use 的标准模式）。
+     两条实现路径：E1 驱动侧 uitest（零新依赖，先做）；E2 SA 内 MMI 注入（+libmmi-client，后做）
+  2. **a11y 元素动作暂不列为执行路径**（保留为待判别的备选实验）
+  3. **Demo 目标需要调整**：本环境"打开设置"无可用通道 → 第一个闭环改用**已被证明可用的动作**
+     （解锁 / 展开通知栏 / 收起通知栏），先证明 Agent Loop 本身能跑通（这正是 S7-2-A 的目标）

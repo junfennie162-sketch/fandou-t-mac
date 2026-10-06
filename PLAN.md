@@ -78,6 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
+- **S7-2-0（无障碍动作可行性验证）✅ 已完成**（`evidence/62..68`；跨轮汇总见 `evidence/69-s7-2-0-conclusion.txt`）
+  四条执行通道的实测结论（全部真错误码，不猜）：
+  · **输入注入 `uitest uiInput` = ✅ 唯一可用**：解锁 swipe、下拉通知栏、收起通知栏 三次独立实验
+    都真的改变了界面（窗口列表 + 节点/文本计数变化）
+  · **a11y 元素动作 `ExecuteAction`（click/back/scroll）= ❌ 受理但不生效**：两次不同界面 × 3 种动作
+    全部 `ret=0` 且零变化 → **ret=0 不能当成功**，判据只能是"界面确实变化"
+  · **a11y 手势 `InjectGesture` = ❌ 4006 `RET_ERR_NO_CAPABILITY`**（该通道无 gesture 能力登记）
+  · **拉起 Ability（aa/AMS）= ❌ 本环境不可用**：`10104001`（ability 不存在）/`10103601`（bundleName 不存在），
+    `bm dump -a` 亦报参数错；**注意 `aa` 的 shell 退出码是 0，必须看它打印的 Error Code**
+  → **设计调整（已确认）**：① executor 定为**坐标注入**，坐标来自**刚读到的元素 box 中心**（感知驱动，非盲猜）；
+    ② a11y 元素动作降为"待判别备选"（先试 `SetTargetBundleName` 再 ExecuteAction）；
+    ③ **第一个闭环的目标从"打开设置"改为本环境可用的动作**（解锁 / 通知栏展开收起），先把 Agent Loop 跑通 —— 即 S7-2-A。
+
 - **Phase 3 = S7-1b ✅ 已完成**（`evidence/61`，SA 的 `ReadScreen`，感知方向，独立 IDL 方法）
   判据（全是跨 IPC 的真返回值）：
   1. **准入双证明**：白名单不含调用方 → **201**；恢复默认档位 → **ErrCode=0**（与其它方法同一套门）；

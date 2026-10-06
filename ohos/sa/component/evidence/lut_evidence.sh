@@ -262,6 +262,32 @@ com.ohos.camera
   /system/bin/lut_a11y_dump
   echo "  exit=$?"
 
+  echo "--- [21] S7-2-0f 执行通道定案：aa 正解 + 通知栏收起 + 设置界面采样 ---"
+  echo "  [20a] 已证：aa start -a MainAbility 报 10104001（ability 不存在）——之前 exit=0 是 shell 退出码"
+  echo "[21a] aa 正解：只给 bundle（由系统挑 entry ability）+ 查真实 ability 名对照"
+  bm dump -n com.ohos.settings 2>/dev/null | grep -oE '"name": *"[^"]*Ability[^"]*"' | head -4
+  /system/bin/aa start -b com.ohos.settings 2>&1 | head -6
+  sleep 3
+  echo "[21b] 拉起后读屏（期望：出现设置界面的窗口/文本）"
+  /system/bin/lut_sa_client --screen 0
+  echo "[21c] 采样设置界面元素树（真实文本 → 规则表输入，不猜）"
+  /system/bin/lut_a11y_dump
+  echo "  exit=$?"
+  echo "[21d] 收起通知栏/回到桌面（坐标上滑）"
+  /system/bin/uitest uiInput swipe 512 500 512 50 300; echo "  exit=$?"
+  sleep 2
+  /system/bin/lut_sa_client --screen 0
+
+  echo "--- [22] S7-2-0g 真实包名：aa 失败的真因是包名不存在（10103601）---"
+  echo "  动机：内置意图表里的 com.ohos.settings 是"猜测值"，aa 报 10103601 bundle 不存在"
+  echo "[22a] 已安装 bundle 列表（前 20 个）+ 名称里含 settings/launcher 的"
+  bm dump -a 2>/dev/null | head -20
+  bm dump -a 2>/dev/null | grep -iE "settings|launcher|phone" | head -8
+  echo "[22b] 系统里预装的 settings/launcher 目录（镜像侧对照）"
+  ls /system/app 2>/dev/null | grep -iE "settings|launcher" | head -6
+  echo "[22c] bm 用法确认（-n 参数到底要什么）"
+  bm dump -h 2>&1 | head -10
+
 
 
   echo "--- [7] 调用方准入（S5-1）：默认档位 vs 白名单（同一进程、不重启 SA）---"
