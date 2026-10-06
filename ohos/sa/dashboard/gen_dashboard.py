@@ -202,7 +202,8 @@ def facts(ev: Evidence):
         'PASS' if m and m.group(1) == '0' else 'PARTIAL', '引擎壳 diag：NaN/Inf 计数为 0')
 
     # ── 感知链路各段 + 截图段
-    m, src, _ = ev.query(r'ps\(accessib\):\s*(\S+)', names=['59-sa-action-grant.txt'])
+    # 注意：evidence/59 的 [12] 段被打包截断，但 60/61 里有 ps(accessib) 行 → 全库检索
+    m, src, _ = ev.query(r'ps\(accessib\):\s*(.{0,60})')
     put('v.a11y_service', 'Accessibility Service 存活', m.group(1) if m else '未找到', src,
         'PASS' if m else 'ABSENT', 'evidence/59 [12] 侦察段 ps 输出含 accessibility 进程')
     m, src, _ = ev.query(r'verdict=(TREE-OK-WITH-TEXT)', names=['60-s7-1a-a11y-probe.txt'])

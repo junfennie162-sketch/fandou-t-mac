@@ -19,7 +19,7 @@
 <div class="panel"><h3>Pipeline</h3><div class="chain">
 <div class="node"><b>System Screen</b>1024×768 锁屏<br><span class="src">[15] 段=False · lut_screen.png 提及 0 次</span> <span class="chip no">ABSENT</span></div>
 <span class="arrow">→</span>
-<div class="node"><b>Accessibility Service</b>SA 801 存活<br><span class="src">未找到</span> <span class="chip no">ABSENT</span></div>
+<div class="node"><b>Accessibility Service</b>SA 801 存活<br><span class="src">accessibility  298     1 1 23:16:41 ?     00:00:00 accessibi</span> <span class="chip ok">PASS</span></div>
 <span class="arrow">→</span>
 <div class="node"><b>Element Tree</b>AccessibilityUITestAbility<br><span class="src">lut_screen.cpp:142-177</span> <span class="chip ok">PASS</span></div>
 <span class="arrow">→</span>
@@ -285,4 +285,4 @@
 
 <h2>Perception 相关实测（含拒绝面与探针）</h2>
 <div class="panel"><table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">ReadScreen</td><td class="v">ErrCode=0 (budget=0)</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:520</td></tr><tr><td class="k">独立探针（不进 SA）拿树</td><td class="v">TREE-OK-WITH-TEXT</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/60-s7-1a-a11y-probe.txt:644</td></tr><tr><td class="k">ReadScreen 拒绝面（准入）</td><td class="v">ErrCode=201</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:511</td></tr></tbody></table></div>
-<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 4/6</footer></main></div></body></html>
+<footer>生成于 2026-10-06 22:58 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 4/6</footer></main></div></body></html>

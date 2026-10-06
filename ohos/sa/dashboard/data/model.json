@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-06 22:57",
+ "generated_at": "2026-10-06 22:58",
  "mode": "REPLAY",
  "sa_code_modified": false,
  "ipc_added": false,
@@ -196,9 +196,9 @@
   },
   "v.a11y_service": {
    "label": "Accessibility Service 存活",
-   "value": "未找到",
-   "source": null,
-   "status": "ABSENT",
+   "value": "accessibility  298     1 1 23:16:41 ?     00:00:00 accessibi",
+   "source": "evidence/61-s7-1b-read-screen.txt:269",
+   "status": "PASS",
    "basis": "evidence/59 [12] 侦察段 ps 输出含 accessibility 进程"
   },
   "m.ReadScreen.probe": {
