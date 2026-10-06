@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · SystemAbility Overview</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="" href="index.html">Architecture Overview</a></li>
+    <li><a class="on" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>Page 1 · SystemAbility Overview</h1>
+<p class="sub">这是系统级服务，不是普通 App：SA_ID / 进程身份 / 权限 / 运行时依赖 / 生命周期，全部来自注册文件与实测。</p>
+
+<div class="grid2">
+<div class="panel"><h3>Service identity</h3>
+  <div class="kv">
+    <div class="k">service</div><div class="v">LUT-SA · 端侧低比特 LLM 推理系统服务</div>
+    <div class="k">sa_id</div><div class="v">6901 <span class="src">lut_sa_ability.cpp:40,43</span></div>
+    <div class="k">libpath</div><div class="v">libtmac_sa.z.so <span class="src">sa_profile/lut_sa.json:5</span></div>
+    <div class="k">run-on-create / auto-restart</div><div class="v">true / true <span class="src">sa_profile/lut_sa.json:7-9</span></div>
+    <div class="k">process</div><div class="v">lut_sa <span class="src">etc/init/lut_sa.cfg:3</span></div>
+    <div class="k">uid / gid</div><div class="v">system / system <span class="src">lut_sa.cfg:6-7</span></div>
+    <div class="k">selinux</div><div class="v">u:r:compiler_service:s0 <span class="src">lut_sa.cfg:8</span></div>
+    <div class="k">start-mode / once</div><div class="v">boot / 0（常驻）<span class="src">lut_sa.cfg:9-10</span></div>
+  </div></div>
+<div class="panel"><h3>Declared permissions（init native token）</h3>
+  <div class="kv">
+    <div class="k">permission</div><div class="v">ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY<br>ohos.permission.QUERY_ACCESSIBILITY_ELEMENT</div>
+    <div class="k">permission_acls</div><div class="v">ohos.permission.INJECT_INPUT_EVENT <span class="src">（预留，代码未消费）</span></div>
+  </div>
+<p class="note">init 按 cfg 的 permission 构造 native token（GetAccessTokenId→SetSelfTokenID）；
+缺该项时 SA 内读屏返回 <span class="src">register_failed_ret_1005</span>（FIX-87 实测）。</p></div>
+</div>
+
+<h2>Runtime dependencies（链接面）</h2>
+<div class="panel">  <div class="kv">
+    <div class="k">static lib</div><div class="v">llama_engine, accessibleability.z, accessibility_common.z <span class="src">BUILD.gn:89-97</span></div>
+    <div class="k">external_deps</div><div class="v">safwk:system_ability_fwk, samgr:samgr_proxy, ipc:ipc_core, c_utils:utils, hilog:libhilog, ability_base:want <span class="src">BUILD.gn:63-72</span></div>
+  </div></div>
+
+<h2>Lifecycle & IPC（实测）</h2>
+<div class="panel"><table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">SA 注册/发布（samgr）</td><td class="v">SA:6901 publish result=1</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/11-sa-boot-traces.txt:7</td></tr><tr><td class="k">samgr 服务表登记</td><td class="v">未找到</td><td><span class="chip no">ABSENT</span></td><td class="src">None</td></tr><tr><td class="k">跨进程取到 SA 6901</td><td class="v">ok</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:15</td></tr><tr><td class="k">IPC 代理建立（iface_cast）</td><td class="v">ok</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:16</td></tr></tbody></table></div>
+
+<h2>Capability checklist</h2>
+<div class="panel"><table><thead><tr><th>能力</th><th>关键实测</th><th>状态</th><th>source</th></tr></thead><tbody>
+<tr><td class="k">IPC Service</td><td class="v">ErrCode=0 · ErrCode=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:17</td></tr>
+<tr><td class="k">LLM Inference</td><td class="v">ErrCode=0 · 338 ms · engine=ready · n_ctx=512 · threads=4 · infer=3</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:41</td></tr>
+<tr><td class="k">Screen Perception</td><td class="v">ErrCode=0 (budget=0) · nodes=13 texts=7</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:520</td></tr>
+<tr><td class="k">Action Interface</td><td class="v">契约 ErrCode=0 · 设备执行 ams_try=22</td><td><span class="chip ready">READY</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:53</td></tr>
+<tr><td class="k">Security Policy</td><td class="v">拒绝面 201 出现 25 次 · 放行面 ErrCode=0 存在（同一进程不重启） · model_mb=1 场景 24 次（超限 ErrCode=22）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:134</td></tr>
+</tbody></table>
+<p class="note">状态定义：PASS=有跨进程实测证据 · PARTIAL=部分路径可用 · READY=接口完备但端到端动作未发生 · ABSENT=无实现/无证据。</p></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 1/6</footer></main></div></body></html>

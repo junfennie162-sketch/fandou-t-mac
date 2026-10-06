@@ -1,0 +1,68 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · Agent Roadmap</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="" href="index.html">Architecture Overview</a></li>
+    <li><a class="" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="on" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>Page 5 · Agent Runtime Roadmap</h1>
+<p class="sub">四档分列，不伪装进度：<b>Completed</b> 必须有跨进程实测证据；<b>In Progress</b> 部分可用；
+<b>Next</b> 接口就位待落地；<b>Not Started</b> 以源码正则扫描命中数为证（0 = 无实现）。</p>
+
+<div class="grid2">
+<div class="panel"><h3>Completed</h3><table><tbody>
+<tr><td class="k">SystemAbility Host</td><td class="v">SA:6901 publish result=1</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">IPC Service</td><td class="v">ILutSa ×9 · ok</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">LLM Runtime</td><td class="v">engine=ready · n_ctx=512 · threads=4 · infer=3</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">Perception</td><td class="v">ErrCode=0 (budget=0)</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">Security Policy</td><td class="v">拒绝面 201 出现 25 次 · 放行面 ErrCode=0 存在（同一进程不重启）</td><td><span class="chip ok">PASS</span></td></tr>
+</tbody></table></div>
+<div class="panel"><h3>In Progress</h3><table><tbody>
+<tr><td class="k">理解层</td><td class="v">source:model 0 次 / source:keyword 20 次（全库统计）</td><td><span class="chip warn">PARTIAL</span></td></tr>
+<tr><td class="k">动作层</td><td class="v">契约 ErrCode=0 · 设备执行 ams_try=22</td><td><span class="chip ready">READY</span></td></tr>
+<tr><td class="k">文档/证据一致性</td><td class="v">5 项</td><td><span class="chip warn">PARTIAL</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="grid2">
+<div class="panel"><h3>Next（接口就位待落地）</h3><table><tbody>
+<tr><td class="k">元素级动作 / 手势注入</td><td class="v">源码命中 0 处</td><td><span class="chip no">ABSENT</span></td></tr>
+<tr><td class="k">真屏截图证据段 [15]</td><td class="v">[15] 段=False · lut_screen.png 提及 0 次</td><td><span class="chip no">ABSENT</span></td></tr>
+<tr><td class="k">SA 自述接口</td><td class="v">源码命中 0 处</td><td><span class="chip no">ABSENT</span></td></tr>
+</tbody></table></div>
+<div class="panel"><h3>Not Started（正则命中 = 0）</h3><table><tbody>
+<tr><td class="k">Planner</td><td class="v">源码命中 0 处</td><td><span class="chip no">ABSENT</span></td></tr>
+<tr><td class="k">闭环（动作后重新观察）</td><td class="v">源码命中 0 处</td><td><span class="chip no">ABSENT</span></td></tr>
+<tr><td class="k">多会话 / 并发</td><td class="v">源码命中 0 处</td><td><span class="chip no">ABSENT</span></td></tr>
+</tbody></table></div>
+</div>
+
+<h2>Agent chain（每条边的状态都来自证据）</h2>
+<div class="panel"><div class="chain">
+<div class="node"><b>Intent</b>话语 / 意图<br><span class="chip warn">PARTIAL</span><br><span class="src">source:model 0 次 / source:keyword 20 次（全库统计）</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Planner</b>下一步决策<br><span class="chip no">ABSENT</span><br><span class="src">源码命中 0 处</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Action</b>动作契约<br><span class="chip ready">READY</span><br><span class="src">契约 ErrCode=0 · 设备执行 ams_try=22</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>SA</b>SystemAbility<br><span class="chip ok">PASS</span><br><span class="src">6901 · 9 方法</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Device</b>真实界面变化<br><span class="chip no">ABSENT</span><br><span class="src">源码命中 0 处</span></div>
+</div>
+<p class="note">今天两条半链各自通、中间断开：① 话语→动作 JSON→（白名单门）→停；② 读屏→元素树 JSON→（准入门）→停。首尾相接才是 Agent。</p></div>
+
+<h2>Runbook（复现这一页的证据）</h2>
+<div class="panel"><pre>bash ohos/sa/intree/install_into_tree.sh /src/ohos &lt;repo&gt;/ohos/sa        # 装树（幂等）
+bash ohos/sa/intree/build_engine.sh /src/ohos &lt;tree&gt;/vendor/ohemu/lutsa # 编引擎静态库
+ninja -w dupbuild=warn -C &lt;out&gt; ohemu/lutsa/libtmac_sa.z.so lut_sa_client
+bash ohos/sa/intree/sta3_verify.sh                                      # 注镜像 + 冷启动 + 打包证据
+python3 ohos/sa/dashboard/gen_dashboard.py                             # 重新生成本页</pre>
+<p class="note">每个事实的 basis 见 <span class="src">ohos/sa/dashboard/data/model.json</span>。</p></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 5/6</footer></main></div></body></html>

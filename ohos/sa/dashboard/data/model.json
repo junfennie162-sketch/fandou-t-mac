@@ -1,0 +1,838 @@
+{
+ "generated_at": "2026-10-06 22:57",
+ "mode": "REPLAY",
+ "sa_code_modified": false,
+ "ipc_added": false,
+ "live": false,
+ "facts": {
+  "sa.publish": {
+   "label": "SA 注册/发布（samgr）",
+   "value": "SA:6901 publish result=1",
+   "source": "evidence/11-sa-boot-traces.txt:7",
+   "status": "PASS",
+   "basis": "evidence 中出现 \"Publish SA:6901 result:1\""
+  },
+  "sa.samgr_insert": {
+   "label": "samgr 服务表登记",
+   "value": "未找到",
+   "source": null,
+   "status": "ABSENT",
+   "basis": "evidence 中出现 \"SAMGR: insert SA:6901\""
+  },
+  "ipc.getsa": {
+   "label": "跨进程取到 SA 6901",
+   "value": "ok",
+   "source": "evidence/61-s7-1b-read-screen.txt:15",
+   "status": "PASS",
+   "basis": "客户端在另一进程 GetSystemAbility(6901) 成功"
+  },
+  "ipc.iface_cast": {
+   "label": "IPC 代理建立（iface_cast）",
+   "value": "ok",
+   "source": "evidence/61-s7-1b-read-screen.txt:16",
+   "status": "PASS",
+   "basis": "IRemoteObject → ILutSa 转型成功"
+  },
+  "m.NativeVersion": {
+   "label": "NativeVersion",
+   "value": "ErrCode=0",
+   "source": "evidence/61-s7-1b-read-screen.txt:17",
+   "status": "PASS",
+   "basis": "客户端打印 ErrCode=0"
+  },
+  "m.LoadModel": {
+   "label": "LoadModel",
+   "value": "ErrCode=0 · 338 ms",
+   "source": "evidence/61-s7-1b-read-screen.txt:20",
+   "status": "PASS",
+   "basis": "ErrCode=0 = 真加载成功；ErrCode=22 的样本是预期拒绝（形状表/坏路径/超配额）"
+  },
+  "m.Generate": {
+   "label": "Generate",
+   "value": "ErrCode=0",
+   "source": "evidence/61-s7-1b-read-screen.txt:21",
+   "status": "PASS",
+   "basis": "ErrCode=0 = 真出 token"
+  },
+  "m.Generate.det": {
+   "label": "Generate 确定性",
+   "value": "yes",
+   "source": "evidence/61-s7-1b-read-screen.txt:23",
+   "status": "PASS",
+   "basis": "客户端打印\"两次同 prompt 输出一致: yes\""
+  },
+  "m.Generate.nonconst": {
+   "label": "Generate 非常量",
+   "value": "Justice Nichija Nam brothersrodalandQL f",
+   "source": "evidence/61-s7-1b-read-screen.txt:24",
+   "status": "PASS",
+   "basis": "贪心换 prompt 后输出不同（非常量证明）"
+  },
+  "m.ReadScreen": {
+   "label": "ReadScreen",
+   "value": "ErrCode=0 (budget=0)",
+   "source": "evidence/61-s7-1b-read-screen.txt:520",
+   "status": "PASS",
+   "basis": "显式匹配成功面（ErrCode=0）；拒绝面单独列为 m.ReadScreen.denied（201）"
+  },
+  "m.GetMetrics": {
+   "label": "GetMetrics",
+   "value": "ErrCode=0",
+   "source": "evidence/61-s7-1b-read-screen.txt:71",
+   "status": "PASS",
+   "basis": "ErrCode=0（注意：该方法不设准入门）"
+  },
+  "m.SelfTest": {
+   "label": "SelfTest（调优内核暖机）",
+   "value": "m128-k3200 b2 · 调优内核 · 1442.6 us",
+   "source": "evidence/61-s7-1b-read-screen.txt:18",
+   "status": "PASS",
+   "basis": "暖机 PASS 且标注\"调优内核\" → 调优路径命中"
+  },
+  "m.SelfTest.ref": {
+   "label": "SelfTest（参考内核数值自检）",
+   "value": "k=8 bits=2 got=8.000 expect=8.0",
+   "source": "evidence/61-s7-1b-read-screen.txt:18",
+   "status": "PASS",
+   "basis": "参考核 got/expect 一致"
+  },
+  "m.Release": {
+   "label": "Release",
+   "value": "ErrCode=0",
+   "source": "evidence/61-s7-1b-read-screen.txt:27",
+   "status": "PASS",
+   "basis": "ErrCode=0"
+  },
+  "m.ExecuteAction": {
+   "label": "ExecuteAction（决策契约）",
+   "value": "契约 ErrCode=0 · 设备执行 ams_try=22",
+   "source": "evidence/61-s7-1b-read-screen.txt:53",
+   "status": "READY",
+   "basis": "契约实测 ErrCode=0（策略+JSON 契约可用），但设备执行 ams_try=22 → 真实拉起未发生"
+  },
+  "m.ExecuteIntent": {
+   "label": "ExecuteIntent（keyword 路径）",
+   "value": "ErrCode=0 且 source=keyword",
+   "source": "evidence/61-s7-1b-read-screen.txt:53",
+   "status": "PASS",
+   "basis": "关键词路径实测命中（同一行含 ErrCode 与 source 标注）"
+  },
+  "m.ExecuteIntent.model": {
+   "label": "ExecuteIntent（model 路径）",
+   "value": "source:model 0 次 / source:keyword 20 次（全库统计）",
+   "source": "evidence/*（grep 统计）",
+   "status": "ABSENT",
+   "basis": "全证据库 grep \"source\":\"model\" = 0 → 模型输出从未通过严格校验、从未被采纳"
+  },
+  "p.allow_uids": {
+   "label": "调用方准入（allow_uids.txt）",
+   "value": "拒绝面 201 出现 25 次 · 放行面 ErrCode=0 存在（同一进程不重启）",
+   "source": "evidence/61-s7-1b-read-screen.txt:134",
+   "status": "PASS",
+   "basis": "allow_uids 门的两面均由客户端可见信号判定：[14a] 白名单不含调用方 → 201；[14b] 恢复默认档位 → 0；（SA 侧 hilog 不进证据包，故不用 hilog 文本判定）"
+  },
+  "p.quota": {
+   "label": "配额（quota.txt）",
+   "value": "model_mb=1 场景 24 次（超限 ErrCode=22）",
+   "source": "evidence/48,59",
+   "status": "PASS",
+   "basis": "超限立即 22 且原因可读；删表恢复 0"
+  },
+  "p.actions_allow": {
+   "label": "动作白名单（actions_allow.txt）",
+   "value": "相关判据 57 处（未授权 bundle → 201）",
+   "source": "evidence/49,59,61",
+   "status": "PASS",
+   "basis": "正向授权与拒绝双证（camera 放行 0 / 收回 201）"
+  },
+  "p.intents": {
+   "label": "意图表（intents.txt）",
+   "value": "关键词命中 20 次",
+   "source": "evidence/52,61",
+   "status": "PASS",
+   "basis": "内置 7 条表 + 运行期可覆盖；命中后仍要过动作白名单"
+  },
+  "r.engine": {
+   "label": "引擎状态（SA 进程内）",
+   "value": "engine=ready · n_ctx=512 · threads=4 · infer=3",
+   "source": "evidence/61-s7-1b-read-screen.txt:41",
+   "status": "PASS",
+   "basis": "GetMetrics 的 engine= 字段（引擎在 SA 进程内就绪）"
+  },
+  "r.rss": {
+   "label": "SA 进程峰值内存",
+   "value": "1223.2 MB（全库最大）",
+   "source": "evidence/61-s7-1b-read-screen.txt:19",
+   "status": "PASS",
+   "basis": "GetMetrics 的 peak_rss"
+  },
+  "r.kcfg": {
+   "label": "kcfg 形状表命中",
+   "value": "sections=3",
+   "source": "evidence/61-s7-1b-read-screen.txt:590",
+   "status": "PASS",
+   "basis": "引擎启动时读到的 kcfg 段数 > 0 = 形状表可用"
+  },
+  "r.load_diag": {
+   "label": "引擎自报加载耗时",
+   "value": "13383 ms",
+   "source": "evidence/61-s7-1b-read-screen.txt:19",
+   "status": "PASS",
+   "basis": "引擎壳 diag（与客户端 wall time 对照）"
+  },
+  "r.admission": {
+   "label": "模型准入（加载前拦截）",
+   "value": "182 t-mac tensors, no LUT kernel for [blk.0.ffn_down.weight(m=3200,k=8640), blk.0.ffn_gate.weight(m=8640,k=320",
+   "source": "evidence/42-sa-real-inference-sta3.txt:26",
+   "status": "PASS",
+   "basis": "形状表不匹配 → 加载前拒绝（不打死 SA）；修复后同模型加载成功"
+  },
+  "r.diag_decode": {
+   "label": "prompt decode 数值健康度",
+   "value": "nan_or_inf=0",
+   "source": "evidence/61-s7-1b-read-screen.txt:26",
+   "status": "PASS",
+   "basis": "引擎壳 diag：NaN/Inf 计数为 0"
+  },
+  "v.a11y_service": {
+   "label": "Accessibility Service 存活",
+   "value": "未找到",
+   "source": null,
+   "status": "ABSENT",
+   "basis": "evidence/59 [12] 侦察段 ps 输出含 accessibility 进程"
+  },
+  "m.ReadScreen.probe": {
+   "label": "独立探针（不进 SA）拿树",
+   "value": "TREE-OK-WITH-TEXT",
+   "source": "evidence/60-s7-1a-a11y-probe.txt:644",
+   "status": "PASS",
+   "basis": "evidence/60 探针 verdict 行"
+  },
+  "m.ReadScreen.denied": {
+   "label": "ReadScreen 拒绝面（准入）",
+   "value": "ErrCode=201",
+   "source": "evidence/61-s7-1b-read-screen.txt:511",
+   "status": "PASS",
+   "basis": "白名单不含调用方 → 201（主准入层实测）"
+  },
+  "v.screenshot": {
+   "label": "真屏截图段 [15]",
+   "value": "[15] 段=False · lut_screen.png 提及 0 次",
+   "source": "evidence/*（grep）",
+   "status": "ABSENT",
+   "basis": "需要 evidence 同时出现 [15] 段与落盘 lut_screen.png（参数已修，待重跑）"
+  },
+  "d.drift": {
+   "label": "文档/证据一致性漂移",
+   "value": "5 项",
+   "source": "程序化检查（见 basis）",
+   "status": "PARTIAL",
+   "basis": "evidence/62 被文档引用但不存在（截图段 [15] 未落证据）；component/README.md 写\"6 个方法\"，IDL 实为 9 个；取证脚本 [13b] 硬编码窗口号过期 → [a11y] no window matched windowId=6（可用窗口: 7 4 5 10 3 ）；模型分类路径 0 次被采纳（source:model = 0）；证据编号撞车：45-* 共 2 份"
+  },
+  "a.planner": {
+   "label": "Planner（多步规划/状态机）",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 '\\\\bPlanner\\\\b|plan_next|next_action|planning_loop' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "a.closed_loop": {
+   "label": "闭环（动作后重新观察）",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 'ReReadScreen|verify_screen|closed_loop|act_then_observe' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "a.gesture": {
+   "label": "元素级动作/手势注入",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 'InjectGesture|->ExecuteAction\\\\(\\\\s*elem|\\\\.ExecuteAction\\\\(\\\\s*elem' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "a.coord_input": {
+   "label": "坐标/按键注入消费点",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 'INJECT_INPUT_EVENT' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "a.multisession": {
+   "label": "多会话（会话表/并发）",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 'multi_session|SessionTable|session_table|sessions\\\\[' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "a.selfdescribe": {
+   "label": "SA 自述接口（GetCapabilities/GetStats）",
+   "value": "源码命中 0 处",
+   "source": "ohos/sa/**（正则扫描）",
+   "status": "ABSENT",
+   "basis": "正则 'GetCapabilities|GetStats' 在 ohos/sa 源码命中 0 次 → 无实现"
+  },
+  "repo.submodule": {
+   "label": "3rdparty/llama.cpp（引擎源码可复现性）",
+   "value": "HEAD=181ad23af697 · 可达 ref 0 个",
+   "source": "3rdparty/llama.cpp/.git → HEAD + refs（程序化比对）",
+   "status": "PARTIAL",
+   "basis": "HEAD 不在任何本地 ref 中（detached）→ 重新克隆无法复现当前引擎源码"
+  },
+  "cap.ipc": {
+   "label": "IPC Service",
+   "value": "子项 7：PASS/PASS/PASS/PASS/PASS/PASS/PASS",
+   "source": "（聚合事实，见 basis）",
+   "status": "PASS",
+   "basis": "六个推理/只读方法 + 读屏均 ErrCode=0；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.llm": {
+   "label": "LLM Inference",
+   "value": "子项 4：PASS/PASS/PASS/PASS",
+   "source": "（聚合事实，见 basis）",
+   "status": "PASS",
+   "basis": "引擎就绪 + 真加载 + 真出 token + 内核暖机 PASS；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.exec": {
+   "label": "Action Interface",
+   "value": "子项 1：READY",
+   "source": "（聚合事实，见 basis）",
+   "status": "READY",
+   "basis": "设备执行维度；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.policy": {
+   "label": "Security Policy",
+   "value": "子项 4：PASS/PASS/PASS/PASS",
+   "source": "（聚合事实，见 basis）",
+   "status": "PASS",
+   "basis": "四道门均有 0 与 201/22 双面实测；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.perception": {
+   "label": "Screen Perception",
+   "value": "子项 1：PASS",
+   "source": "（聚合事实，见 basis）",
+   "status": "PASS",
+   "basis": "读屏实测；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.understanding": {
+   "label": "Understanding",
+   "value": "子项 2：PASS/ABSENT",
+   "source": "（聚合事实，见 basis）",
+   "status": "PARTIAL",
+   "basis": "关键词路径通、模型路径从未被采纳；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.ai_foundation": {
+   "label": "AI Foundation",
+   "value": "子项 4：PASS/PASS/READY/ABSENT",
+   "source": "（聚合事实，见 basis）",
+   "status": "PARTIAL",
+   "basis": "感知+意图+动作契约齐备、决策层缺失；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  },
+  "cap.agent_runtime": {
+   "label": "Agent Runtime",
+   "value": "子项 2：ABSENT/ABSENT",
+   "source": "（聚合事实，见 basis）",
+   "status": "ABSENT",
+   "basis": "决策与闭环；聚合规则：全 PASS→PASS，全 ABSENT→ABSENT，混合→PARTIAL，否则取最弱者"
+  }
+ },
+ "static": {
+  "methods": [
+   [
+    "NativeVersion",
+    ""
+   ],
+   [
+    "LoadModel",
+    "[in] String path, [in] int threads, [in] int nCtx"
+   ],
+   [
+    "Generate",
+    "[in] String prompt, [in] int nPredict, [in] double temp, [in] int topK"
+   ],
+   [
+    "GetMetrics",
+    ""
+   ],
+   [
+    "SelfTest",
+    ""
+   ],
+   [
+    "Release",
+    ""
+   ],
+   [
+    "ExecuteAction",
+    "[in] String action, [in] String arg"
+   ],
+   [
+    "ExecuteIntent",
+    "[in] String utterance"
+   ],
+   [
+    "ReadScreen",
+    "[in] int maxNodes"
+   ]
+  ],
+  "permissions": [
+   "ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY",
+   "ohos.permission.QUERY_ACCESSIBILITY_ELEMENT"
+  ],
+  "permission_acls": [
+   "ohos.permission.INJECT_INPUT_EVENT"
+  ],
+  "libs": [
+   "llama_engine",
+   "accessibleability.z",
+   "accessibility_common.z"
+  ],
+  "external_deps": [
+   "safwk:system_ability_fwk",
+   "samgr:samgr_proxy",
+   "ipc:ipc_core",
+   "c_utils:utils",
+   "hilog:libhilog",
+   "ability_base:want"
+  ],
+  "kcfg_lines": 31,
+  "kernels_cc_bytes": 72793
+ },
+ "perception": {
+  "source": "evidence/61-s7-1b-read-screen.txt:521",
+  "screen": {
+   "ok": 1,
+   "connected": 1,
+   "user": 100,
+   "elapsed_ms": 677,
+   "getwin_ret": 0,
+   "budget": 40,
+   "truncated": 0,
+   "windows": [
+    {
+     "id": 7,
+     "type": 2110,
+     "layer": 5
+    },
+    {
+     "id": 4,
+     "type": 2112,
+     "layer": 4
+    },
+    {
+     "id": 5,
+     "type": 2111,
+     "layer": 3
+    },
+    {
+     "id": 10,
+     "type": 2108,
+     "layer": 2
+    },
+    {
+     "id": 3,
+     "type": 2001,
+     "layer": 1
+    }
+   ],
+   "counts": {
+    "nodes": 13,
+    "withText": 7,
+    "clickable": 6
+   },
+   "nodes": [
+    {
+     "d": 6,
+     "win": 7,
+     "a11yId": 83,
+     "type": "Text",
+     "text": "上滑解锁",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      493,
+      168,
+      546,
+      183
+     ]
+    },
+    {
+     "d": 6,
+     "win": 7,
+     "a11yId": 85,
+     "type": "Text",
+     "text": "23:17",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      428,
+      200,
+      596,
+      279
+     ]
+    },
+    {
+     "d": 7,
+     "win": 7,
+     "a11yId": 89,
+     "type": "Text",
+     "text": "2026年10月5日",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      428,
+      282,
+      546,
+      302
+     ]
+    },
+    {
+     "d": 7,
+     "win": 7,
+     "a11yId": 90,
+     "type": "Text",
+     "text": "星期一",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      546,
+      282,
+      597,
+      302
+     ]
+    },
+    {
+     "d": 7,
+     "win": 7,
+     "a11yId": 92,
+     "type": "Text",
+     "text": "丙午年八月廿五",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      466,
+      309,
+      558,
+      327
+     ]
+    },
+    {
+     "d": 8,
+     "win": 7,
+     "a11yId": 59,
+     "type": "Text",
+     "text": "没有 SIM 卡",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      22,
+      8,
+      82,
+      21
+     ]
+    },
+    {
+     "d": 8,
+     "win": 7,
+     "a11yId": 73,
+     "type": "Text",
+     "text": "100%",
+     "click": 0,
+     "vis": 1,
+     "box": [
+      951,
+      8,
+      980,
+      21
+     ]
+    },
+    {
+     "d": 3,
+     "win": 10,
+     "a11yId": 146,
+     "type": "Stack",
+     "text": "",
+     "click": 1,
+     "vis": 1,
+     "box": [
+      0,
+      0,
+      1024,
+      57
+     ]
+    },
+    {
+     "d": 2,
+     "win": 3,
+     "a11yId": 19,
+     "type": "Stack",
+     "text": "",
+     "click": 1,
+     "vis": 0,
+     "box": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "d": 5,
+     "win": 3,
+     "a11yId": 25,
+     "type": "Text",
+     "text": "",
+     "click": 1,
+     "vis": 1,
+     "box": [
+      368,
+      131,
+      655,
+      131
+     ]
+    },
+    {
+     "d": 5,
+     "win": 3,
+     "a11yId": 27,
+     "type": "Swiper",
+     "text": "",
+     "click": 1,
+     "vis": 1,
+     "box": [
+      368,
+      178,
+      655,
+      629
+     ]
+    },
+    {
+     "d": 6,
+     "win": 3,
+     "a11yId": 29,
+     "type": "SwiperIndicator",
+     "text": "",
+     "click": 1,
+     "vis": 1,
+     "box": [
+      500,
+      599,
+      523,
+      629
+     ]
+    },
+    {
+     "d": 7,
+     "win": 3,
+     "a11yId": 90,
+     "type": "SwiperIndicator",
+     "text": "",
+     "click": 1,
+     "vis": 1,
+     "box": [
+      493,
+      627,
+      530,
+      657
+     ]
+    }
+   ]
+  }
+ },
+ "evidence_index": [
+  {
+   "file": "00-hdc-targets.txt",
+   "bytes": 16,
+   "lines": 2
+  },
+  {
+   "file": "01-device-info.txt",
+   "bytes": 241,
+   "lines": 6
+  },
+  {
+   "file": "02-bm-dump.txt",
+   "bytes": 543,
+   "lines": 14
+  },
+  {
+   "file": "03-ps.txt",
+   "bytes": 231,
+   "lines": 5
+  },
+  {
+   "file": "04-hilog-kernel.txt",
+   "bytes": 2162,
+   "lines": 22
+  },
+  {
+   "file": "04-ps-lut_sa.txt",
+   "bytes": 248,
+   "lines": 6
+  },
+  {
+   "file": "05-files.txt",
+   "bytes": 281,
+   "lines": 6
+  },
+  {
+   "file": "05-hilog-full.txt",
+   "bytes": 2139,
+   "lines": 22
+  },
+  {
+   "file": "11-sa-boot-traces.txt",
+   "bytes": 1150,
+   "lines": 17
+  },
+  {
+   "file": "12-console-evidence.txt",
+   "bytes": 1267,
+   "lines": 34
+  },
+  {
+   "file": "21-ipc-call-traces.txt",
+   "bytes": 519,
+   "lines": 10
+  },
+  {
+   "file": "22-console-evidence-ipc.txt",
+   "bytes": 2562,
+   "lines": 43
+  },
+  {
+   "file": "31-console-evidence-tuned.txt",
+   "bytes": 3750,
+   "lines": 51
+  },
+  {
+   "file": "32-tuned-kernel-call-traces.txt",
+   "bytes": 648,
+   "lines": 7
+  },
+  {
+   "file": "33-tuned-kernel-symbols.txt",
+   "bytes": 337,
+   "lines": 7
+  },
+  {
+   "file": "34-avx2-instruction-count.txt",
+   "bytes": 2,
+   "lines": 2
+  },
+  {
+   "file": "40-sa-stability-6rounds.txt",
+   "bytes": 976,
+   "lines": 25
+  },
+  {
+   "file": "41-sa-robustness-sta2.txt",
+   "bytes": 1925,
+   "lines": 32
+  },
+  {
+   "file": "42-sa-real-inference-sta3.txt",
+   "bytes": 11685,
+   "lines": 141
+  },
+  {
+   "file": "43-sa-tmac-kcfg-path-fix.txt",
+   "bytes": 10391,
+   "lines": 83
+  },
+  {
+   "file": "44-sa-tmac-logits-diag.txt",
+   "bytes": 5434,
+   "lines": 71
+  },
+  {
+   "file": "45-sa-tmac-kcfg-pair-fix.txt",
+   "bytes": 4985,
+   "lines": 69
+  },
+  {
+   "file": "45-sa-tmac-kcfg-staging-16.txt",
+   "bytes": 13270,
+   "lines": 131
+  },
+  {
+   "file": "46-sa-tmac-default-path.txt",
+   "bytes": 44268,
+   "lines": 72
+  },
+  {
+   "file": "47-sa-caller-admission.txt",
+   "bytes": 21249,
+   "lines": 171
+  },
+  {
+   "file": "48-sa-quota.txt",
+   "bytes": 31479,
+   "lines": 211
+  },
+  {
+   "file": "49-sa-action-exec.txt",
+   "bytes": 26341,
+   "lines": 231
+  },
+  {
+   "file": "50-sa-action-params.txt",
+   "bytes": 15578,
+   "lines": 120
+  },
+  {
+   "file": "51-sa-action-json.txt",
+   "bytes": 16364,
+   "lines": 111
+  },
+  {
+   "file": "52-sa-intent.txt",
+   "bytes": 11108,
+   "lines": 147
+  },
+  {
+   "file": "53-sa-intent-model.txt",
+   "bytes": 10413,
+   "lines": 147
+  },
+  {
+   "file": "54-sa-intent-model2.txt",
+   "bytes": 23403,
+   "lines": 246
+  },
+  {
+   "file": "55-sa-intent-model3.txt",
+   "bytes": 26127,
+   "lines": 253
+  },
+  {
+   "file": "56-sa-intent-diag.txt",
+   "bytes": 26422,
+   "lines": 253
+  },
+  {
+   "file": "57-sa-intent-diag2.txt",
+   "bytes": 23045,
+   "lines": 222
+  },
+  {
+   "file": "58-sa-engine-persist.txt",
+   "bytes": 25559,
+   "lines": 253
+  },
+  {
+   "file": "59-sa-action-grant.txt",
+   "bytes": 20232,
+   "lines": 226
+  },
+  {
+   "file": "60-s7-1a-a11y-probe.txt",
+   "bytes": 63990,
+   "lines": 750
+  },
+  {
+   "file": "61-s7-1b-read-screen.txt",
+   "bytes": 55063,
+   "lines": 648
+  }
+ ]
+}

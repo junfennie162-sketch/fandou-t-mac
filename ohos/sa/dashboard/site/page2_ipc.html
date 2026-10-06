@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · IPC Capability</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="" href="index.html">Architecture Overview</a></li>
+    <li><a class="" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="on" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>Page 2 · IPC Capability（ILutSa）</h1>
+<p class="sub">描述符 <span class="src">u"OHOS.LutSa.ILutSa"</span>（idl/ilut_sa.h:27）· 事务码枚举 <span class="src">idl/ilut_sa.h:11-23</span> ·
+应答 = Int32 errCode（成功才追加 String16）。共 9 个方法。</p>
+<div class="panel"><table><thead><tr><th>Method</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead>
+<tbody><tr><td class="k">NativeVersion</td><td class="v">ErrCode=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:17</td></tr><tr><td class="k">LoadModel</td><td class="v">ErrCode=0 · 338 ms</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:20</td></tr><tr><td class="k">Generate</td><td class="v">ErrCode=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:21</td></tr><tr><td class="k">GetMetrics</td><td class="v">ErrCode=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:71</td></tr><tr><td class="k">SelfTest</td><td class="v">m128-k3200 b2 · 调优内核 · 1442.6 us</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:18</td></tr><tr><td class="k">Release</td><td class="v">ErrCode=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:27</td></tr><tr><td class="k">ExecuteAction</td><td class="v">契约 ErrCode=0 · 设备执行 ams_try=22</td><td><span class="chip ready">READY</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:53</td></tr><tr><td class="k">ExecuteIntent</td><td class="v">ErrCode=0 且 source=keyword</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:53</td></tr><tr><td class="k">ReadScreen</td><td class="v">ErrCode=0 (budget=0)</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:520</td></tr></tbody></table>
+<p class="note">ExecuteAction 两个维度：<b>决策契约</b>=READY（策略与 JSON 契约实测）·
+<b>设备执行</b>=ams_try 22（未发生）。</p></div>
+
+<h2>Call chain（跨进程）</h2>
+<div class="panel"><pre>lut_sa_client.cpp:99-123   samgr-&gt;GetSystemAbility(6901) + iface_cast
+        ↓  (binder / IPC)
+lut_sa_stub.cpp:17-140     ReadInterfaceToken 校验 → 按事务码分派
+        ↓
+lut_sa_ability.cpp:266+    InferAllowed 准入 → 业务实现
+        ↓
+lut_sa.cpp / lut_screen.cpp / engine_shim.cc</pre></div>
+
+<h2>方法详情</h2>
+<details><summary>NativeVersion() <span class="src">evidence/61-s7-1b-read-screen.txt:17</span></summary><pre>请求：InterfaceToken + （无参数）
+应答：errCode + result
+状态依据：客户端打印 ErrCode=0</pre></details><details><summary>LoadModel([in] String path, [in] int threads, [in] int nCtx) <span class="src">evidence/61-s7-1b-read-screen.txt:20</span></summary><pre>请求：InterfaceToken + [in] String path, [in] int threads, [in] int nCtx
+应答：errCode（仅 errCode）
+状态依据：ErrCode=0 = 真加载成功；ErrCode=22 的样本是预期拒绝（形状表/坏路径/超配额）</pre></details><details><summary>Generate([in] String prompt, [in] int nPredict, [in] double temp, [in] int topK) <span class="src">evidence/61-s7-1b-read-screen.txt:21</span></summary><pre>请求：InterfaceToken + [in] String prompt, [in] int nPredict, [in] double temp, [in] int topK
+应答：errCode + result
+状态依据：ErrCode=0 = 真出 token</pre></details><details><summary>GetMetrics() <span class="src">evidence/61-s7-1b-read-screen.txt:71</span></summary><pre>请求：InterfaceToken + （无参数）
+应答：errCode + result
+状态依据：ErrCode=0（注意：该方法不设准入门）</pre></details><details><summary>SelfTest() <span class="src">evidence/61-s7-1b-read-screen.txt:18</span></summary><pre>请求：InterfaceToken + （无参数）
+应答：errCode + result
+状态依据：暖机 PASS 且标注"调优内核" → 调优路径命中</pre></details><details><summary>Release() <span class="src">evidence/61-s7-1b-read-screen.txt:27</span></summary><pre>请求：InterfaceToken + （无参数）
+应答：errCode + result
+状态依据：ErrCode=0</pre></details><details><summary>ExecuteAction([in] String action, [in] String arg) <span class="src">evidence/61-s7-1b-read-screen.txt:53</span></summary><pre>请求：InterfaceToken + [in] String action, [in] String arg
+应答：errCode + result
+状态依据：契约实测 ErrCode=0（策略+JSON 契约可用），但设备执行 ams_try=22 → 真实拉起未发生</pre></details><details><summary>ExecuteIntent([in] String utterance) <span class="src">evidence/61-s7-1b-read-screen.txt:53</span></summary><pre>请求：InterfaceToken + [in] String utterance
+应答：errCode + result
+状态依据：关键词路径实测命中（同一行含 ErrCode 与 source 标注）</pre></details><details><summary>ReadScreen([in] int maxNodes) <span class="src">evidence/61-s7-1b-read-screen.txt:520</span></summary><pre>请求：InterfaceToken + [in] int maxNodes
+应答：errCode + result
+状态依据：显式匹配成功面（ErrCode=0）；拒绝面单独列为 m.ReadScreen.denied（201）</pre></details>
+
+<h2>准入策略（四道门）</h2>
+<div class="panel"><table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">调用方准入（allow_uids.txt）</td><td class="v">拒绝面 201 出现 25 次 · 放行面 ErrCode=0 存在（同一进程不重启）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:134</td></tr><tr><td class="k">配额（quota.txt）</td><td class="v">model_mb=1 场景 24 次（超限 ErrCode=22）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/48,59</td></tr><tr><td class="k">动作白名单（actions_allow.txt）</td><td class="v">相关判据 57 处（未授权 bundle → 201）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/49,59,61</td></tr><tr><td class="k">意图表（intents.txt）</td><td class="v">关键词命中 20 次</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/52,61</td></tr></tbody></table></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 2/6</footer></main></div></body></html>

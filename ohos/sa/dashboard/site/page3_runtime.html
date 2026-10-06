@@ -1,0 +1,92 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · LLM Runtime</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="" href="index.html">Architecture Overview</a></li>
+    <li><a class="" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="on" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>Page 3 · LLM Runtime（SA 进程内）</h1>
+<p class="sub">LLM 不是外部 API：llama.cpp 与 t-mac LUT 内核以<b>静态库</b>编入 SA 进程（libtmac_sa.z.so）；
+加载 / 推理 / 释放全在 SA 内完成，证据是进程内 GetMetrics 与引擎日志。</p>
+
+<div class="grid2">
+<div class="panel"><h3>Backend</h3>  <div class="kv">
+    <div class="k">backend</div><div class="v">llama.cpp（源：3rdparty/llama.cpp）<span class="src">build_engine.sh:77-83</span></div>
+    <div class="k">compiler</div><div class="v">OH 树自带 clang · target x86_64-linux-ohos <span class="src">build_engine.sh:22-43</span></div>
+    <div class="k">flags</div><div class="v">-fexceptions（C 与 C++）· -O2 -fPIC -DGGML_USE_TMAC <span class="src">build_engine.sh:60-99</span></div>
+    <div class="k">link</div><div class="v">llama_engine, accessibleability.z, accessibility_common.z <span class="src">BUILD.gn:89-97</span></div>
+  </div></div>
+<div class="panel"><h3>Optimization · t-mac LUT</h3>  <div class="kv">
+    <div class="k">kernel pair</div><div class="v">ohos/staging-x64/t-mac/lib/kernels.cc（72,793 B）+ kcfg.ini（31 行）</div>
+    <div class="k">kcfg sections</div><div class="v">sections=3 <span class="src">evidence/61-s7-1b-read-screen.txt:590</span></div>
+    <div class="k">ref kernel</div><div class="v">ref_kernel（便携标量，仅 SelfTest 数值锚点）<span class="src">ref_kernel/lut_kernel_ref.cpp:135-182</span></div>
+    <div class="k">dispatch</div><div class="v">精确形状匹配 (M×bits,k,n,b) <span class="src">ref_kernel/t-mac/tmac_gemm_wrapper.h:25-44</span></div>
+  </div></div>
+</div>
+
+<div class="grid3">
+<div class="panel"><h3>Model</h3>  <div class="kv">
+    <div class="k">format</div><div class="v">GGUF · mmap</div>
+    <div class="k">path</div><div class="v">/data/local/tmp/model.gguf</div>
+    <div class="k">size</div><div class="v">1,012,845,664 B（仓外）</div>
+  </div></div>
+<div class="panel"><h3>Context</h3>  <div class="kv">
+    <div class="k">n_ctx / batch</div><div class="v">512 / 512 <span class="src">lut_sa.h:18-23</span></div>
+    <div class="k">threads</div><div class="v">4 <span class="src">engine_shim.cc:260-279</span></div>
+    <div class="k">KV / flash_attn</div><div class="v">f16 / false</div>
+  </div></div>
+<div class="panel"><h3>Measured</h3>  <div class="kv">
+    <div class="k">engine</div><div class="v">engine=ready · n_ctx=512 · threads=4 · infer=3</div>
+    <div class="k">peak RSS</div><div class="v">1223.2 MB（全库最大）</div>
+    <div class="k">load diag</div><div class="v">13383 ms</div>
+  </div></div>
+</div>
+
+<h2>Load sequence（客户端 wall time）</h2>
+<div class="panel"><table><thead><tr><th>模型</th><th>ErrCode</th><th>ms</th><th>source</th></tr></thead>
+<tbody><tr><td class="src">model.gguf</td><td class="v">0</td><td class="v">338</td><td class="src">evidence/61-s7-1b-read-screen.txt:20</td></tr><tr><td class="src">model.gguf</td><td class="v">0</td><td class="v">—</td><td class="src">evidence/61-s7-1b-read-screen.txt:51</td></tr><tr><td class="src">model.gguf</td><td class="v">0</td><td class="v">—</td><td class="src">evidence/61-s7-1b-read-screen.txt:82</td></tr><tr><td class="src">model.gguf</td><td class="v">22</td><td class="v">36</td><td class="src">evidence/42-sa-real-inference-sta3.txt:20</td></tr><tr><td class="src">qwen.gguf</td><td class="v">0</td><td class="v">5114</td><td class="src">evidence/42-sa-real-inference-sta3.txt:42</td></tr></tbody></table>
+<p class="note">ErrCode=22 的样本是<b>预期拒绝</b>（形状表不匹配 / 坏路径 / 超配额）——见 Admission。</p></div>
+
+<h2>Inference（真出 token）</h2>
+<div class="panel"><table><thead><tr><th>#</th><th>场景</th><th>ErrCode</th><th>输出</th><th>source</th></tr></thead>
+<tbody><tr><td class="k">#1</td><td class="v">sampling</td><td class="v">22</td><td class="v">—</td><td class="src">evidence/42-sa-real-inference-sta3.txt:21</td></tr><tr><td class="k">#2</td><td class="v">同 prompt 复现</td><td class="v">22</td><td class="v">—</td><td class="src">evidence/42-sa-real-inference-sta3.txt:22</td></tr><tr><td class="k">#3</td><td class="v">贪心/换 prompt</td><td class="v">22</td><td class="v">—</td><td class="src">evidence/42-sa-real-inference-sta3.txt:24</td></tr><tr><td class="k">#1</td><td class="v">sampling</td><td class="v">0</td><td class="v">____</td><td class="src">evidence/42-sa-real-inference-sta3.txt:43</td></tr></tbody></table>
+<table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">Generate 确定性</td><td class="v">yes</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:23</td></tr><tr><td class="k">Generate 非常量</td><td class="v">Justice Nichija Nam brothersrodalandQL f</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:24</td></tr></tbody></table></div>
+
+<h2>Admission（加载前拦截 · 不打死 SA）</h2>
+<div class="panel"><table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">模型准入（加载前拦截）</td><td class="v">182 t-mac tensors, no LUT kernel for [blk.0.ffn_down.weight(m=3200,k=8640), blk.0.ffn_gate.weight(m=8640,k=320</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/42-sa-real-inference-sta3.txt:26</td></tr><tr><td class="k">prompt decode 数值健康度</td><td class="v">nan_or_inf=0</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:26</td></tr></tbody></table></div>
+
+<h2>Engine log（进程内可观测性）</h2>
+<div class="panel"><pre>[shim] load: llama_load_model_from_file /data/local/tmp/model.gguf
+Transforming tensor: blk.0.attn_q.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.attn_k.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.attn_v.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.attn_output.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.ffn_gate.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.0.ffn_down.weight (m: 3200, k: 8640, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=135, scales_size=1, n_tile_num=25)
+Transforming tensor: blk.0.ffn_up.weight (m: 8640, k: 3200, bits: 2)
+kcfg (bm=128, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=135)
+Transforming tensor: blk.1.attn_q.weight (m: 3200, k: 3200, bits: 2)
+kcfg (bm=256, simd_n_in=16, simd_n_out=8, kfactor=16, group_size=128, lut_scales_size=50, scales_size=1, n_tile_num=25)
+Transform</pre>
+<p class="note">来源：SA 进程 stderr（/data/lut_sa/rt_stderr.txt，随证据包回收）。</p></div>
+
+<h2>未测字段（如实列出）</h2>
+<div class="panel"><table><thead><tr><th>字段</th><th>现状</th><th>限制</th></tr></thead><tbody>
+<tr><td class="k">TTFT / tok/s</td><td class="v">未测量（仅可由客户端 wall time 与 nPredict 派生）</td><td class="src">需引擎内置计时（LIVE 阶段）</td></tr>
+<tr><td class="k">库体积 / llama_* 符号数</td><td class="v">构建自证存在，但落在宿主 harness 日志（仓外 wsl/sta3.txt）</td><td class="src">需把自证行落进 evidence</td></tr>
+<tr><td class="k">中文分词正确性</td><td class="v">diag 把非 ASCII 统一打成 "?"，无法判定</td><td class="src">engine_shim.cc:182-186 打印行为</td></tr>
+</tbody></table></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 3/6</footer></main></div></body></html>

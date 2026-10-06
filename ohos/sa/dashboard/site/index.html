@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · Architecture Overview</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="on" href="index.html">Architecture Overview</a></li>
+    <li><a class="" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>LUT-SA · OpenHarmony SystemAbility Capability Dashboard</h1>
+<p class="sub">SystemAbility with embedded LLM runtime and AI capability foundation ·
+REPLAY 模式（源码静态解析 + 设备实测证据 + 构建产物；未改动 SA 代码）</p>
+
+<div class="panel"><h3>This proves</h3>
+  <div class="kv">
+    <div class="k">SA Host</div><div class="v">SA_ID=6901 注册并由 samgr 发布；进程 lut_sa（uid system）常驻 <span class="chip ok">PASS</span></div>
+    <div class="k">IPC Surface</div><div class="v">ILutSa 9 个方法；跨进程实测通过 <span class="chip ok">PASS</span>（执行侧 <span class="chip ready">READY</span>）</div>
+    <div class="k">Embedded LLM</div><div class="v">llama.cpp + t-mac LUT 内核静态链入 SA 进程；真加载、真出 token <span class="chip ok">PASS</span></div>
+    <div class="k">AI Foundation</div><div class="v">感知（ReadScreen）+ 意图解析 + 动作契约 + 四道策略门 <span class="chip warn">PARTIAL</span></div>
+    <div class="k">Agent Runtime</div><div class="v">Planner / 闭环 / 真实设备执行 <span class="chip no">ABSENT</span></div>
+  </div></div>
+
+<h2>System architecture（宿主 → 设备 → SA 内部）</h2>
+<div class="panel"><pre>宿主 Windows / Git Bash
+  └─ wsl.exe -d ohbuild ─► WSL(root)
+       ├─ install_into_tree.sh   组件源码 + 引擎源码 + dmlc shim        →  /src/ohos
+       ├─ build_engine.sh        OH clang + -fexceptions                →  prebuilt/libllama_engine.a
+       ├─ GN / ninja             libtmac_sa.z.so · lut_sa_client · lut_a11y_dump
+       ├─ loop 注入镜像          system.img（库/客户端/探针/cfg/脚本）· userdata.img（模型/数据）
+       └─ qemu_boot_lutsa.sh     QEMU x86_64_virt（serial file + monitor sock + hdc 8710）
+
+Guest: OpenHarmony 标准系统（qemu_x86_64_linux_full）
+  init ─ lut_sa.cfg ─► sa_main ─► libtmac_sa.z.so       SA 6901 · uid=system · secon=compiler_service
+       │   permissions: ACCESSIBILITY_EXTENSION_ABILITY · QUERY_ACCESSIBILITY_ELEMENT · INJECT_INPUT_EVENT(reserved)
+       ├─ samgr        注册 + Publish                                    [PASS]
+       ├─ IPC surface  ILutSa x9（手写 proxy/stub 契约）                  [PASS / exec READY]
+       ├─ LLM runtime  engine_shim(C ABI) → llama.cpp + t-mac LUT        [PASS]
+       ├─ Perception   AccessibilityUITestAbility → a11y(801) → 元素树    [PASS]
+       ├─ Action       AMS(180) Raw IPC @1001 → ams_try=22 → 动作 JSON    [READY]
+       ├─ Policy       /data/lut_sa/{allow_uids,quota,actions_allow,intents}  [PASS]
+       └─ Evidence     rt_stderr.txt · rt_stdout.txt · lut_evidence{,2}.txt
+  init ─ lut_evidence{,2}.cfg ─► sh ─► lut_sa_client（另一进程跨 IPC 调 6901）</pre></div>
+
+<h2>Capability layers（Agent 分层 · 状态全部来自事实）</h2>
+<div class="panel"><table><thead><tr><th>层</th><th>内容</th><th>状态</th><th>依据</th></tr></thead><tbody>
+<tr><td class="k">L0</td><td class="v">设备/构建环境（QEMU 冷启动 + 双通道取证）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/11-sa-boot-traces.txt:7</td></tr>
+<tr><td class="k">L1</td><td class="v">感知（ReadScreen 无障碍元素树）</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:520</td></tr>
+<tr><td class="k">L2</td><td class="v">理解（模型分类 / 关键词）</td><td><span class="chip warn">PARTIAL</span></td><td class="src">source:model 0 次 / source:keyword 20 次（全库统计）</td></tr>
+<tr><td class="k">L3</td><td class="v">决策（Planner / 多步）</td><td><span class="chip no">ABSENT</span></td><td class="src">正则 '\\bPlanner\\b|plan_next|next_action|planning_loop' 在 ohos/sa 源码命中 0 次 → 无实现</td></tr>
+<tr><td class="k">L4</td><td class="v">执行（元素动作 / 坐标注入）</td><td><span class="chip ready">READY</span></td><td class="src">契约实测 ErrCode=0（策略+JSON 契约可用），但设备执行 ams_try=22 → 真实拉起未发生</td></tr>
+<tr><td class="k">L5</td><td class="v">闭环 Agent</td><td><span class="chip no">ABSENT</span></td><td class="src">正则 'ReReadScreen|verify_screen|closed_loop|act_then_observe' 在 ohos/sa 源码命中 0 次 → 无实现</td></tr>
+</tbody></table></div>
+
+<h2>Today's real chains（诚实版）</h2>
+<div class="panel"><div class="chain">
+<div class="node"><b>① 话语 → 动作</b>Intent → 关键词表 → 动作 JSON → 白名单门 → <b>停</b><br><span class="chip ok">PASS</span> <span class="chip ready">READY</span></div>
+<span class="arrow">|</span>
+<div class="node"><b>② 屏幕 → 结构</b>ReadScreen → 元素树 JSON → 准入门 → <b>停</b><br><span class="chip ok">PASS</span></div>
+<span class="arrow">|</span>
+<div class="node"><b>缺口</b>把 ①② 首尾相接（Planner + 执行 + 再观察）= Agent<br><span class="chip no">ABSENT</span></div>
+</div></div>
+
+<h2>Repo map（主线 vs 遗留）</h2>
+<div class="panel"><table><thead><tr><th>路径</th><th>作用</th><th>状态</th></tr></thead><tbody>
+<tr><td class="k">ohos/sa/component/</td><td class="v">SA 业务层 + IDL + GN 组件 + init/profile/sepolicy</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">ohos/sa/engine/</td><td class="v">engine_shim（C ABI）+ gguf 准入</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">ohos/sa/intree/</td><td class="v">装树 / 编引擎 / 整链验证 / QEMU 启动</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">ohos/staging-x64|arm64/</td><td class="v">冻结 LUT 内核包（kernels.cc + kcfg.ini + 头）</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">3rdparty/llama.cpp</td><td class="v">推理引擎源码（含 OHOS 移植本地提交）</td><td><span class="chip warn">PARTIAL</span></td></tr>
+<tr><td class="k">python/ · deploy/ · tools/</td><td class="v">TVM 内核生成 + 模型转换流水线（离线）</td><td><span class="chip ok">PASS</span></td></tr>
+<tr><td class="k">ohos/hap/ · ohos/hello/ · ohos/build/</td><td class="v">应用形态 HAP / P0 脚手架 / 本地冒烟产物</td><td><span class="chip warn">PARTIAL</span></td></tr>
+</tbody></table>
+<p class="note">文档/证据漂移（5 项）：<span class="src">evidence/62 被文档引用但不存在（截图段 [15] 未落证据）；component/README.md 写"6 个方法"，IDL 实为 9 个；取证脚本 [13b] 硬编码窗口号过期 → [a11y] no window matc…</span></p></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 0/6</footer></main></div></body></html>

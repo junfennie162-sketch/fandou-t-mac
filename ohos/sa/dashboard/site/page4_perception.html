@@ -1,0 +1,288 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>LUT-SA Capability Dashboard · Perception Capability</title><link rel="stylesheet" href="app.css"></head><body>
+<div class="wrap"><nav>
+  <div class="brand"><b>LUT-SA</b>Capability Dashboard · v1</div>
+  <ol>
+    <li><a class="" href="index.html">Architecture Overview</a></li>
+    <li><a class="" href="page1_sa.html">SystemAbility Overview</a></li>
+    <li><a class="" href="page2_ipc.html">IPC Capability</a></li>
+    <li><a class="" href="page3_runtime.html">LLM Runtime</a></li>
+    <li><a class="on" href="page4_perception.html">Perception Capability</a></li>
+    <li><a class="" href="page5_roadmap.html">Agent Roadmap</a></li>
+  </ol>
+  <div class="mode">MODE: REPLAY<br>DATA: source + evidence<br>SA CODE: UNMODIFIED<br>NO LIVE / NO IPC ADDED</div>
+</nav><main>
+<h1>Page 4 · Perception Capability（ReadScreen）</h1>
+<p class="sub">不是 OCR：读的是系统无障碍<b>元素树</b>（结构 + 文本 + 可点 + 边界），返回有界结构化 JSON。
+隐私：屏幕原文不写日志，只回给通过准入的调用方。</p>
+
+<div class="panel"><h3>Pipeline</h3><div class="chain">
+<div class="node"><b>System Screen</b>1024×768 锁屏<br><span class="src">[15] 段=False · lut_screen.png 提及 0 次</span> <span class="chip no">ABSENT</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Accessibility Service</b>SA 801 存活<br><span class="src">未找到</span> <span class="chip no">ABSENT</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Element Tree</b>AccessibilityUITestAbility<br><span class="src">lut_screen.cpp:142-177</span> <span class="chip ok">PASS</span></div>
+<span class="arrow">→</span>
+<div class="node"><b>Structured JSON</b>有界 + 计数<br><span class="src">lut_screen.cpp:244-257</span> <span class="chip ok">PASS</span></div>
+</div></div>
+
+<div class="grid2">
+<div class="panel"><h3>Metrics（一次真实调用）</h3>
+  <div class="kv">
+    <div class="k">verdict</div><div class="v">ok=1 · connected=1 · user=100</div>
+    <div class="k">counts</div><div class="v">{'nodes': 13, 'withText': 7, 'clickable': 6}</div>
+    <div class="k">latency</div><div class="v">首调 677 ms（含建连）/ 后续 29–32 ms</div>
+    <div class="k">windows</div><div class="v">5 个：7(t2110,L5), 4(t2112,L4), 5(t2111,L3), 10(t2108,L2), 3(t2001,L1)</div>
+    <div class="k">budget/truncated</div><div class="v">40 / 0</div>
+    <div class="k">texts</div><div class="v">上滑解锁 · 23:17 · 2026年10月5日 · 星期一 · 丙午年八月廿五 · 没有 SIM 卡 · 100%</div>
+  </div>
+<p class="note">准入双证：白名单不含调用方 → <b>201</b>（ErrCode=201）；默认档位 → <b>0</b>。
+有界性：budget=8 → nodes=8 / truncated=1。</p></div>
+<div class="panel"><h3>Limits（代码注释 + 实测）</h3>
+<table><tbody>
+<tr><td class="k">通道语义</td><td class="v">AccessibilityUITestAbility（测试框架口子；生产应换正式无障碍扩展）</td></tr>
+<tr><td class="k">连接</td><td class="v">进程级单例；首次调用建连（~0.5–0.7s）</td></tr>
+<tr><td class="k">只读</td><td class="v">不调用任何注入类 API（源码命中 0 处）</td></tr>
+<tr><td class="k">硬上限</td><td class="v">默认 40 / 硬顶 200 节点 · 深度 8 · 每层 40 父节点 · 文本 160B</td></tr>
+<tr><td class="k">已知坑</td><td class="v">顶层窗口 4 层内全容器（必须下钻）；活动窗口不可重复遍历（FIX-88）</td></tr>
+</tbody></table></div>
+</div>
+
+<h2>Element tree（真实返回结构，缩进 = 深度）</h2>
+<div class="panel"><div class="tree"><div class="n i">Window #7</div>
+<div class="n">        <span class="t">上滑解锁</span> <span class="i">Text</span> <span class="c">[493, 168, 546, 183]</span></div>
+<div class="n">        <span class="t">23:17</span> <span class="i">Text</span> <span class="c">[428, 200, 596, 279]</span></div>
+<div class="n">        <span class="t">2026年10月5日</span> <span class="i">Text</span> <span class="c">[428, 282, 546, 302]</span></div>
+<div class="n">        <span class="t">星期一</span> <span class="i">Text</span> <span class="c">[546, 282, 597, 302]</span></div>
+<div class="n">        <span class="t">丙午年八月廿五</span> <span class="i">Text</span> <span class="c">[466, 309, 558, 327]</span></div>
+<div class="n">          <span class="t">没有 SIM 卡</span> <span class="i">Text</span> <span class="c">[22, 8, 82, 21]</span></div>
+<div class="n">          <span class="t">100%</span> <span class="i">Text</span> <span class="c">[951, 8, 980, 21]</span></div>
+<div class="n i">Window #10</div>
+<div class="n">    <span class="t"><span class="c">Stack</span></span> <span class="i">Stack</span> <span class="c">[0, 0, 1024, 57]  [clickable]</span></div>
+<div class="n i">Window #3</div>
+<div class="n">    <span class="t"><span class="c">Stack</span></span> <span class="i">Stack</span> <span class="c">[0, 0, 0, 0]  [clickable, invisible]</span></div>
+<div class="n">      <span class="t"><span class="c">Text</span></span> <span class="i">Text</span> <span class="c">[368, 131, 655, 131]  [clickable]</span></div>
+<div class="n">      <span class="t"><span class="c">Swiper</span></span> <span class="i">Swiper</span> <span class="c">[368, 178, 655, 629]  [clickable]</span></div>
+<div class="n">        <span class="t"><span class="c">SwiperIndicator</span></span> <span class="i">SwiperIndicator</span> <span class="c">[500, 599, 523, 629]  [clickable]</span></div>
+<div class="n">        <span class="t"><span class="c">SwiperIndicator</span></span> <span class="i">SwiperIndicator</span> <span class="c">[493, 627, 530, 657]  [clickable]</span></div></div>
+<p class="note">clickable = 6 个：Stack(#146), Stack(#19), Text(#25), Swiper(#27), SwiperIndicator(#29), SwiperIndicator(#90)</p></div>
+
+<h2>JSON contract（原样）</h2>
+<div class="panel"><pre>{
+ "ok": 1,
+ "connected": 1,
+ "user": 100,
+ "elapsed_ms": 677,
+ "getwin_ret": 0,
+ "budget": 40,
+ "truncated": 0,
+ "windows": [
+  {
+   "id": 7,
+   "type": 2110,
+   "layer": 5
+  },
+  {
+   "id": 4,
+   "type": 2112,
+   "layer": 4
+  },
+  {
+   "id": 5,
+   "type": 2111,
+   "layer": 3
+  },
+  {
+   "id": 10,
+   "type": 2108,
+   "layer": 2
+  },
+  {
+   "id": 3,
+   "type": 2001,
+   "layer": 1
+  }
+ ],
+ "counts": {
+  "nodes": 13,
+  "withText": 7,
+  "clickable": 6
+ },
+ "nodes": [
+  {
+   "d": 6,
+   "win": 7,
+   "a11yId": 83,
+   "type": "Text",
+   "text": "上滑解锁",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    493,
+    168,
+    546,
+    183
+   ]
+  },
+  {
+   "d": 6,
+   "win": 7,
+   "a11yId": 85,
+   "type": "Text",
+   "text": "23:17",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    428,
+    200,
+    596,
+    279
+   ]
+  },
+  {
+   "d": 7,
+   "win": 7,
+   "a11yId": 89,
+   "type": "Text",
+   "text": "2026年10月5日",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    428,
+    282,
+    546,
+    302
+   ]
+  },
+  {
+   "d": 7,
+   "win": 7,
+   "a11yId": 90,
+   "type": "Text",
+   "text": "星期一",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    546,
+    282,
+    597,
+    302
+   ]
+  },
+  {
+   "d": 7,
+   "win": 7,
+   "a11yId": 92,
+   "type": "Text",
+   "text": "丙午年八月廿五",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    466,
+    309,
+    558,
+    327
+   ]
+  },
+  {
+   "d": 8,
+   "win": 7,
+   "a11yId": 59,
+   "type": "Text",
+   "text": "没有 SIM 卡",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    22,
+    8,
+    82,
+    21
+   ]
+  },
+  {
+   "d": 8,
+   "win": 7,
+   "a11yId": 73,
+   "type": "Text",
+   "text": "100%",
+   "click": 0,
+   "vis": 1,
+   "box": [
+    951,
+    8,
+    980,
+    21
+   ]
+  },
+  {
+   "d": 3,
+   "win": 10,
+   "a11yId": 146,
+   "type": "Stack",
+   "text": "",
+   "click": 1,
+   "vis": 1,
+   "box": [
+    0,
+    0,
+    1024,
+    57
+   ]
+  },
+  {
+   "d": 2,
+   "win": 3,
+   "a11yId": 19,
+   "type": "Stack",
+   "text": "",
+   "click": 1,
+   "vis": 0,
+   "box": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "d": 5,
+   "win": 3,
+   "a11yId": 25,
+   "type": "Text",
+   "text": "",
+   "click": 1,
+   "vis": 1,
+   "box": [
+    368,
+    131,
+    655,
+    131
+   ]
+  },
+  {
+   "d": 5,
+   "win": 3,
+   "a11yId": 27,
+   "type": "Swiper",
+   "text": "",
+   "click": 1,
+   "vis": 1,
+   "box": [
+    368,
+    178,
+    655,
+    629
+   ]
+  },
+  {
+   "d": 6,
+   "win": 3,
+   "a11yId": 29,
+   "type": "SwiperIndicator",
+   "text": "",
+   "click"</pre>
+<p class="note">source: evidence/61-s7-1b-read-screen.txt:521</p></div>
+
+<h2>Perception 相关实测（含拒绝面与探针）</h2>
+<div class="panel"><table><thead><tr><th>项</th><th>实测值 / 事实</th><th>状态</th><th>source</th></tr></thead><tbody><tr><td class="k">ReadScreen</td><td class="v">ErrCode=0 (budget=0)</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:520</td></tr><tr><td class="k">独立探针（不进 SA）拿树</td><td class="v">TREE-OK-WITH-TEXT</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/60-s7-1a-a11y-probe.txt:644</td></tr><tr><td class="k">ReadScreen 拒绝面（准入）</td><td class="v">ErrCode=201</td><td><span class="chip ok">PASS</span></td><td class="src">evidence/61-s7-1b-read-screen.txt:511</td></tr></tbody></table></div>
+<footer>生成于 2026-10-06 22:57 · 数据 = 源码静态解析 + ohos/sa/evidence/* + lut_sa_client 既有输出 + 构建产物<br>所有状态由 parse/grep 推导并附 basis（见 data/model.json），非人工填写 · Page 4/6</footer></main></div></body></html>
