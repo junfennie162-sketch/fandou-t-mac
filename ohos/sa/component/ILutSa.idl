@@ -7,4 +7,6 @@ interface OHOS.LutSa.ILutSa {
   String Release();
   String ExecuteAction([in] String action, [in] String arg);
   String ExecuteIntent([in] String utterance);
+  // S7-1b：感知方向（读屏，无障碍元素树）—— 与执行方向独立；maxNodes<=0 用默认上限
+  String ReadScreen([in] int maxNodes);
 }
