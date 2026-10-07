@@ -78,6 +78,17 @@
 
 **Now（这一轮要做的一件事）**
 
+- **S7-2-A（第一个最小 Agent Loop）✅ 已完成**（`evidence/71`）—— **SA 进程内的第一次完整闭环**
+  goal="unlock screen"，2107ms，`VERIFY=PASS`。六段全部有真数据：
+  observe(ReadScreen 快照) → digest(文本/元素/box) → decide(规则命中锁屏 Swiper) →
+  policy(端点必须在依据元素 box 内) → act(进程内 MMI 注入 9 事件, ret=0) → verify(再读屏对比 → PASS)
+  · **坐标全部来自感知**：swipe from/to 取自 Swiper#27 的 box=[368,178,655,629]（511,573）→（511,234），无硬编码
+  · **两次如实 FAIL 先于 PASS**：① 空屏（SA 启动早于锁屏）→ `fail(not_lock_screen)`；
+    ② 快照 40 节点预算+深度优先走不到 Swiper → `fail(no_swipeable_area)` → 改**广度优先+200 预算**后通过
+  · 改动范围：新增 `ohos/sa/agent/`（6 模块）+ `lut_screen` 加结构化快照（遍历改 BFS）+
+    `lut_sa_ability` 的 OnStart 挂触发线程（**仅当 goal 文件存在**）；**未新增 IPC、未接 LLM、
+    未动 lut_sa.cpp / engine / 3rdparty**；SA 既有 9 方法行为不变
+
 - **S7-2-0（无障碍动作可行性验证）✅ 已完成**（`evidence/62..68`；跨轮汇总见 `evidence/69-s7-2-0-conclusion.txt`）
   四条执行通道的实测结论（全部真错误码，不猜）：
   · **输入注入 `uitest uiInput` = ✅ 唯一可用**：解锁 swipe、下拉通知栏、收起通知栏 三次独立实验

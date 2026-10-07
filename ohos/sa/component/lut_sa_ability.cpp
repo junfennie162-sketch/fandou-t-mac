@@ -16,6 +16,9 @@
 #include <sys/types.h>
 #include <vector>
 
+#include <pthread.h>
+#include <unistd.h>
+
 #include "hilog/log.h"
 #include "ipc_skeleton.h"   // S5-1：取调用方 uid/tokenId
 // S6-1：AMS 客户端内检 kit 的**依赖闭包会把 arkcompiler 整个拖进来**（实测：ninja 开始编
@@ -34,6 +37,7 @@
 #endif
 #include "../lut_sa.h"   // 业务内核（全局命名空间 tmac_sa::）
 #include "lut_screen.h"  // S7-1b：读屏（无障碍元素树）
+#include "agent/agent_loop.h"   // S7-2-A：agent 模块层（单步闭环；不新增 IPC，goal 从文件读）
 
 namespace OHOS {
 
@@ -225,6 +229,35 @@ uint64_t FileSizeBytes(const char* path) {
     }
     return static_cast<uint64_t>(st.st_size);
 }
+// ── S7-2-A：Agent Loop 的启动触发 ───────────────────────────────────────────
+constexpr const char *kAgentGoalPath = "/data/lut_sa/agent_goal.txt";
+constexpr const char *kAgentTracePath = "/data/lut_sa/agent_trace.json";
+constexpr int kAgentDelaySec = 15;   // 等系统起来（锁屏出现）再观察；实测启动约 10s 内
+
+void *AgentBootThread(void *) {
+    // 等「屏幕上有内容」再观察（实测教训：SA 启动早于锁屏出现，固定 sleep 时 GetWindows 仍为空
+    // → 决策会如实 fail(not_lock_screen)）。这是 Agent 该做的事：世界没就绪就不动。
+    // 顺带把无障碍连接暖起来（每轮 ReadScreenSnapshot 都是真实调用）。
+    constexpr int kMaxWaitSec = kAgentDelaySec * 2;   // 30s 上限
+    int waited = 0;
+    int visited = 0;
+    int withText = 0;
+    for (; waited < kMaxWaitSec; ++waited) {
+        const ::tmac_sa::ScreenSnapshot snap = ::tmac_sa::ReadScreenSnapshot(0);
+        visited = snap.visited;
+        withText = snap.withText;
+        if (snap.ok && snap.visited > 0 && snap.withText > 0) {
+            break;
+        }
+        sleep(1);
+    }
+    printf("[agent] WAIT: screen ready after %ds (visited=%d withText=%d)\n", waited, visited, withText);
+    fflush(stdout);
+    HILOG_INFO(LOG_CORE, "[LutSa] agent: screen ready after %{public}ds (visited=%{public}d)", waited, visited);
+    const bool ran = ::tmac_sa::agent::RunGoalFromFile(kAgentGoalPath, kAgentTracePath);
+    HILOG_INFO(LOG_CORE, "[LutSa] agent loop: %{public}s", ran ? "done" : "skipped(no goal)");
+    return nullptr;
+}
 }  // namespace
 
 void LutSystemAbility::OnStart() {
@@ -243,6 +276,19 @@ void LutSystemAbility::OnStart() {
     }
     const ::tmac_sa::Status st = ::tmac_sa::CreateSession(&g_session);
     HILOG_INFO(LOG_CORE, "[LutSa] CreateSession: %{public}d", static_cast<int>(st));
+
+    // S7-2-A：Agent Loop 触发（**不新增 IPC**）——
+    // 只有 /data/lut_sa/agent_goal.txt 存在时才跑；延迟到系统起来（锁屏出现）之后。
+    // 用 pthread 而不是 std::thread：SA 以 -fno-exceptions 编译，std::thread 失败会 terminate。
+    if (access(kAgentGoalPath, F_OK) == 0) {
+        pthread_t tid;
+        if (pthread_create(&tid, nullptr, AgentBootThread, nullptr) == 0) {
+            (void) pthread_detach(tid);
+            HILOG_INFO(LOG_CORE, "[LutSa] agent loop thread started (goal file present)");
+        } else {
+            HILOG_ERROR(LOG_CORE, "[LutSa] agent loop thread create failed");
+        }
+    }
 }
 
 void LutSystemAbility::OnStop() {

@@ -29,6 +29,13 @@ ohos_shared_library("lut_sa") {
     "src/qos_policy.cpp",
     "src/lut_kernel_ref.cpp",        # 便携参考内核：现在只作「算法自检锚点」（入口已改名 ref_*）
     "src/lut_screen.cpp",            # S7-1b：读屏（无障碍元素树，感知方向）
+    # S7-2-A：agent 模块层（observe→rule planner→policy→executor(MMI)→verifier→trace）
+    "src/agent/screen_digest.cpp",
+    "src/agent/planner_rule.cpp",
+    "src/agent/executor_mmi.cpp",
+    "src/agent/verifier.cpp",
+    "src/agent/trace.cpp",
+    "src/agent/agent_loop.cpp",
     "idl/lut_sa_proxy.cpp",          # ILutSa 生成物（IPC 代理）
     "idl/lut_sa_stub.cpp",           # ILutSa 生成物（IPC 桩）
   ]
@@ -84,6 +91,11 @@ ohos_shared_library("lut_sa") {
     "//foundation/multimodalinput/input/interfaces/native/innerkits/proxy/include",
     "//base/hiviewdfx/hitrace/interfaces/native/innerkits/include/hitrace_meter",
     "//base/hiviewdfx/hitrace/utils",
+    # S7-2-A：MMI（agent 的执行器用；S7-2-A0 已实测该路径可用）
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/event/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/proxy/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits",
+    "//foundation/multimodalinput/input/util/common/include",
   ]
 
   # 引擎静态库 + t-mac 调优内核（kernels.cc 编在同一份 .a 里，所以业务层不再单独编一份，
@@ -94,6 +106,7 @@ ohos_shared_library("lut_sa") {
     "llama_engine",
     "accessibleability.z",
     "accessibility_common.z",
+    "mmi-client.z",          # S7-2-A：agent 的执行器（MMI 输入注入）
   ]
 
   # FIX-41: lut_sa_ability.h/.cpp 整体被 #ifdef TMAC_SA_SAMGR_BINDING 包着；

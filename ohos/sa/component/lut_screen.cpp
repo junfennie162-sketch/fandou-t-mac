@@ -274,6 +274,136 @@ void ReleaseScreen()
     g_listener = nullptr;
 }
 
+// ── S7-2-A：结构化快照（与 JSON 版共用连接/锁/有界遍历，只是换个输出形态）────
+namespace {
+void AppendSnapElement(ScreenSnapshot &s, const AccessibilityElementInfo &e)
+{
+    const std::string text = e.GetContent();
+    const bool clickable = e.IsClickable();
+    if (text.empty() && !clickable) {
+        return;   // 容器节点不进 elements（与 JSON 版一致）
+    }
+    const Rect &box = e.GetRectInScreen();
+    ScreenElement el;
+    el.a11yId = e.GetAccessibilityId();
+    el.winId = e.GetWindowId();
+    el.type = e.GetComponentType();
+    el.text = text;
+    el.clickable = clickable;
+    el.visible = e.IsVisible();
+    el.x1 = box.GetLeftTopXScreenPostion();
+    el.y1 = box.GetLeftTopYScreenPostion();
+    el.x2 = box.GetRightBottomXScreenPostion();
+    el.y2 = box.GetRightBottomYScreenPostion();
+    s.elements.push_back(el);
+}
+
+void WalkSnapLevel(AccessibilityUITestAbility &ability,
+                   const std::vector<AccessibilityElementInfo> &level, int depth, ScreenSnapshot &s,
+                   int budget)
+{
+    std::vector<AccessibilityElementInfo> next;
+    for (const auto &e : level) {
+        if (s.visited >= budget) {
+            s.truncated = true;
+            return;
+        }
+        ++s.visited;
+        const std::string text = e.GetContent();
+        if (!text.empty()) {
+            ++s.withText;
+        }
+        if (e.IsClickable()) {
+            ++s.clickable;
+        }
+        AppendSnapElement(s, e);
+        std::vector<AccessibilityElementInfo> kids;
+        if (ability.GetChildren(e, kids) != RET_OK) {
+            continue;
+        }
+        int kept = 0;
+        for (const auto &k : kids) {
+            if (kept++ >= kMaxKids) {
+                break;
+            }
+            next.push_back(k);
+        }
+    }
+    if (!next.empty()) {
+        WalkSnapLevel(ability, next, depth + 1, s, budget);
+    }
+}
+
+// 广度优先（与 JSON 版一致）：小预算时也能覆盖整屏宽度，而不是一头扎进第一个子树
+void WalkSnap(AccessibilityUITestAbility &ability, const AccessibilityElementInfo &root,
+              ScreenSnapshot &s, int budget)
+{
+    std::vector<AccessibilityElementInfo> level{root};
+    WalkSnapLevel(ability, level, 0, s, budget);
+}
+
+}  // namespace
+
+ScreenSnapshot ReadScreenSnapshot(int maxNodes)
+{
+    ScreenSnapshot s;
+    const auto t0 = std::chrono::steady_clock::now();
+    int budget = (maxNodes <= 0) ? kDefaultMaxNodes : maxNodes;
+    if (budget > kHardMaxNodes) {
+        budget = kHardMaxNodes;
+    }
+    auto ability = AccessibilityUITestAbility::GetInstance();
+    if (ability == nullptr) {
+        s.error = "no_ability_instance";
+        return s;
+    }
+    std::lock_guard<std::mutex> lock(g_screenMutex);   // 与 JSON 版共用同一把锁
+    if (!EnsureConnected(*ability)) {
+        s.error = g_lastError;
+        s.connected = g_connected.load() ? 1 : 0;
+        return s;
+    }
+    s.connected = 1;
+    s.user = ability->GetCurrentUserId();
+    std::vector<AccessibilityWindowInfo> windows;
+    if (ability->GetWindows(windows) == RET_OK) {
+        for (size_t i = 0; i < windows.size() && i < 12; ++i) {
+            ScreenWindow w;
+            w.id = windows[i].GetWindowId();
+            w.type = static_cast<int32_t>(windows[i].GetWindowType());
+            w.layer = windows[i].GetWindowLayer();
+            s.windows.push_back(w);
+        }
+    }
+    AccessibilityElementInfo root;
+    int32_t rootWin = -1;
+    if (ability->GetRoot(root) == RET_OK) {
+        rootWin = root.GetWindowId();
+        WalkSnap(*ability, root, s, budget);
+    }
+    for (auto &w : windows) {
+        if (s.visited >= budget) {
+            s.truncated = true;
+            break;
+        }
+        if (w.GetWindowId() == rootWin) {
+            continue;   // 活动窗口已走过，跳过避免重复（FIX-88）
+        }
+        AccessibilityElementInfo wr;
+        if (ability->GetRootByWindow(w, wr) == RET_OK) {
+            WalkSnap(*ability, wr, s, budget);
+        }
+    }
+    s.elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - t0).count();
+    s.ok = true;
+    // 隐私：日志只记计数（不记屏幕原文）
+    HILOG_INFO(LOG_CORE,
+               "[LutSa] ReadScreenSnapshot: visited=%{public}d withText=%{public}d clickable=%{public}d ms=%{public}ld",
+               s.visited, s.withText, s.clickable, s.elapsedMs);
+    return s;
+}
+
 std::string ScreenState()
 {
     if (g_connected.load()) {

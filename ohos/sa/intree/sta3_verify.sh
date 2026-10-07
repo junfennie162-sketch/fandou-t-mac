@@ -89,6 +89,11 @@ fi
 # SA 进程以 system uid 运行，要在 /data/lut_sa 里写运行期 stderr（崩溃原因的唯一通道）
 mkdir -p $UD/lut_sa
 chmod 777 $UD/lut_sa
+# S7-2-A：Agent Loop 的 goal（**必须在 SA 启动前**写进镜像，SA 在 OnStart 后读它）
+printf 'unlock screen
+' > $UD/lut_sa/agent_goal.txt
+rm -f $UD/lut_sa/agent_trace.json $UD/lut_sa/rt_stdout.txt $UD/lut_sa/rt_stderr.txt   # 每轮清空，避免上轮 append 记录混入
+echo "  agent goal: $(cat $UD/lut_sa/agent_goal.txt) → $UD/lut_sa/agent_goal.txt"
 python3 - <<'PY'
 import os
 p = '/mnt/udata/local/tmp/model.gguf'
@@ -186,7 +191,7 @@ mount -o loop,ro "$IMG/userdata.img" /mnt/ud2 2>/dev/null && {
   sed -n '/\[13\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -400
   echo
   echo "--- [16..19] S7-2-0 动作可行性 / 可交互界面 / 解锁 / 收口测量 ---"
-  sed -n '/\[15c\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -420   # FIX-76：行数要跟分段增长（[15c]+[16..22]）
+  sed -n '/\[15c\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -480   # FIX-76：行数要跟分段增长（[24]+[15c]+[16..22]）
   echo
   echo "----- [14] S7-1b SA 读屏（ReadScreen：感知方向，独立 IDL 方法）-----"
   sed -n '/\[14\]/,/\[7\]/p' /mnt/ud2/local/tmp/lut_evidence.txt | head -60

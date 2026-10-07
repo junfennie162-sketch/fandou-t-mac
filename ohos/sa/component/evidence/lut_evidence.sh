@@ -170,6 +170,16 @@ com.ohos.camera
   /system/bin/lut_mmi_probe back
   echo "  exit=$?"
 
+  echo "--- [24] S7-2-A Agent Loop（SA 进程内单步闭环；goal 从文件读，不新增 IPC）---"
+  echo "  goal 文件在**启动前**由宿主写进 userdata：/data/lut_sa/agent_goal.txt"
+  echo "  SA 在 OnStart 后延迟 15s 跑一次闭环，把 trace 写 /data/lut_sa/agent_trace.json + stdout"
+  echo "[24a] 机器可读 trace（agent_trace.json）"
+  cat /data/lut_sa/agent_trace.json 2>/dev/null || echo "  （trace 文件不存在——goal 未写入或 SA 未跑）"
+  echo "[24b] 人读 trace（SA 的 stdout → rt_stdout.txt，取 agent 段）"
+  grep -a -A 14 "S7-2-A Agent Loop" /data/lut_sa/rt_stdout.txt 2>/dev/null | tail -16
+  echo "[24c] 注意：若 [24] 显示 PASS，则本轮的 [15c1]（用探针再解一次锁）应为 UNCHANGED ——"
+  echo "       因为锁屏在 SA 跑闭环时就已经被划走了（两处证据互相印证）"
+
   echo "--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---"
   echo "  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）"
   echo "  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret"
