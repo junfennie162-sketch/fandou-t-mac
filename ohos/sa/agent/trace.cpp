@@ -36,6 +36,7 @@ std::string TraceJson(const StepTrace &t)
     out += " \"goal\": \"" + Esc(t.goal, 80) + "\",\n";
     out += " \"steps\": " + std::to_string(t.steps) + ",\n";
     out += " \"total_ms\": " + std::to_string(t.totalMs) + ",\n";
+    out += " \"observe_retries\": " + std::to_string(t.observeRetries) + ",\n";
     out += " \"observe_before\": {\"ok\": " + std::string(t.before.ok ? "1" : "0") +
            ", \"error\": \"" + Esc(t.before.error, 80) + "\", \"summary\": \"" +
            Esc(t.before.Summary(), 300) + "\"},\n";
@@ -67,6 +68,7 @@ std::string TraceText(const StepTrace &t)
     out += "                  " + t.after.Summary() + "\n";
     out += "VERIFY          : " + std::string(t.verify.pass ? "PASS" : "FAIL") + " —— " + t.verify.why + "\n";
     out += "TOTAL           : " + std::to_string(t.totalMs) + " ms\n";
+    out += "（观察重试 " + std::to_string(t.observeRetries) + " 次）\n";
     return out;
 }
 

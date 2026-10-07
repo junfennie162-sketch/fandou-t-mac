@@ -28,7 +28,7 @@ echo "=== 2. 重建 gn + 链接 SA（含静态引擎）==="
 # 不加这个开关 gn 直接失败 → build.ninja 不更新 → 编译还用旧 include_dirs（本次踩过）
 "$N" -w dupbuild=warn -C $O build.ninja 2>&1 | tail -3
 cd $O || exit 1
-"$N" -w dupbuild=warn -C $O ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client ohemu/lutsa/lut_a11y_dump ohemu/lutsa/lut_mmi_probe -j6 2>&1 \
+"$N" -w dupbuild=warn -C $O ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client ohemu/lutsa/lut_a11y_dump ohemu/lutsa/lut_mmi_probe ohemu/lutsa/lut_agent_test -j6 2>&1 \
   | grep -vE '^ninja: warning: multiple rules' | tail -45
 echo "  ninja 退出码: ${PIPESTATUS[0]}"
 ls -la ohemu/lutsa/libtmac_sa.z.so ohemu/lutsa/lut_sa_client ohemu/lutsa/lut_a11y_dump 2>/dev/null | awk '{print "  ", $5, $9}'
@@ -43,7 +43,8 @@ mount -o loop,rw "$IMG/system.img" $M || exit 1
 cp -f $O/ohemu/lutsa/libtmac_sa.z.so $M/system/lib64/libtmac_sa.z.so
 cp -f $O/ohemu/lutsa/lut_sa_client  $M/system/bin/lut_sa_client && chmod 755 $M/system/bin/lut_sa_client
 cp -f $O/ohemu/lutsa/lut_a11y_dump  $M/system/bin/lut_a11y_dump
-cp -f $O/ohemu/lutsa/lut_mmi_probe $M/system/bin/lut_mmi_probe && chmod 755 $M/system/bin/lut_mmi_probe && chmod 755 $M/system/bin/lut_a11y_dump
+cp -f $O/ohemu/lutsa/lut_mmi_probe $M/system/bin/lut_mmi_probe && chmod 755 $M/system/bin/lut_mmi_probe
+cp -f $O/ohemu/lutsa/lut_agent_test $M/system/bin/lut_agent_test && chmod 755 $M/system/bin/lut_agent_test && chmod 755 $M/system/bin/lut_a11y_dump
 # 取证脚本/cfg **按 glob 全量注入**（FIX-73：手写文件清单会漏 —— 第二个服务就是这么没起来的）
 cp -f $SA/component/evidence/lut_evidence*.sh $M/system/bin/ && chmod 755 $M/system/bin/lut_evidence*.sh
 cp -f $SA/component/etc/init/lut_evidence*.cfg $M/system/etc/init/
@@ -90,8 +91,12 @@ fi
 mkdir -p $UD/lut_sa
 chmod 777 $UD/lut_sa
 # S7-2-A：Agent Loop 的 goal（**必须在 SA 启动前**写进镜像，SA 在 OnStart 后读它）
-printf 'unlock screen
+if [ "${S72B_GOAL:-1}" = "1" ]; then
+  printf 'unlock screen
 ' > $UD/lut_sa/agent_goal.txt
+else
+  rm -f $UD/lut_sa/agent_goal.txt   # S7-2-B 失败路径轮：不给 goal → SA 不跑 → 屏幕保持锁屏
+fi
 rm -f $UD/lut_sa/agent_trace.json $UD/lut_sa/rt_stdout.txt $UD/lut_sa/rt_stderr.txt   # 每轮清空，避免上轮 append 记录混入
 echo "  agent goal: $(cat $UD/lut_sa/agent_goal.txt) → $UD/lut_sa/agent_goal.txt"
 python3 - <<'PY'

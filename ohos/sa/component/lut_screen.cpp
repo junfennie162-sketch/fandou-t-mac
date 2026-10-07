@@ -379,6 +379,14 @@ ScreenSnapshot ReadScreenSnapshot(int maxNodes)
     int32_t rootWin = -1;
     if (ability->GetRoot(root) == RET_OK) {
         rootWin = root.GetWindowId();
+        // 根几何留档：agent 用它做"屏幕比例滑动"的锚点（避免硬编码坐标）
+        const Rect &rb = root.GetRectInScreen();
+        s.hasRoot = true;
+        s.rootA11yId = root.GetAccessibilityId();
+        s.rootX1 = rb.GetLeftTopXScreenPostion();
+        s.rootY1 = rb.GetLeftTopYScreenPostion();
+        s.rootX2 = rb.GetRightBottomXScreenPostion();
+        s.rootY2 = rb.GetRightBottomYScreenPostion();
         WalkSnap(*ability, root, s, budget);
     }
     for (auto &w : windows) {

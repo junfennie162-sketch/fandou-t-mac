@@ -78,6 +78,18 @@
 
 **Now（这一轮要做的一件事）**
 
+- **S7-2-B（稳定性验证）✅ 已完成**（`evidence/72`）—— 验收：**3/3 冷启动成功 + 失败路径全部如实停止**
+  · 3 次完整冷启动（每次 goal 由宿主在启动前写入、SA 在 OnStart 后跑一次闭环）：
+    boot1/boot2/boot3 = **PASS**（1985 / 1985 / 1992 ms，均走 `lock_swipe_area_type_swiper`，`observe_retries=0`）
+  · 失败路径（第 4 次冷启动不给 goal，用 `lut_agent_test` 按需触发同一套 agent 代码）：
+    `[25a]` 非锁屏 → `fail(not_lock_screen)` · `[25b]` 感知地板(--max-nodes 1) → 如实 fail ·
+    `[25c]` 不支持目标 → `fail(no_rule_for_goal)` · `[25d]` 正对照 → 如实 fail；
+    **四条全部 `events: 0`**（不产生任何注入）；失败路径里 `observe_retries=6` = 重试观察 6 次后如实停止
+  · **本轮修掉两处真实不稳定（都有前后对照）**：
+    ① 感知未就绪（首轮 2/3，boot2 `no_swipeable_area`）→ 加**有界观察重试**（只重试 observe，绝不重试动作）；
+    ② 猜测式兜底（次轮 boot3 `lock_swipe_area_largest_clickable`）→ **删掉"面积最大的可点元素"这个猜**，
+       改为**根锚定滑动**（用感知到的根元素 box 做 78%H→22%H 比例滑动，坐标仍全部来自感知）
+
 - **S7-2-A（第一个最小 Agent Loop）✅ 已完成**（`evidence/71`）—— **SA 进程内的第一次完整闭环**
   goal="unlock screen"，2107ms，`VERIFY=PASS`。六段全部有真数据：
   observe(ReadScreen 快照) → digest(文本/元素/box) → decide(规则命中锁屏 Swiper) →

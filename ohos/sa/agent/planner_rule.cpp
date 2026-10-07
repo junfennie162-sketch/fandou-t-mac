@@ -24,24 +24,6 @@ std::string Lower(const std::string &s)
     return o;
 }
 
-// 面积最大的「可点且有实体框」元素（纯几何，来自感知）
-const ElementRef *LargestClickable(const Digest &d)
-{
-    const ElementRef *best = nullptr;
-    long bestArea = 0;
-    for (const auto &e : d.elements) {
-        if (!e.clickable || !e.HasBox()) {
-            continue;
-        }
-        const long area = static_cast<long>(e.Width()) * e.Height();
-        if (area > bestArea) {
-            bestArea = area;
-            best = &e;
-        }
-    }
-    return best;
-}
-
 // 锁屏痕迹：文本含「上滑解锁」或存在窗口类型 2110（S7-1a/1b 实测的锁屏窗口类型）
 bool LooksLikeLockScreen(const Digest &d, const ElementRef **hintOut)
 {
@@ -95,16 +77,35 @@ Action Decide(const std::string &goal, const Digest &d)
             a.why = "屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑";
             return a;
         }
+        // 优先用明确的"可滑区域"元素（Swiper）；找不到时**退到根锚定**——
+        // 用感知到的根元素 box 做屏幕比例滑动（0.78H → 0.22H，x 取中线）。
+        // 实测教训（S7-2-B boot3）：早先的"面积最大的可点元素"兜底是**猜测**，
+        // 会滑在错误区域导致 verify FAIL；根锚定只依赖"屏幕多大"这个感知事实。
         const ElementRef *area = d.FindByType("Swiper");
         std::string rule = "lock_swipe_area_type_swiper";
         if (area == nullptr || !area->HasBox()) {
-            area = LargestClickable(d);
-            rule = "lock_swipe_area_largest_clickable";
-        }
-        if (area == nullptr || !area->HasBox()) {
-            a.kind = "fail";
-            a.rule = "no_swipeable_area";
-            a.why = "有锁屏痕迹但找不到可上滑区域（无 Swiper、无可点且有框的元素）";
+            if (!d.HasRoot()) {
+                a.kind = "fail";
+                a.rule = "no_swipeable_area";
+                a.why = "有锁屏痕迹但既无 Swiper 也拿不到根元素几何（无法确定屏幕范围）→ 不乱滑";
+                return a;
+            }
+            const int cx = (d.rootX1 + d.rootX2) / 2;
+            const int h = d.rootY2 - d.rootY1;
+            a.kind = "swipe";
+            a.x1 = cx;
+            a.y1 = d.rootY1 + h * 78 / 100;   // 起点靠下
+            a.x2 = cx;
+            a.y2 = d.rootY1 + h * 22 / 100;   // 终点靠上
+            a.durMs = 300;
+            a.targetA11yId = d.rootA11yId;
+            a.rule = "lock_swipe_root_anchored";
+            char why2[256];
+            snprintf(why2, sizeof(why2),
+                     "锁屏痕迹=%s；无 Swiper → 退到根锚定：根 box=[%d,%d,%d,%d] 的 78%%→22%% 高度处上滑（x=中线 %d）",
+                     hint != nullptr ? "文本「上滑解锁」" : "窗口类型 2110", d.rootX1, d.rootY1, d.rootX2,
+                     d.rootY2, cx);
+            a.why = why2;
             return a;
         }
         // 关键：两个端点都取在该元素 box 内（policy 会再校验一次）

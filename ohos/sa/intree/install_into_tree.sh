@@ -175,6 +175,7 @@ cp "$SA/component/lut_sa_client.cpp" "$DST/src/"     # 客户端：跨 IPC 调 6
 cp "$SA/component/lut_a11y_dump.cpp" "$DST/src/"     # S7-1a：无障碍读屏探针（独立工具）
 cp "$SA/component/lut_screen.cpp" "$DST/src/"        # S7-1b：SA 内读屏（无障碍元素树）
 cp "$SA/component/mmi_probe.cpp" "$DST/src/"          # S7-2-A0：MMI 注入探针（独立工具）
+cp "$SA/component/agent_test_main.cpp" "$DST/src/"    # S7-2-B：agent 模块测试入口（同一套代码）
 # S7-2-A：agent 模块层（源进 src/agent/，头进 include/agent/；include 路径统一为 agent/xxx.h）
 mkdir -p "$DST/src/agent" "$DST/include/agent"
 cp "$SA/agent/"*.cpp "$DST/src/agent/"

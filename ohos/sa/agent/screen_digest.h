@@ -42,6 +42,11 @@ struct Digest {
     bool truncated = false;
     std::vector<int32_t> windowTypes;   // 窗口类型（用于识别锁屏/通知层等）
     std::vector<ElementRef> elements;
+    // 屏幕锚点（来自感知到的根元素；用于"按屏幕比例"的动作，避免硬编码坐标）
+    bool hasRoot = false;
+    int64_t rootA11yId = -1;
+    int32_t rootX1 = 0, rootY1 = 0, rootX2 = 0, rootY2 = 0;
+    bool HasRoot() const { return hasRoot && (rootX2 - rootX1) > 0 && (rootY2 - rootY1) > 0; }
 
     std::string Summary() const;    // 一行摘要（进 trace；不含过多原文）
     // 查找：文本包含匹配（区分大小写由调用方决定）/ 类型匹配；找不到返回 nullptr

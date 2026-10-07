@@ -26,6 +26,8 @@ namespace {
 
 // agent 的快照预算：默认 40 太浅（锁屏的 Swiper 在更深层，实测 truncated=1/clickable=0）
 constexpr int kAgentMaxNodes = 200;
+constexpr int kMaxObserveRetry = 6;        // 感知未就绪时的观察重试上限（有界）
+constexpr int kObserveRetryDelayMs = 1000; // 每次重试间隔（ms）
 
 struct PolicyResult {
     bool allow = false;
@@ -143,11 +145,23 @@ LoopResult RunGoal(const std::string &goal, int maxNodes)
     StepTrace tr;
     tr.goal = goal;
 
-    // ① observe（before）
-    tr.before = BuildDigest(ReadScreenSnapshot(maxNodes > 0 ? maxNodes : kAgentMaxNodes));
-
-    // ② decide（规则）
-    tr.action = Decide(goal, tr.before);
+    // ① observe（before）+ ② decide —— 若因「感知未就绪」而 fail，则有界重试**观察**
+    // 实测教训（S7-2-B boot2）：锁屏出现时状态栏文本先于 Swiper 进树 → 一次 observe 可能
+    // 看不到可滑区域。这是"世界还没准备好"，agent 应当等一等再观察；
+    // **只重试 observe，绝不重试动作**（动作是否重试由 verify 决定，v1 一律不重试）。
+    int retries = 0;
+    for (;;) {
+        tr.before = BuildDigest(ReadScreenSnapshot(maxNodes > 0 ? maxNodes : kAgentMaxNodes));
+        tr.action = Decide(goal, tr.before);
+        const bool retryable = tr.action.kind == "fail" &&
+                               (tr.action.rule == "not_lock_screen" || tr.action.rule == "no_swipeable_area");
+        if (!retryable || retries >= kMaxObserveRetry) {
+            break;
+        }
+        ++retries;
+        usleep(kObserveRetryDelayMs * 1000);
+    }
+    tr.observeRetries = retries;
 
     // ③ policy
     const PolicyResult pol = CheckPolicy(tr.action, tr.before);

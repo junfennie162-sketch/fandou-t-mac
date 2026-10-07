@@ -26,6 +26,7 @@ struct StepTrace {
     VerifyResult verify;
     long totalMs = 0;
     int steps = 1;
+    int observeRetries = 0;   // 感知未就绪时的观察重试次数（只重试 observe）
 };
 
 std::string TraceJson(const StepTrace &t);   // 机器可读（有界）

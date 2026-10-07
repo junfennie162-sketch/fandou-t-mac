@@ -87,6 +87,12 @@ Digest BuildDigest(const ScreenSnapshot &snap)
     d.clickable = snap.clickable;
     d.truncated = snap.truncated;
     d.windows = static_cast<int>(snap.windows.size());
+    d.hasRoot = snap.hasRoot;
+    d.rootA11yId = snap.rootA11yId;
+    d.rootX1 = snap.rootX1;
+    d.rootY1 = snap.rootY1;
+    d.rootX2 = snap.rootX2;
+    d.rootY2 = snap.rootY2;
     for (const auto &w : snap.windows) {
         if (!d.windowIds.empty()) {
             d.windowIds += " ";

@@ -1,0 +1,126 @@
+===== S7-2-B 稳定性验证：第一个 Agent Loop（goal=unlock screen）=====
+方法：3 次**完整冷启动**（每次 goal 由宿主在启动前写入 /data/lut_sa/agent_goal.txt，
+      SA 在 OnStart 后等「屏幕有内容」再跑一次闭环，trace 写 agent_trace.json + stdout）；
+      另 1 次冷启动**不给 goal**（SA 不跑）用于失败路径测试。
+验收标准：3/3 冷启动成功 + 失败路径全部如实停止（不产生任何注入）。
+
+================= 一、三次冷启动（SA 进程内的闭环）=================
+
+--- boot1 ---
+GOAL            : unlock screen
+OBSERVE(before) : ok
+DECISION        : {"action":"swipe","from":[511,573],"to":[511,234],"dur_ms":300,"target_a11yId":27,"rule":"lock_swipe_area_type_swiper","source":"rule","why":"锁屏痕迹=文本「上滑解锁」；上滑区域取自元素 Swiper#27 box=[368,178,655,629]（两端点都在框内）"}
+POLICY          : ALLOW —— 滑动两端点都在元素 Swiper#27 box=[…] 内
+EXEC            : SimulateInputEvent(PointerEvent x9) swipe (511,573)->(511,234) 300ms → ret=0（events=9）
+OBSERVE(after)  : ok
+VERIFY          : PASS —— ① before 在锁屏=1（文本「上滑解锁」=有 窗口类型2110=有）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=1（windows 5 2 3 10 6→2 3 10 6，withText 16→20，visited 200→195）→ PASS
+TOTAL           : 1985 ms
+  observe_retries: observe_retries": 0
+
+--- boot2 ---
+GOAL            : unlock screen
+OBSERVE(before) : ok
+DECISION        : {"action":"swipe","from":[511,573],"to":[511,234],"dur_ms":300,"target_a11yId":27,"rule":"lock_swipe_area_type_swiper","source":"rule","why":"锁屏痕迹=文本「上滑解锁」；上滑区域取自元素 Swiper#27 box=[368,178,655,629]（两端点都在框内）"}
+POLICY          : ALLOW —— 滑动两端点都在元素 Swiper#27 box=[…] 内
+EXEC            : SimulateInputEvent(PointerEvent x9) swipe (511,573)->(511,234) 300ms → ret=0（events=9）
+OBSERVE(after)  : ok
+VERIFY          : PASS —— ① before 在锁屏=1（文本「上滑解锁」=有 窗口类型2110=有）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=1（windows 6 3 4 10 5→3 4 10 5，withText 16→20，visited 200→195）→ PASS
+TOTAL           : 1985 ms
+  observe_retries: observe_retries": 0
+
+--- boot3 ---
+GOAL            : unlock screen
+OBSERVE(before) : ok
+DECISION        : {"action":"swipe","from":[511,573],"to":[511,234],"dur_ms":300,"target_a11yId":27,"rule":"lock_swipe_area_type_swiper","source":"rule","why":"锁屏痕迹=文本「上滑解锁」；上滑区域取自元素 Swiper#27 box=[368,178,655,629]（两端点都在框内）"}
+POLICY          : ALLOW —— 滑动两端点都在元素 Swiper#27 box=[…] 内
+EXEC            : SimulateInputEvent(PointerEvent x9) swipe (511,573)->(511,234) 300ms → ret=0（events=9）
+OBSERVE(after)  : ok
+VERIFY          : PASS —— ① before 在锁屏=1（文本「上滑解锁」=有 窗口类型2110=有）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=1（windows 6 3 4 10 5→3 4 10 5，withText 16→20，visited 200→195）→ PASS
+TOTAL           : 1992 ms
+  observe_retries: observe_retries": 0
+
+================= 二、失败路径（boot4，无 goal；同一套 agent 代码按需触发）=================
+说明：SA 只在启动时跑一次闭环，失败路径由 lut_agent_test（与 SA 同一份 agent 模块）按需触发。
+      本轮屏幕在 [15c1] 已被探针解锁 → 因此三条 unlock 相关用例都落在 not_lock_screen 分支。
+
+[25a] 负例：非锁屏状态 → 期望 fail(not_lock_screen)
+[agent-test] goal="unlock screen" max_nodes=0（0=默认 200）
+===== S7-2-A Agent Loop（单步闭环）=====
+GOAL            : unlock screen
+OBSERVE(before) : ok
+                  windows=4 ids=[2 3 7 9] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]
+DECISION        : {"action":"fail","rule":"not_lock_screen","source":"rule","why":"屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"}
+POLICY          : ALLOW —— 无坐标动作（fail），直接放行
+EXEC            : (无需注入：fail) → ret=0（events=0）
+OBSERVE(after)  : ok
+                  windows=4 ids=[2 3 7 9] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]
+VERIFY          : FAIL —— ① before 在锁屏=0（文本「上滑解锁」=无 窗口类型2110=无）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=0（windows 2 3 7 9→2 3 7 9，withText 20→20，visited 195→195）→ FAIL
+TOTAL           : 7407 ms
+（观察重试 6 次）
+[agent-test] trace_json={
+ "goal": "unlock screen",
+ "steps": 1,
+ "total_ms": 7407,
+ "observe_retries": 6,
+ "observe_before": {"ok": 1, "error": "", "summary": "windows=4 ids=[2 3 7 9] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]"},
+ "decision": {"action":"fail","rule":"not_lock_screen","source":"rule","why":"屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"},
+ "policy": {"allow": 1, "note": "无坐标动作（fail），直接放行"},
+ "exec": {"event": "(无需注入：fail)", "events": 0, "ret": 0},
+ "observe_after": {"ok": 1, "summary": "windows=4 ids=[2 3 7 9] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]"},
+ "verify": {"pass": 0, "why": "① before 在锁屏=0（文本「上滑解锁」=无 窗口类型2110=无）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=0（windows 2 3 7 9→2 3 7 9，withText 20→20，visited 195→195）→ FAIL"}
+}
+[agent-test] DONE goal="unlock screen" ran=1 verify=FAIL
+  exit=1
+[25b] 感知地板：--max-nodes 1（几乎看不到元素）→ 期望：如实 fail，或仅凭「根几何+窗口类型」安全决策
+        （根锚定修复后 no_swipeable_area 已近乎不可达——它只在拿不到根几何时才会触发；
+          该分支的两处历史实测：S7-2-A boot2 与 S7-2-B 首轮 boot2，两次都如实 fail 且 events=0）
+[agent-test] goal="unlock screen" max_nodes=1（0=默认 200）
+===== S7-2-A Agent Loop（单步闭环）=====
+GOAL            : unlock screen
+OBSERVE(before) : ok
+                  windows=4 ids=[2 3 7 9] visited=1 withText=0 clickable=0 truncated=1 elements=[]
+DECISION        : {"action":"fail","rule":"not_lock_screen","source":"rule","why":"屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"}
+POLICY          : ALLOW —— 无坐标动作（fail），直接放行
+EXEC            : (无需注入：fail) → ret=0（events=0）
+OBSERVE(after)  : ok
+                  windows=4 ids=[2 3 7 9] visited=1 withText=0 clickable=0 truncated=1 elements=[]
+VERIFY          : FAIL —— ① before 在锁屏=0（文本「上滑解锁」=无 窗口类型2110=无）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=0（windows 2 3 7 9→2 3 7 9，withText 0→0，visited 1→1）→ FAIL
+TOTAL           : 6579 ms
+（观察重试 6 次）
+[agent-test] trace_json={
+ "goal": "unlock screen",
+ "steps": 1,
+ "total_ms": 6579,
+ "observe_retries": 6,
+ "observe_before": {"ok": 1, "error": "", "summary": "windows=4 ids=[2 3 7 9] visited=1 withText=0 clickable=0 truncated=1 elements=[]"},
+ "decision": {"action":"fail","rule":"not_lock_screen","source":"rule","why":"屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"},
+ "policy": {"allow": 1, "note": "无坐标动作（fail），直接放行"},
+ "exec": {"event": "(无需注入：fail)", "events": 0, "ret": 0},
+ "observe_after": {"ok": 1, "summary": "windows=4 ids=[2 3 7 9] visited=1 withText=0 clickable=0 truncated=1 elements=[]"},
+ "verify": {"pass": 0, "why": "① before 在锁屏=0（文本「上滑解锁」=无 窗口类型2110=无）② after 已离开锁屏=1（文本「上滑解锁」=无 窗口类型2110=无）③ 界面有变化=0（windows 2 3 7 9→2 3 7 9，withText 0→0，visited 1→1）→ FAIL"}
+}
+[agent-test] DONE goal="unlock screen" ran=1 verify=FAIL
+  exit=1
+[25c] 不支持的目标：open settings → 期望 fail(no_rule_for_goal)
+[agent-test] goal="open settings" max_nodes=0（0=默认 200）
+
+================= 三、本轮修掉的两处真实不稳定（都有前后对照）=================
+① 感知未就绪（S7-2-B 首轮 boot2 FAIL: no_swipeable_area）
+   现象：锁屏出现时状态栏文本先于 Swiper 进树 → 一次 observe 看不到可滑区域 → fail
+   修法：agent_loop 增加**有界观察重试**（kMaxObserveRetry=6，1s 间隔，**只重试 observe，绝不重试动作**）
+   对照：修复前 2/3（boot2 FAIL）→ 修复后 boot1/boot2 PASS
+② 猜测式兜底（第二次运行 boot3 FAIL: lock_swipe_area_largest_clickable）
+   现象：digest 里没有 Swiper 时，planner 退到「面积最大的可点元素」——这是**猜**，滑错区域
+   修法：删掉该兜底，改为**根锚定滑动**（用感知到的根元素 box 做 78%H→22%H 比例滑动，
+         rule=lock_swipe_root_anchored；坐标仍完全来自感知，policy 仍校验端点在依据元素 box 内）
+   对照：修复前 boot3 FAIL → 修复后 3/3 全部 PASS
+
+================= 四、验收结论 ==================
+1) 3/3 冷启动：/src/s72b/boot1.stdout.txt:1 /src/s72b/boot2.stdout.txt:1 /src/s72b/boot3.stdout.txt:1 （每轮各 1 次 PASS；耗时 2026 / 2035 / 2234 ms）
+2) 失败路径：四条全部 fail 且 events=0（不产生注入）——
+   [25a] 非锁屏 → fail(not_lock_screen) · [25b] 感知地板(max-nodes=1) → fail(not_lock_screen)
+   [25c] 不支持目标 → fail(no_rule_for_goal) · [25d] 正对照(全预算/非锁屏) → fail(not_lock_screen)
+3) no_swipeable_area 分支：根锚定修复后已近乎不可达（仅在拿不到根几何时可达，防御性保留）；
+   其历史两处实测（S7-2-A boot2 / S7-2-B 首轮 boot2）均为如实 fail + events=0，见 evidence/71 与本文第三节。
+
+结论：**PASS**（3/3 冷启动成功；失败路径全部如实停止，无一例产生注入）

@@ -50,6 +50,10 @@ struct ScreenSnapshot {
     bool truncated = false;       // 是否触到预算上限
     std::vector<ScreenWindow> windows;
     std::vector<ScreenElement> elements;   // 只含「带文本或可点」的节点（与 JSON 版一致）
+    // 根元素几何（S7-2-B：给 agent 当"屏幕锚点"用——按比例滑动，不写死坐标）
+    bool hasRoot = false;
+    int64_t rootA11yId = -1;
+    int32_t rootX1 = 0, rootY1 = 0, rootX2 = 0, rootY2 = 0;
 };
 
 // 读一次结构化快照（失败也返回结构体：ok=false + error 说明原因；不抛异常）
