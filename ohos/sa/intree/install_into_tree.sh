@@ -174,6 +174,7 @@ cp "$SA/component/lut_sa_ability.h" "$DST/include/"
 cp "$SA/component/lut_sa_client.cpp" "$DST/src/"     # 客户端：跨 IPC 调 6901，自证可用
 cp "$SA/component/lut_a11y_dump.cpp" "$DST/src/"     # S7-1a：无障碍读屏探针（独立工具）
 cp "$SA/component/lut_screen.cpp" "$DST/src/"        # S7-1b：SA 内读屏（无障碍元素树）
+cp "$SA/component/mmi_probe.cpp" "$DST/src/"          # S7-2-A0：MMI 注入探针（独立工具）
 cp "$SA/component/lut_screen.h" "$DST/include/"
 cp "$SA/component/idl/"* "$DST/idl/"
 
@@ -184,7 +185,7 @@ cp "$SA/component/idl/"* "$DST/idl/"
 # 改成把镜像里那两份拷进 prebuilt/ —— 每轮 install 都刷新，不会与镜像版本漂移。
 mkdir -p "$DST/prebuilt"
 A11Y_LIBS=""
-for pair in "libaccessibleability.z.so:lib64" "libaccessibility_common.z.so:lib64/platformsdk"; do
+for pair in "libaccessibleability.z.so:lib64" "libaccessibility_common.z.so:lib64/platformsdk" "libmmi-client.z.so:lib64/platformsdk"; do
   n=${pair%%:*}; d=${pair#*:}
   for base in "$TREE/out/x86_64_virt/packages/phone/system" "$TREE/out/x86_64_virt"; do
     if [ -f "$base/$d/$n" ]; then

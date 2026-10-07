@@ -157,6 +157,19 @@ com.ohos.camera
   /system/bin/lut_sa_client --screen 0
   echo "  读屏时刻: $(date +%s)"
 
+  echo "--- [15c] S7-2-A0 进程内 MMI 注入（我们自己的进程，不是外部 uitest CLI）---"
+  echo "  动机：uitest 的注入已被证明可用，但它是外部工具；这里验证 SA 同权限的进程能否自己注入"
+  echo "  权限：INJECT_INPUT_EVENT 在 lut_evidence.cfg 的 permission_acls（S7-3 预留那条）；本段故意放在 [16] 之前"
+  echo "[15c1] swipe 解锁 (512,600)->(512,200) 300ms —— 期望 CHANGED（锁屏窗口消失）"
+  /system/bin/lut_mmi_probe swipe
+  echo "  exit=$?"
+  echo "[15c2] click 屏幕中心 (512,400) —— 看是否 CHANGED"
+  /system/bin/lut_mmi_probe click
+  echo "  exit=$?"
+  echo "[15c3] back（KEYCODE_BACK）—— 看是否 CHANGED"
+  /system/bin/lut_mmi_probe back
+  echo "  exit=$?"
+
   echo "--- [16] S7-2-0 无障碍动作可行性（click/back/scroll/swipe + 前后快照 diff）---"
   echo "  纪律：动作数固定（每种一次）· 目标有界（前 200 节点）· 失败留真实 RetError；本段放最后（会改变界面）"
   echo "  判据：每个动作打 verdict=CHANGED（界面确有变化）或 UNCHANGED（发了但没动）+ ret"

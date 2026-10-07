@@ -280,11 +280,73 @@ ohos_prebuilt_etc("lut_evidence2_sh") {
   subsystem_name = "ohemu"
 }
 
+# S7-2-A0：MMI 输入注入探针（独立工具）——
+# 目的：验证「我们自己的进程」能否用 MMI 的 SimulateInputEvent 真的改变屏幕。
+# 事件构造方式照抄 uitest 的参考实现（test/testfwk/arkxtest/uitest/.../system_ui_controller.cpp）。
+# 权限：INJECT_INPUT_EVENT 已在 lut_evidence.cfg 的 permission_acls 里（S7-3 预留的那条）。
+ohos_executable("lut_mmi_probe") {
+  sources = [ "src/mmi_probe.cpp" ]
+  include_dirs = [
+    # 读屏（before/after 快照）
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/aafwk/include",
+    "//foundation/barrierfree/accessibility/interfaces/innerkits/common/include",
+    "//foundation/barrierfree/accessibility/common/interface/include",
+    "//foundation/barrierfree/accessibility/common/log/include",
+    "//foundation/barrierfree/accessibility/frameworks/aafwk/include",
+    "$root_gen_dir/foundation/barrierfree/accessibility/common/interface",
+    "//arkcompiler/runtime_core/static_core/plugins/ets/runtime/ani",
+    "//arkcompiler/runtime_core/static_core/plugins",
+    "//foundation/arkui/napi/interfaces/kits",
+    "//foundation/arkui/napi/interfaces/inner_api",
+    "//foundation/arkui/napi",
+    "//third_party/node/src",
+    "//third_party/libuv/include",
+    "//base/notification/eventhandler/interfaces/inner_api",
+    "//base/notification/eventhandler/frameworks/eventhandler/include",
+    "//base/hiviewdfx/hilog/interfaces/native/innerkits/include",
+    "//base/startup/init/interfaces/innerkits/include",
+    "//third_party/bounds_checking_function/include",
+    "//commonlibrary/c_utils/base/include",
+    "//commonlibrary/c_utils/base/src",
+    "//foundation/systemabilitymgr/samgr/interfaces/innerkits/samgr_proxy/include",
+    "//foundation/resourceschedule/ffrt/include",
+    "//foundation/resourceschedule/ffrt/interfaces/kits",
+    "//foundation/resourceschedule/ffrt/interfaces/inner_api",
+    # MMI（输入注入）
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/event/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits/proxy/include",
+    "//foundation/multimodalinput/input/interfaces/native/innerkits",
+    "//foundation/multimodalinput/input/util/common/include",
+  ]
+  defines = [
+    "AAMS_LOG_TAG = \"lut_mmi\"",
+    "AAMS_LOG_DOMAIN = 0xD001D01",
+  ]
+  lib_dirs = [ "prebuilt" ]
+  libs = [
+    "accessibleability.z",
+    "accessibility_common.z",
+    "mmi-client.z",
+  ]
+  external_deps = [
+    "c_utils:utils",
+    "hilog:libhilog",
+    "ipc:ipc_core",
+    "samgr:samgr_proxy",
+  ]
+  output_name = "lut_mmi_probe"
+  install_enable = true
+  install_images = [ "system" ]
+  part_name = "lutsa"
+  subsystem_name = "ohemu"
+}
+
 group("lut_sa_package") {
   deps = [
     ":lut_sa",
     ":lut_sa_client",
     ":lut_a11y_dump",
+    ":lut_mmi_probe",
     ":lut_sa_profile",
     ":lut_sa_init_cfg",
     ":lut_sa_kcfg",
