@@ -92,8 +92,8 @@ mkdir -p $UD/lut_sa
 chmod 777 $UD/lut_sa
 # S7-2-A：Agent Loop 的 goal（**必须在 SA 启动前**写进镜像，SA 在 OnStart 后读它）
 if [ "${S72B_GOAL:-1}" = "1" ]; then
-  printf 'unlock screen
-' > $UD/lut_sa/agent_goal.txt
+  printf '%s
+' "${GOAL_TEXT:-unlock screen}" > $UD/lut_sa/agent_goal.txt   # GOAL_TEXT 可换目标（S7-3-A 用 toggle notification panel）
 else
   rm -f $UD/lut_sa/agent_goal.txt   # S7-2-B 失败路径轮：不给 goal → SA 不跑 → 屏幕保持锁屏
 fi

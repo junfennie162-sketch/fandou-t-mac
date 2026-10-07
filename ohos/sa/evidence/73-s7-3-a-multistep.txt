@@ -1,0 +1,106 @@
+===== S7-3-A 多步 Agent Loop（goal=toggle notification panel，maxSteps>1）=====
+目标流程：step0 下拉展开通知栏（verify: 窗口类型 2109 出现）→ step1 上滑收起（verify: 2109 消失）
+每一步独立记录：observe / digest / decision / policy / action(MMI) / verify；
+任一步 verify 失败即**立即停止并如实报告，不自动重试动作**。
+约束：不新增 IPC（goal 走文件、trace 走文件+stdout）· 不接 LLM（source=rule）· 未动 engine/3rdparty
+
+================= 一、SA 进程内跑（启动时屏幕=锁屏 → 前置条件不满足）=================
+goal 文件内容：toggle notification panel
+ "goal": "toggle notification panel",
+ "plan_steps": 2, "max_steps": 2,
+ "verdict": "FAIL", "stopped_at": 0,
+ "why": "step 0 verify FAIL（不自动重试动作，已停止）：本步无动作（planner 如实拒绝 rule=\"needs_unlock\"）：通知栏目标的前置条件不满足：当前在锁屏（解�
+   "action": {"action":"fail","rule":"needs_unlock","source":"rule","expect":"","why":"通知栏目标的前置条件不满足：当前在锁屏（解锁后才有通知栏）→ 不乱滑"},
+   "verdict": {"pass": 0, "why": "本步无动作（planner 如实拒绝 rule=\"needs_unlock\"）：通知栏目标的前置条件不满足：当前在锁屏（解锁后才有通知栏）→ 不乱滑
+
+================= 二、解锁后的屏幕：多步闭环（同一套 agent 代码，[26a]）=================
+[26a] 多步闭环（maxSteps 自动=PlanSteps=2）
+[agent-test] goal="toggle notification panel" max_steps=0（0=按 PlanSteps）max_nodes=0（0=默认 200）
+--- step 0 ---
+  observe(before): ok  windows=4 ids=[3 5 10 4] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]
+  decision       : {"action":"swipe","from":[512,38],"to":[512,422],"dur_ms":300,"target_a11yId":0,"rule":"notif_open_swipe_down","source":"rule","expect":"panel_present","why":"通知栏未展开（�
+  policy         : ALLOW —— 滑动两端点都在元素 root#0 box 内
+  action(MMI)    : SimulateInputEvent(PointerEvent x9) swipe (512,38)->(512,422) 300ms → ret=0（events=9）
+  observe(after) : ok  windows=5 ids=[3 5 8 10 4] visited=200 withText=15 clickable=17 truncated=1 elements=[没有通知 | 06:40 | 10月7日星期三 | Image | 没有 SIM 卡 | 100% | 06:40 | × | ..
+  verdict        : PASS —— 期望=通知栏展开 → ① after 有窗口类型2109=1 ② 界面有变化=1（windows=3 5 10 4 visited=195 withText=20 → windows=3 5 8 10 4 visited=200 withText=1
+  observe_retries: 0 · step_ms=2555
+--- step 1 ---
+  observe(before): ok  windows=5 ids=[3 5 8 10 4] visited=200 withText=15 clickable=17 truncated=1 elements=[没有通知 | 06:40 | 10月7日星期三 | Image | 没有 SIM 卡 | 100% | 06:40 | × | ..
+  decision       : {"action":"swipe","from":[512,422],"to":[512,38],"dur_ms":300,"target_a11yId":8,"rule":"notif_close_swipe_up","source":"rule","expect":"panel_absent","why":"通知栏已展开（窗
+  policy         : ALLOW —— 滑动两端点都在元素 root#8 box 内
+  action(MMI)    : SimulateInputEvent(PointerEvent x9) swipe (512,422)->(512,38) 300ms → ret=0（events=9）
+  observe(after) : ok  windows=4 ids=[3 5 10 4] visited=195 withText=20 clickable=16 elements=[Stack | Text | Swiper | SwiperIndicator | SwiperIndicator | Column | Column | Column | ...]
+  verdict        : PASS —— 期望=通知栏收起 → ① after 无窗口类型2109=1 ② 界面有变化=1（windows=3 5 8 10 4 visited=200 withText=15 → windows=3 5 10 4 visited=195 withText=2
+  observe_retries: 0 · step_ms=2061
+SUMMARY     : PASS
+WHY         : 全部 2 步 verify PASS，目标达成
+TOTAL       : 4616 ms
+[agent-test] trace_json={
+ "verdict": "PASS", "stopped_at": -1,
+   "action": {"action":"swipe","from":[512,38],"to":[512,422],"dur_ms":300,"target_a11yId":0,"rule":"notif_open_swipe_down","source":"rule","expect":"panel_present","why":"通知栏未展开（无窗�
+   "policy": {"allow": 1, "note": "滑动两端点都在元素 root#0 box 内"},
+   "verdict": {"pass": 1, "why": "期望=通知栏展开 → ① after 有窗口类型2109=1 ② 界面有变化=1（windows=3 5 10 4 visited=195 withText=20 → windows=3 5 8 10 4 visited=200 withTex
+   "observe_retries": 0, "step_ms": 2555},
+   "action": {"action":"swipe","from":[512,422],"to":[512,38],"dur_ms":300,"target_a11yId":8,"rule":"notif_close_swipe_up","source":"rule","expect":"panel_absent","why":"通知栏已展开（窗口类
+   "policy": {"allow": 1, "note": "滑动两端点都在元素 root#8 box 内"},
+   "verdict": {"pass": 1, "why": "期望=通知栏收起 → ① after 无窗口类型2109=1 ② 界面有变化=1（windows=3 5 8 10 4 visited=200 withText=15 → windows=3 5 10 4 visited=195 withTex
+   "observe_retries": 0, "step_ms": 2061}
+[agent-test] DONE goal="toggle notification panel" steps=2 verdict=PASS
+  exit=0
+[26b] 预算不足对照：--max-steps 1 → 期望如实报告"未完成"（不得谎报成功）
+
+================= 三、预算不足对照（--max-steps 1，[26b]）：必须如实报告未完成 =================
+[26b] 预算不足对照：--max-steps 1 → 期望如实报告"未完成"（不得谎报成功）
+[agent-test] goal="toggle notification panel" max_steps=1（0=按 PlanSteps）max_nodes=0（0=默认 200）
+  verdict        : PASS —— 期望=通知栏展开 → ① after 有窗口类型2109=1 ② 界面有变化=1（windows=3 5 10 4 visited=195 withText=20 → windows=3 5 8 10 4 visited=200 withText=1
+SUMMARY     : FAIL（停在第 0 步，不自动重试动作）
+WHY         : maxSteps(1) 不足以完成该目标（需要 2 步）→ 如实报告未完成
+TOTAL       : 2592 ms
+ "verdict": "FAIL", "stopped_at": 0,
+   "verdict": {"pass": 1, "why": "期望=通知栏展开 → ① after 有窗口类型2109=1 ② 界面有变化=1（windows=3 5 10 4 visited=195 withText=20 → windows=3 5 8 10 4 visited=200 withTex
+[agent-test] DONE goal="toggle notification panel" steps=1 verdict=FAIL
+  exit=1
+[agent-test] goal="unlock screen" max_steps=0（0=按 PlanSteps）max_nodes=0（0=默认 200）
+  verdict        : FAIL —— 本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑
+SUMMARY     : FAIL（停在第 0 步，不自动重试动作）
+WHY         : step 0 verify FAIL（不自动重试动作，已停止）：本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本�
+TOTAL       : 7692 ms
+ "verdict": "FAIL", "stopped_at": 0,
+   "verdict": {"pass": 0, "why": "本步无动作（planner 如实拒绝 rule=\"not_lock_screen\"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"
+[agent-test] DONE goal="unlock screen" steps=1 verdict=FAIL
+  exit=1
+[agent-test] goal="unlock screen" max_steps=0（0=按 PlanSteps）max_nodes=1（0=默认 200）
+  verdict        : FAIL —— 本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑
+SUMMARY     : FAIL（停在第 0 步，不自动重试动作）
+WHY         : step 0 verify FAIL（不自动重试动作，已停止）：本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本�
+TOTAL       : 6604 ms
+ "verdict": "FAIL", "stopped_at": 0,
+   "verdict": {"pass": 0, "why": "本步无动作（planner 如实拒绝 rule=\"not_lock_screen\"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"
+[agent-test] DONE goal="unlock screen" steps=1 verdict=FAIL
+  exit=1
+[agent-test] goal="open settings" max_steps=0（0=按 PlanSteps）max_nodes=0（0=默认 200）
+  verdict        : FAIL —— 本步无动作（planner 如实拒绝 rule="no_rule_for_goal"）：规则表里没有这个目标（v1 支持 unlock screen / toggle notification panel）：open settin
+SUMMARY     : FAIL（停在第 0 步，不自动重试动作）
+WHY         : step 0 verify FAIL（不自动重试动作，已停止）：本步无动作（planner 如实拒绝 rule="no_rule_for_goal"）：规则表里没有这个目标（v1 支持 unlock screen /
+TOTAL       : 845 ms
+ "verdict": "FAIL", "stopped_at": 0,
+   "verdict": {"pass": 0, "why": "本步无动作（planner 如实拒绝 rule=\"no_rule_for_goal\"）：规则表里没有这个目标（v1 支持 unlock screen / toggle notification panel）：open s
+[agent-test] DONE goal="open settings" steps=1 verdict=FAIL
+  exit=1
+[agent-test] goal="unlock screen" max_steps=0（0=按 PlanSteps）max_nodes=0（0=默认 200）
+  verdict        : FAIL —— 本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑
+SUMMARY     : FAIL（停在第 0 步，不自动重试动作）
+WHY         : step 0 verify FAIL（不自动重试动作，已停止）：本步无动作（planner 如实拒绝 rule="not_lock_screen"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本�
+TOTAL       : 7534 ms
+ "verdict": "FAIL", "stopped_at": 0,
+   "verdict": {"pass": 0, "why": "本步无动作（planner 如实拒绝 rule=\"not_lock_screen\"）：屏幕上没有锁屏痕迹（无「上滑解锁」文本、无窗口类型 2110）→ 不乱滑"
+[agent-test] DONE goal="unlock screen" steps=1 verdict=FAIL
+  exit=1
+
+================= 四、结论 ==================
+1) 多步支持：maxSteps>1 生效——两步各自独立跑完六段并各自 verify，step_id/before/action/after/verdict 全部记录在案
+2) 状态推进：step1 的 before = step0 的 after（通知栏已在），planner 据此选择「收起」而不是照顺序瞎发
+3) 坐标全部来自感知：两步的锚点分别是 root#0 与 root#8（收起时通知栏窗口成了根），
+   policy 校验端点在依据元素 box 内——没有任何硬编码屏幕坐标
+4) 失败即停：SA 侧在锁屏上如实 needs_unlock 拒绝（前置条件不满足）；--max-steps 1 时如实报告「未完成」
+5) 结论：**PASS**（多步闭环在解锁后的屏幕上两步全通；失败路径与预算不足均如实停止/如实报告）

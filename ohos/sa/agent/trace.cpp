@@ -1,4 +1,4 @@
-// trace.cpp —— S7-2-A：把一步闭环写成证据（JSON + 人读两种形态）
+// trace.cpp —— S7-2-A/S7-3-A：把多步闭环写成证据（JSON + 人读两种形态）
 #include "agent/trace.h"
 
 #include <cstdio>
@@ -28,47 +28,73 @@ std::string Esc(const std::string &in, size_t maxLen = 200)
     return out;
 }
 
+void StepJson(const StepTrace &s, std::string &out)
+{
+    char head[128];
+    snprintf(head, sizeof(head), "  {\"step_id\": %d,\n", s.stepId);
+    out += head;
+    out += "   \"before\": {\"ok\": " + std::string(s.before.ok ? "1" : "0") + ", \"summary\": \"" +
+           Esc(s.before.Summary(), 300) + "\"},\n";
+    out += "   \"action\": " + s.action.Describe() + ",\n";
+    out += "   \"policy\": {\"allow\": " + std::string(s.policyAllow ? "1" : "0") + ", \"note\": \"" +
+           Esc(s.policyNote) + "\"},\n";
+    out += "   \"exec\": {\"event\": \"" + Esc(s.execEvent) + "\", \"events\": " +
+           std::to_string(s.execEvents) + ", \"ret\": " + std::to_string(s.execRet) + "},\n";
+    out += "   \"after\": {\"ok\": " + std::string(s.after.ok ? "1" : "0") + ", \"summary\": \"" +
+           Esc(s.after.Summary(), 300) + "\"},\n";
+    out += "   \"verdict\": {\"pass\": " + std::string(s.verify.pass ? "1" : "0") + ", \"why\": \"" +
+           Esc(s.verify.why, 400) + "\"},\n";
+    out += "   \"observe_retries\": " + std::to_string(s.observeRetries) + ", \"step_ms\": " +
+           std::to_string(s.stepMs) + "}";
+}
+
 }  // namespace
 
-std::string TraceJson(const StepTrace &t)
+std::string TraceJson(const LoopTrace &t)
 {
     std::string out = "{\n";
     out += " \"goal\": \"" + Esc(t.goal, 80) + "\",\n";
-    out += " \"steps\": " + std::to_string(t.steps) + ",\n";
-    out += " \"total_ms\": " + std::to_string(t.totalMs) + ",\n";
-    out += " \"observe_retries\": " + std::to_string(t.observeRetries) + ",\n";
-    out += " \"observe_before\": {\"ok\": " + std::string(t.before.ok ? "1" : "0") +
-           ", \"error\": \"" + Esc(t.before.error, 80) + "\", \"summary\": \"" +
-           Esc(t.before.Summary(), 300) + "\"},\n";
-    out += " \"decision\": " + t.action.Describe() + ",\n";
-    out += " \"policy\": {\"allow\": " + std::string(t.policyAllow ? "1" : "0") + ", \"note\": \"" +
-           Esc(t.policyNote) + "\"},\n";
-    out += " \"exec\": {\"event\": \"" + Esc(t.execEvent) + "\", \"events\": " +
-           std::to_string(t.execEvents) + ", \"ret\": " + std::to_string(t.execRet) + "},\n";
-    out += " \"observe_after\": {\"ok\": " + std::string(t.after.ok ? "1" : "0") +
-           ", \"summary\": \"" + Esc(t.after.Summary(), 300) + "\"},\n";
-    out += " \"verify\": {\"pass\": " + std::string(t.verify.pass ? "1" : "0") + ", \"why\": \"" +
-           Esc(t.verify.why, 400) + "\"}\n";
-    out += "}";
+    out += " \"plan_steps\": " + std::to_string(t.planSteps) + ", \"max_steps\": " +
+           std::to_string(t.maxSteps) + ",\n";
+    out += " \"verdict\": \"" + std::string(t.pass ? "PASS" : "FAIL") + "\", \"stopped_at\": " +
+           std::to_string(t.stoppedAt) + ",\n";
+    out += " \"why\": \"" + Esc(t.why, 300) + "\", \"total_ms\": " + std::to_string(t.totalMs) + ",\n";
+    out += " \"steps\": [\n";
+    for (size_t i = 0; i < t.steps.size(); ++i) {
+        StepJson(t.steps[i], out);
+        out += (i + 1 < t.steps.size()) ? ",\n" : "\n";
+    }
+    out += " ]\n}";
     return out;
 }
 
-std::string TraceText(const StepTrace &t)
+std::string TraceText(const LoopTrace &t)
 {
     std::string out;
-    out += "===== S7-2-A Agent Loop（单步闭环）=====\n";
-    out += "GOAL            : " + t.goal + "\n";
-    out += "OBSERVE(before) : " + std::string(t.before.ok ? "ok" : ("fail:" + t.before.error)) + "\n";
-    out += "                  " + t.before.Summary() + "\n";
-    out += "DECISION        : " + t.action.Describe() + "\n";
-    out += "POLICY          : " + std::string(t.policyAllow ? "ALLOW" : "DENY") + " —— " + t.policyNote + "\n";
-    out += "EXEC            : " + t.execEvent + " → ret=" + std::to_string(t.execRet) + "（events=" +
-           std::to_string(t.execEvents) + "）\n";
-    out += "OBSERVE(after)  : " + std::string(t.after.ok ? "ok" : "fail") + "\n";
-    out += "                  " + t.after.Summary() + "\n";
-    out += "VERIFY          : " + std::string(t.verify.pass ? "PASS" : "FAIL") + " —— " + t.verify.why + "\n";
-    out += "TOTAL           : " + std::to_string(t.totalMs) + " ms\n";
-    out += "（观察重试 " + std::to_string(t.observeRetries) + " 次）\n";
+    out += "===== S7-3-A Agent Loop（多步闭环）=====\n";
+    out += "GOAL        : " + t.goal + "\n";
+    out += "PLAN        : " + std::to_string(t.planSteps) + " 步（本次预算 maxSteps=" +
+           std::to_string(t.maxSteps) + "）\n";
+    for (const auto &s : t.steps) {
+        char head[128];
+        snprintf(head, sizeof(head), "--- step %d ---\n", s.stepId);
+        out += head;
+        out += "  observe(before): " + std::string(s.before.ok ? "ok" : "fail") + "  " + s.before.Summary() + "\n";
+        out += "  decision       : " + s.action.Describe() + "\n";
+        out += "  policy         : " + std::string(s.policyAllow ? "ALLOW" : "DENY") + " —— " + s.policyNote + "\n";
+        out += "  action(MMI)    : " + s.execEvent + " → ret=" + std::to_string(s.execRet) +
+               "（events=" + std::to_string(s.execEvents) + "）\n";
+        out += "  observe(after) : " + std::string(s.after.ok ? "ok" : "fail") + "  " + s.after.Summary() + "\n";
+        out += "  verdict        : " + std::string(s.verify.pass ? "PASS" : "FAIL") + " —— " + s.verify.why + "\n";
+        out += "  observe_retries: " + std::to_string(s.observeRetries) + " · step_ms=" +
+               std::to_string(s.stepMs) + "\n";
+    }
+    out += "SUMMARY     : " + std::string(t.pass ? "PASS" : "FAIL");
+    if (!t.pass && t.stoppedAt >= 0) {
+        out += "（停在第 " + std::to_string(t.stoppedAt) + " 步，不自动重试动作）";
+    }
+    out += "\nWHY         : " + t.why + "\n";
+    out += "TOTAL       : " + std::to_string(t.totalMs) + " ms\n";
     return out;
 }
 

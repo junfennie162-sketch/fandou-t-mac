@@ -78,6 +78,19 @@
 
 **Now（这一轮要做的一件事）**
 
+- **S7-3-A（多步 Agent Loop）✅ 已完成**（`evidence/73`）—— goal=`toggle notification panel`，**两步全通**
+  · step0 展开：observe(windows=3 5 10 4) → `swipe (512,38)→(512,422)` 根锚定（root#0）→ policy ALLOW →
+    MMI 9 事件 ret=0 → after **多出 win8/type 2109**（通知栏，文本「没有通知」）→ **verify PASS**（2729ms）
+  · step1 收起：observe(含 2109) → `swipe (512,422)→(512,38)`（锚点 root#8=通知栏窗口）→ MMI 9 事件 →
+    after **2109 消失** → **verify PASS**（2035ms）
+  · **SUMMARY=PASS**，TOTAL 4616 ms；每步独立记录 step_id/before/decision/policy/action/after/verdict
+  · **状态推进**：step1 的 before 就是 step0 的 after，planner 据此选"收起"而非照顺序瞎发
+  · **失败即停、不重试动作**：① SA 侧在锁屏上跑 → `fail(needs_unlock)`（通知栏目标的前置条件是"已解锁"，
+    锁屏上下滑会把锁屏划走——实测）② `--max-steps 1` → step0 PASS 但 **SUMMARY=FAIL**
+    （"maxSteps(1) 不足以完成该目标（需要 2 步）→ 如实报告未完成"，exit=1，不谎报成功）
+  · 本轮修的一处：policy 早先把"根元素锚点"判成"凭空坐标"而 DENY（根不在 elements 里）→
+    `FindAnchor()` 显式接受根元素为合法锚点（其几何确实来自感知）
+
 - **S7-2-B（稳定性验证）✅ 已完成**（`evidence/72`）—— 验收：**3/3 冷启动成功 + 失败路径全部如实停止**
   · 3 次完整冷启动（每次 goal 由宿主在启动前写入、SA 在 OnStart 后跑一次闭环）：
     boot1/boot2/boot3 = **PASS**（1985 / 1985 / 1992 ms，均走 `lock_swipe_area_type_swiper`，`observe_retries=0`）

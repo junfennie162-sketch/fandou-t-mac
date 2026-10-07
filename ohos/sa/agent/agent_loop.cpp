@@ -1,10 +1,12 @@
-// agent_loop.cpp —— S7-2-A：最小 Agent Loop（单步闭环）
+// agent_loop.cpp —— S7-2-A/S7-3-A：Agent Loop（多步）
 //
-// 编排：observe(ReadScreenSnapshot) → digest → decide(rule) → policy(校验) → act(MMI) → verify(再读屏)
+// 编排（每一步都独立走完六段）：
+//   observe(ReadScreenSnapshot) → digest → decide(rule, 带步序) → policy(校验) →
+//   act(MMI) → settle → observe → verify(按本步期望)
 // 纪律（全部来自前几轮的实测教训）：
-//   · 判据是"界面确实变化"，不看退出码（FIX-90：受理≠生效）
-//   · 坐标必须来自本次感知的元素 box；policy 会再校验一次（禁止凭空坐标）
-//   · 失败也留证：trace 里写清停在哪一步、看到什么、返回什么
+//   · 判据是"界面确实变化"（FIX-90：受理≠生效），且要满足本步期望
+//   · 坐标必须来自本次感知的元素 box；policy 再校验一次（禁止凭空坐标）
+//   · 感知未就绪时可**重试观察**（有界）；但**动作绝不重试**——verify 失败即停止并如实报告
 //   · 屏幕原文只进 trace（证据文件），SA 日志只记计数
 #include "agent/agent_loop.h"
 
@@ -24,24 +26,40 @@ namespace tmac_sa {
 namespace agent {
 namespace {
 
-// agent 的快照预算：默认 40 太浅（锁屏的 Swiper 在更深层，实测 truncated=1/clickable=0）
-constexpr int kAgentMaxNodes = 200;
+constexpr int kAgentMaxNodes = 200;        // agent 的快照预算（默认 40 太浅）
 constexpr int kMaxObserveRetry = 6;        // 感知未就绪时的观察重试上限（有界）
 constexpr int kObserveRetryDelayMs = 1000; // 每次重试间隔（ms）
+constexpr int kSettleMs = 400;             // 动作后等界面稳定
 
 struct PolicyResult {
     bool allow = false;
     std::string why;
 };
 
-const ElementRef *FindById(const Digest &d, int64_t a11yId)
+// 找锚点元素：先查 elements；**根元素也算合法锚点**（它的几何确实来自感知——
+// 见 ScreenSnapshot.hasRoot/rootX1..；S7-3-A 实测：根元素不在 elements 里（无文本、不可点），
+// 早先 policy 因此把根锚定的动作判成"凭空坐标"而 DENY）
+bool FindAnchor(const Digest &d, int64_t a11yId, ElementRef &out)
 {
     for (const auto &e : d.elements) {
         if (e.a11yId == a11yId) {
-            return &e;
+            out = e;
+            return true;
         }
     }
-    return nullptr;
+    if (d.HasRoot() && a11yId == d.rootA11yId) {
+        out = ElementRef{};
+        out.a11yId = d.rootA11yId;
+        out.type = "root";
+        out.clickable = false;
+        out.visible = true;
+        out.x1 = d.rootX1;
+        out.y1 = d.rootY1;
+        out.x2 = d.rootX2;
+        out.y2 = d.rootY2;
+        return true;
+    }
+    return false;
 }
 
 bool Inside(const ElementRef &t, int x, int y)
@@ -71,31 +89,38 @@ PolicyResult CheckPolicy(const Action &a, const Digest &d)
         p.why = "无坐标动作（" + a.kind + "），直接放行";
         return p;
     }
-    const ElementRef *t = FindById(d, a.targetA11yId);
-    if (t == nullptr) {
+    ElementRef anchor;
+    if (!FindAnchor(d, a.targetA11yId, anchor)) {
         p.why = "依据元素不在本次感知结果里（禁止凭空坐标）a11yId=" + std::to_string(a.targetA11yId);
         return p;
     }
-    if (!t->HasBox()) {
-        p.why = "依据元素没有实体框（box 为零）a11yId=" + std::to_string(t->a11yId);
+    if (!anchor.HasBox()) {
+        p.why = "依据元素没有实体框（box 为零）a11yId=" + std::to_string(anchor.a11yId);
         return p;
     }
     if (a.kind == "swipe") {
-        if (!Inside(*t, a.x1, a.y1) || !Inside(*t, a.x2, a.y2)) {
+        if (!Inside(anchor, a.x1, a.y1) || !Inside(anchor, a.x2, a.y2)) {
             p.why = "滑动端点超出依据元素 box";
             return p;
         }
         p.allow = true;
-        p.why = "滑动两端点都在元素 " + t->type + "#" + std::to_string(t->a11yId) + " box=[…] 内";
+        p.why = "滑动两端点都在元素 " + anchor.type + "#" + std::to_string(anchor.a11yId) + " box 内";
         return p;
     }
-    if (!Inside(*t, a.x, a.y)) {
+    if (!Inside(anchor, a.x, a.y)) {
         p.why = "点击点超出依据元素 box";
         return p;
     }
     p.allow = true;
-    p.why = "点击点来自元素 " + t->type + "#" + std::to_string(t->a11yId) + " box 内";
+    p.why = "点击点来自元素 " + anchor.type + "#" + std::to_string(anchor.a11yId) + " box 内";
     return p;
+}
+
+// 感知未就绪类失败（可重试**观察**；不会重试动作，因为这类决策不产生动作）
+bool RetryablePerceptionFail(const Action &a)
+{
+    return a.kind == "fail" && (a.rule == "not_lock_screen" || a.rule == "no_swipeable_area" ||
+                                a.rule == "digest_not_ok");
 }
 
 std::string ReadTrim(const char *path, size_t maxLen)
@@ -130,78 +155,96 @@ void WriteFile(const char *path, const std::string &content)
     fclose(f);
 }
 
+long MsSince(const std::chrono::steady_clock::time_point &t0)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now() - t0).count();
+}
+
 }  // namespace
 
-LoopResult RunGoal(const std::string &goal, int maxNodes)
+LoopTrace RunGoalMulti(const std::string &goal, int maxSteps, int maxNodes)
 {
-    LoopResult res;
-    res.goal = goal;
-    if (goal.empty()) {
-        return res;   // 没有目标就不跑
-    }
-    res.ran = true;
+    LoopTrace t;
+    t.goal = goal;
+    t.planSteps = PlanSteps(goal);
+    const int budget = (maxNodes > 0) ? maxNodes : kAgentMaxNodes;
+    // 预算：显式给了就用显式的；否则用"刚好够"（PlanSteps），至少 1
+    t.maxSteps = (maxSteps > 0) ? maxSteps : (t.planSteps > 0 ? t.planSteps : 1);
+
     const auto t0 = std::chrono::steady_clock::now();
+    for (int step = 0; step < t.maxSteps; ++step) {
+        StepTrace st;
+        st.stepId = step;
+        const auto st0 = std::chrono::steady_clock::now();
 
-    StepTrace tr;
-    tr.goal = goal;
-
-    // ① observe（before）+ ② decide —— 若因「感知未就绪」而 fail，则有界重试**观察**
-    // 实测教训（S7-2-B boot2）：锁屏出现时状态栏文本先于 Swiper 进树 → 一次 observe 可能
-    // 看不到可滑区域。这是"世界还没准备好"，agent 应当等一等再观察；
-    // **只重试 observe，绝不重试动作**（动作是否重试由 verify 决定，v1 一律不重试）。
-    int retries = 0;
-    for (;;) {
-        tr.before = BuildDigest(ReadScreenSnapshot(maxNodes > 0 ? maxNodes : kAgentMaxNodes));
-        tr.action = Decide(goal, tr.before);
-        const bool retryable = tr.action.kind == "fail" &&
-                               (tr.action.rule == "not_lock_screen" || tr.action.rule == "no_swipeable_area");
-        if (!retryable || retries >= kMaxObserveRetry) {
-            break;
+        // ① observe + ② decide（感知未就绪 → 有界重试观察）
+        int retries = 0;
+        for (;;) {
+            st.before = BuildDigest(ReadScreenSnapshot(budget));
+            st.action = Decide(goal, step, st.before);
+            if (!RetryablePerceptionFail(st.action) || retries >= kMaxObserveRetry) {
+                break;
+            }
+            ++retries;
+            usleep(kObserveRetryDelayMs * 1000);
         }
-        ++retries;
-        usleep(kObserveRetryDelayMs * 1000);
-    }
-    tr.observeRetries = retries;
+        st.observeRetries = retries;
 
-    // ③ policy
-    const PolicyResult pol = CheckPolicy(tr.action, tr.before);
-    tr.policyAllow = pol.allow;
-    tr.policyNote = pol.why;
+        // ③ policy
+        const PolicyResult pol = CheckPolicy(st.action, st.before);
+        st.policyAllow = pol.allow;
+        st.policyNote = pol.why;
 
-    // ④ act（只在 policy 放行时）
-    if (pol.allow && tr.action.kind != "done" && tr.action.kind != "fail") {
-        ExecResult er;
-        if (tr.action.kind == "swipe") {
-            er = InjectSwipe(tr.action.x1, tr.action.y1, tr.action.x2, tr.action.y2, tr.action.durMs);
-        } else if (tr.action.kind == "click") {
-            er = InjectClick(tr.action.x, tr.action.y);
+        // ④ act（只在 policy 放行且确有动作时；**不重试动作**）
+        if (pol.allow && st.action.kind != "done" && st.action.kind != "fail") {
+            ExecResult er;
+            if (st.action.kind == "swipe") {
+                er = InjectSwipe(st.action.x1, st.action.y1, st.action.x2, st.action.y2, st.action.durMs);
+            } else if (st.action.kind == "click") {
+                er = InjectClick(st.action.x, st.action.y);
+            } else {
+                er = InjectBack();
+            }
+            st.execEvent = er.event;
+            st.execRet = er.ret;
+            st.execEvents = er.events;
+            usleep(kSettleMs * 1000);   // 等界面稳定再读
+        } else if (st.action.kind == "done" || st.action.kind == "fail") {
+            st.execEvent = "(无需注入：" + st.action.kind + ")";
+            st.execRet = 0;
         } else {
-            er = InjectBack();
+            st.execEvent = "(policy denied，未注入)";
+            st.execRet = -1;
         }
-        tr.execEvent = er.event;
-        tr.execRet = er.ret;
-        tr.execEvents = er.events;
-        usleep(400 * 1000);   // 等界面稳定再读（S7-2-0 的 settle 经验）
-    } else if (tr.action.kind == "done" || tr.action.kind == "fail") {
-        tr.execEvent = "(无需注入：" + tr.action.kind + ")";
-        tr.execRet = 0;
-    } else {
-        tr.execEvent = "(policy denied，未注入)";
-        tr.execRet = -1;
+
+        // ⑤ observe（after）+ ⑥ verify
+        st.after = BuildDigest(ReadScreenSnapshot(budget));
+        st.verify = Verify(goal, step, st.before, st.after, st.action);
+        st.stepMs = MsSince(st0);
+        t.steps.push_back(st);
+
+        if (!st.verify.pass) {
+            t.pass = false;
+            t.stoppedAt = step;
+            t.why = "step " + std::to_string(step) + " verify FAIL（不自动重试动作，已停止）：" + st.verify.why;
+            t.totalMs = MsSince(t0);
+            return t;
+        }
     }
 
-    // ⑤ observe（after）+ ⑥ verify
-    tr.after = BuildDigest(ReadScreenSnapshot(maxNodes > 0 ? maxNodes : kAgentMaxNodes));
-    tr.verify = Verify(goal, tr.before, tr.after, tr.action);
-
-    tr.totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::steady_clock::now() - t0).count();
-    tr.steps = 1;
-
-    res.traceJson = TraceJson(tr);
-    res.traceText = TraceText(tr);
-    res.pass = tr.verify.pass;
-    return res;
+    // 全部步都通过 → 还要检查"步数是否真的够完成目标"
+    if (t.planSteps > 0 && static_cast<int>(t.steps.size()) < t.planSteps) {
+        t.pass = false;
+        t.stoppedAt = static_cast<int>(t.steps.size()) - 1;
+        t.why = "maxSteps(" + std::to_string(t.maxSteps) + ") 不足以完成该目标（需要 " +
+                std::to_string(t.planSteps) + " 步）→ 如实报告未完成";
+    } else {
+        t.pass = true;
+        t.why = "全部 " + std::to_string(t.steps.size()) + " 步 verify PASS，目标达成";
+    }
+    t.totalMs = MsSince(t0);
+    return t;
 }
 
 bool RunGoalFromFile(const char *goalPath, const char *tracePath)
@@ -210,12 +253,11 @@ bool RunGoalFromFile(const char *goalPath, const char *tracePath)
     if (goal.empty()) {
         return false;   // 没有目标文件/空文件 → 不跑（默认行为不变）
     }
-    const LoopResult r = RunGoal(goal, 0);
-    // 人读 trace 打到 stdout（SA 的 stdout 被重定向到 /data/lut_sa/rt_stdout.txt，随证据回收）
-    printf("%s", r.traceText.c_str());
+    const LoopTrace t = RunGoalMulti(goal, 0, 0);   // maxSteps 用 PlanSteps（刚好够）
+    printf("%s", TraceText(t).c_str());
     fflush(stdout);
     if (tracePath != nullptr) {
-        WriteFile(tracePath, r.traceJson + "\n");
+        WriteFile(tracePath, TraceJson(t) + "\n");
     }
     return true;
 }

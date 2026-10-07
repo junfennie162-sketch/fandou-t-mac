@@ -1,10 +1,7 @@
-// verifier.cpp —— S7-2-A：目标达成判定（全部基于感知对比，条件逐条写进 why）
+// verifier.cpp —— S7-2-A/S7-3-A：按「本步期望」判定（全部基于感知对比，条件逐条写进 why）
 //
-// goal="unlock screen" 的判据（三条全中才算 pass）：
-//   ① before 确实在锁屏（有「上滑解锁」文本 或 有窗口类型 2110）
-//   ② after 不再在锁屏（两者都没有了）
-//   ③ 界面确实变化过（窗口列表 / 文本数 / 访问节点数任一不同）
-// 这样即使"动作没生效"，也不可能被误判成成功（①③ 会拦住）。
+// 通用纪律：即使"动作没生效"，也不能被误判成成功——每条期望都要求"目标状态成立"+"界面确实变化"。
+//   · done 动作（本步无需动作，例如通知栏已经展开）：只要求"目标状态成立"，不要求变化。
 #include "agent/verifier.h"
 
 #include <cstdio>
@@ -13,10 +10,13 @@ namespace tmac_sa {
 namespace agent {
 namespace {
 
+constexpr int32_t kNotifPanelWindowType = 2109;
+constexpr int32_t kLockScreenWindowType = 2110;
+
 bool LockScreen(const Digest &d, std::string *how)
 {
     const bool byText = d.FindByText("上滑解锁") != nullptr;
-    const bool byWin = d.HasWindowType(2110);
+    const bool byWin = d.HasWindowType(kLockScreenWindowType);
     if (how != nullptr) {
         *how = std::string("文本「上滑解锁」=") + (byText ? "有" : "无") + " 窗口类型2110=" +
                (byWin ? "有" : "无");
@@ -24,36 +24,75 @@ bool LockScreen(const Digest &d, std::string *how)
     return byText || byWin;
 }
 
+bool Changed(const Digest &b, const Digest &a)
+{
+    return (b.windowIds != a.windowIds) || (b.withText != a.withText) || (b.visited != a.visited);
+}
+
+std::string Windows(const Digest &d)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "windows=%s visited=%d withText=%d", d.windowIds.c_str(), d.visited,
+             d.withText);
+    return buf;
+}
+
 }  // namespace
 
-VerifyResult Verify(const std::string &goal, const Digest &before, const Digest &after,
+VerifyResult Verify(const std::string &goal, int stepIndex, const Digest &before, const Digest &after,
                     const Action &act)
 {
     VerifyResult r;
-    const std::string g = goal;
-    const bool isUnlock = g.find("unlock") != std::string::npos || g.find("解锁") != std::string::npos;
+    const bool isDone = (act.kind == "done");
+    const bool changed = Changed(before, after);
 
-    if (!isUnlock) {
-        r.pass = false;
-        r.why = "v1 没有该目标的判据（只有 unlock screen）：" + goal;
+    if (act.expect == kExpectUnlocked) {
+        std::string howB, howA;
+        const bool lockB = LockScreen(before, &howB);
+        const bool lockA = LockScreen(after, &howA);
+        r.pass = lockB && !lockA && changed;
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "期望=已解锁 → ① before 在锁屏=%d（%s）② after 已离开锁屏=%d（%s）③ 界面有变化=%d"
+                 "（%s → %s）→ %s",
+                 lockB ? 1 : 0, howB.c_str(), lockA ? 0 : 1, howA.c_str(), changed ? 1 : 0,
+                 Windows(before).c_str(), Windows(after).c_str(), r.pass ? "PASS" : "FAIL");
+        r.why = buf;
         return r;
     }
-    std::string howBefore, howAfter;
-    const bool lockBefore = LockScreen(before, &howBefore);
-    const bool lockAfter = LockScreen(after, &howAfter);
-    const bool changed = (before.windowIds != after.windowIds) || (before.withText != after.withText) ||
-                         (before.visited != after.visited);
-
-    r.pass = lockBefore && !lockAfter && changed;
-    char buf[512];
-    snprintf(buf, sizeof(buf),
-             "① before 在锁屏=%d（%s）② after 已离开锁屏=%d（%s）③ 界面有变化=%d"
-             "（windows %s→%s，withText %d→%d，visited %d→%d）→ %s",
-             lockBefore ? 1 : 0, howBefore.c_str(), lockAfter ? 0 : 1, howAfter.c_str(),
-             changed ? 1 : 0, before.windowIds.c_str(), after.windowIds.c_str(), before.withText,
-             after.withText, before.visited, after.visited, r.pass ? "PASS" : "FAIL");
+    if (act.expect == kExpectPanelPresent) {
+        const bool panelA = after.HasWindowType(kNotifPanelWindowType);
+        r.pass = isDone ? panelA : (panelA && changed);
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "期望=通知栏展开 → ① after 有窗口类型2109=%d ② 界面有变化=%d%s（%s → %s）→ %s",
+                 panelA ? 1 : 0, changed ? 1 : 0, isDone ? "（done：不要求变化）" : "",
+                 Windows(before).c_str(), Windows(after).c_str(), r.pass ? "PASS" : "FAIL");
+        r.why = buf;
+        return r;
+    }
+    if (act.expect == kExpectPanelAbsent) {
+        const bool panelA = after.HasWindowType(kNotifPanelWindowType);
+        r.pass = isDone ? !panelA : (!panelA && changed);
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "期望=通知栏收起 → ① after 无窗口类型2109=%d ② 界面有变化=%d%s（%s → %s）→ %s",
+                 panelA ? 0 : 1, changed ? 1 : 0, isDone ? "（done：不要求变化）" : "",
+                 Windows(before).c_str(), Windows(after).c_str(), r.pass ? "PASS" : "FAIL");
+        r.why = buf;
+        return r;
+    }
+    r.pass = false;
+    char buf[400];
+    if (act.kind == "fail") {
+        // planner 如实拒绝：本步没有动作，也就没有可判定的期望 —— 直接把拒绝原因带出来
+        snprintf(buf, sizeof(buf), "本步无动作（planner 如实拒绝 rule=\"%s\"）：%s",
+                 act.rule.c_str(), act.why.c_str());
+    } else {
+        snprintf(buf, sizeof(buf), "本步没有可判定的期望（expect=\"%s\"，goal=\"%s\" step=%d）",
+                 act.expect.c_str(), goal.c_str(), stepIndex);
+    }
     r.why = buf;
-    (void)act;
     return r;
 }
 

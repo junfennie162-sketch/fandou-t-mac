@@ -180,6 +180,16 @@ com.ohos.camera
   echo "[24c] 注意：若 [24] 显示 PASS，则本轮的 [15c1]（用探针再解一次锁）应为 UNCHANGED ——"
   echo "       因为锁屏在 SA 跑闭环时就已经被划走了（两处证据互相印证）"
 
+  echo "--- [26] S7-3-A 多步 Agent Loop（goal=toggle notification panel，maxSteps>1）---"
+  echo "  流程：step0 下拉展开通知栏 → verify(2109 出现)；step1 上滑收起 → verify(2109 消失)"
+  echo "  每一步独立记录 observe/decision/policy/action/verify；任一步失败即停止且**不重试动作**"
+  echo "[26a] 多步闭环（maxSteps 自动=PlanSteps=2）"
+  /system/bin/lut_agent_test --goal "toggle notification panel"
+  echo "  exit=$?"
+  echo "[26b] 预算不足对照：--max-steps 1 → 期望如实报告\"未完成\"（不得谎报成功）"
+  /system/bin/lut_agent_test --goal "toggle notification panel" --max-steps 1
+  echo "  exit=$?"
+
   echo "--- [25] S7-2-B 失败路径与感知受限（同一套 agent 代码，独立进程触发）---"
   echo "  动机：SA 只在启动时跑一次闭环；失败路径要按需触发 → 用 lut_agent_test（与 SA 同一份 agent 模块）"
   echo "  期望：三条失败路径都必须 fail 且 events=0（不产生任何注入）"
